@@ -1,0 +1,101 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Plan {
+  AUTONOMO
+  BARBERIA_BASE
+  ALTO_FLUJO
+}
+
+enum CutStatus {
+  IN_PROGRESS
+  FINISHED
+  CANCELLED
+}
+
+model Shop {
+  id          String   @id @default(uuid())
+  name        String
+  address     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  barbers     Barber[]
+}
+
+model Barber {
+  id            String   @id @default(uuid())
+  email         String?  @unique
+  phone         String   @unique
+  displayName   String
+  pinHash       String
+  passwordHash  String?
+  plan          Plan     @default(AUTONOMO)
+  shopId        String?
+  shop          Shop?    @relation(fields: [shopId], references: [id])
+  deviceId      String?
+  cuts          Cut[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([phone])
+}
+
+model Client {
+  id          String          @id @default(uuid())
+  phone       String          @unique
+  profiles    ClientProfile[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([phone])
+}
+
+model ClientProfile {
+  id          String   @id @default(uuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name        String
+  cuts        Cut[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([clientId])
+}
+
+model Cut {
+  id                String        @id @default(uuid())
+  clientRequestId   String        @unique
+  barberId          String
+  barber            Barber        @relation(fields: [barberId], references: [id])
+  clientProfileId   String
+  clientProfile     ClientProfile @relation(fields: [clientProfileId], references: [id])
+  status            CutStatus     @default(IN_PROGRESS)
+  chips             Json?
+  startedAt         DateTime      @default(now())
+  finishedAt        DateTime?
+  rapidClosure      Boolean       @default(false)
+  photos            CutPhoto[]
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([barberId, status])
+  @@index([clientProfileId])
+  @@index([startedAt])
+}
+
+model CutPhoto {
+  id          String   @id @default(uuid())
+  cutId       String
+  cut         Cut      @relation(fields: [cutId], references: [id], onDelete: Cascade)
+  r2Key       String   @unique
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([cutId])
+}
