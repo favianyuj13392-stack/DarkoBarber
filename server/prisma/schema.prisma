@@ -19,6 +19,13 @@ enum CutStatus {
   CANCELLED
 }
 
+enum PresenceStatus {
+  GREEN
+  RED
+  YELLOW
+  GRAY
+}
+
 model Shop {
   id          String   @id @default(uuid())
   name        String
@@ -29,21 +36,35 @@ model Shop {
 }
 
 model Barber {
-  id            String   @id @default(uuid())
-  email         String?  @unique
-  phone         String   @unique
+  id            String    @id @default(uuid())
+  email         String?   @unique
+  phone         String    @unique
   displayName   String
   pinHash       String
   passwordHash  String?
-  plan          Plan     @default(AUTONOMO)
+  plan          Plan      @default(AUTONOMO)
   shopId        String?
-  shop          Shop?    @relation(fields: [shopId], references: [id])
+  shop          Shop?     @relation(fields: [shopId], references: [id])
   deviceId      String?
   cuts          Cut[]
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  presence      Presence?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([phone])
+}
+
+model Presence {
+  barberId      String         @id
+  barber        Barber         @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  status        PresenceStatus @default(GRAY)
+  waitingCount  Int            @default(0) // 0: Nadie, 1: 1 a 2, 2: 3 o más
+  activeCutId   String?
+  expiresAt     DateTime?      // Timeout for phantom cut auto-cancellation (startedAt + 50 min)
+  lastHeartbeat DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([status])
 }
 
 model Client {

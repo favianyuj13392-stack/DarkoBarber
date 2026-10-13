@@ -4,7 +4,7 @@ import { startCutSchema, finalizeCutSchema } from './cuts.schemas';
 import { AppError } from '../../utils/errors';
 
 export const cutsRoutes: FastifyPluginAsync = async (fastify) => {
-  const service = new CutsService(fastify.prisma);
+  const service = new CutsService(fastify.prisma, fastify.presenceService);
 
   fastify.post(
     '/cuts',

@@ -1,4 +1,4 @@
-import { PrismaClient, Plan } from '@prisma/client';
+import { PrismaClient, Plan, PresenceStatus } from '@prisma/client';
 import { hashSecret } from '../src/utils/crypto';
 
 const prisma = new PrismaClient();
@@ -47,8 +47,26 @@ export async function seed() {
     },
   });
 
-  console.log(`Seeded Barber: ${barber.displayName} (${barber.email} / ${barber.phone}) at ${shop.name}`);
-  return { shop, barber };
+  // 3. Create or upsert Presence for Pilot Barber Diego
+  const presence = await prisma.presence.upsert({
+    where: { barberId: barber.id },
+    update: {
+      status: PresenceStatus.GRAY,
+      waitingCount: 0,
+      activeCutId: null,
+      expiresAt: null,
+    },
+    create: {
+      barberId: barber.id,
+      status: PresenceStatus.GRAY,
+      waitingCount: 0,
+      activeCutId: null,
+      expiresAt: null,
+    },
+  });
+
+  console.log(`Seeded Barber: ${barber.displayName} (${barber.email} / ${barber.phone}) at ${shop.name} with Presence ${presence.status}`);
+  return { shop, barber, presence };
 }
 
 if (require.main === module) {

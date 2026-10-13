@@ -1,5 +1,6 @@
 import { PrismaClient, Plan } from '@prisma/client';
 import { FastifyRequest, FastifyReply } from 'fastify';
+import { PresenceService } from '../modules/presence/presence.service';
 
 export interface BarberAuthPayload {
   barberId: string;
@@ -21,6 +22,7 @@ declare module 'fastify' {
     prisma: PrismaClient;
     authenticateBarber: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
     generatePresignedUrl: (key: string, contentType: string) => Promise<string>;
+    presenceService: PresenceService;
   }
 
   interface FastifyRequest {

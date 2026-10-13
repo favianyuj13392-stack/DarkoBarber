@@ -2,9 +2,14 @@ import { PrismaClient } from '@prisma/client';
 import { StartCutInput, FinalizeCutInput } from './cuts.schemas';
 import { ConflictError, ForbiddenError, NotFoundError } from '../../utils/errors';
 import { AuthenticatedBarber } from '../../types';
+import { PresenceService } from '../presence/presence.service';
 
 export class CutsService {
-  constructor(private prisma: PrismaClient) {}
+  private presenceService: PresenceService;
+
+  constructor(private prisma: PrismaClient, presenceService?: PresenceService) {
+    this.presenceService = presenceService ?? new PresenceService(prisma);
+  }
 
   async startCut(barber: AuthenticatedBarber, input: StartCutInput) {
     // 1. Idempotency check via clientRequestId
@@ -56,6 +61,9 @@ export class CutsService {
       },
     });
 
+    // 5. RF-2.1: Synchronize presence state to RED / YELLOW
+    await this.presenceService.setCutting(barber.id, cut.id, barber.shopId);
+
     return { cut, isDuplicate: false };
   }
 
@@ -87,6 +95,15 @@ export class CutsService {
         rapidClosure: isRapid,
       },
     });
+
+    // Look up barber's shopId to broadcast properly
+    const barber = await this.prisma.barber.findUnique({
+      where: { id: barberId },
+      select: { shopId: true },
+    });
+
+    // RF-2.1: Synchronize presence state back to GREEN
+    await this.presenceService.setFree(barberId, barber?.shopId ?? null);
 
     return finalizedCut;
   }
