@@ -91,8 +91,17 @@ export type ServerPresenceMessage =
 export interface ChairMapItem {
   barberId: string;
   displayName: string;
+  avatarUrl: string | null;
+  bio: string | null;
+  linkedin: string | null;
+  instagram: string | null;
+  specialties: string[];
   shopId: string | null;
   shopName: string | null;
+  address: string | null;
+  zone: string | null;
+  latitude: number | null;
+  longitude: number | null;
   status: PresenceStatus;
   waitingCount: number;
   updatedAt: string;
