@@ -82,11 +82,11 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
 
           const message = parseResult.data;
 
-          if (message.type === 'HEARTBEAT') {
+          if (message.type === 'HEARTBEAT' || message.type === 'PING') {
             const ack = await service.handleHeartbeat(barber.id);
             socket.send(
               JSON.stringify({
-                type: 'HEARTBEAT_ACK',
+                type: message.type === 'PING' ? 'PONG' : 'HEARTBEAT_ACK',
                 timestamp: ack.timestamp,
               })
             );
@@ -96,8 +96,8 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
               barber.shopId,
               message.waitingCount
             );
-          } else if (message.type === 'SET_STATUS') {
-            await service.setStatus(barber.id, barber.shopId, message.status);
+          } else if (message.type === 'SET_STATUS' || message.type === 'UPDATE_STATUS') {
+            await service.setStatus(barber.id, barber.shopId, message.status as any);
           }
         } catch (err: any) {
           fastify.log.error(err, '[PresenceWS] Error processing message');
@@ -150,9 +150,18 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
   );
 
   // 2. Public HTTP Map Endpoint: GET /presence/map
-  fastify.get('/presence/map', async (_request, reply) => {
+  fastify.get('/presence/map', async (request, reply) => {
     reply.header('Cache-Control', 'public, max-age=3, s-maxage=5');
     const chairs = await service.getMapChairs();
+
+    const accept = request.headers.accept || '';
+    const query = (request.query as Record<string, string>) || {};
+
+    if (accept.includes('text/html') && !query.json && !query.raw) {
+      reply.type('text/html');
+      return reply.send(renderMapHtml(chairs));
+    }
+
     return reply.status(200).send(chairs);
   });
 
@@ -171,9 +180,157 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
       return reply.status(200).send(presence);
     }
   );
+
+  // 4. Update Barber Presence: PUT /presence/:barberId
+  fastify.put(
+    '/presence/:barberId',
+    { preHandler: [fastify.authenticateBarber] },
+    async (request, reply) => {
+      const { barberId } = request.params as { barberId: string };
+      const body = (request.body as Record<string, unknown>) || {};
+
+      if (body.waitingCount !== undefined) {
+        await service.updateWaitingCount(
+          barberId,
+          request.barber.shopId,
+          Number(body.waitingCount) as any
+        );
+      }
+
+      if (body.status !== undefined) {
+        await service.setStatus(
+          barberId,
+          request.barber.shopId,
+          String(body.status) as any
+        );
+      }
+
+      const presence = await service.getPresence(barberId);
+      return reply.status(200).send(presence);
+    }
+  );
 };
 
 export const presenceRoutes = fp(presenceRoutesPlugin, {
   name: 'presence-routes',
   dependencies: ['prisma-plugin', 'auth-plugin', 'websocket-plugin'],
 });
+
+function renderMapHtml(chairs: any[]): string {
+  const chair = chairs[0] || {
+    displayName: 'Diego',
+    shopName: 'Darko Studio',
+    status: 'GRAY',
+    waitingCount: 0,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const statusConfig: Record<string, { label: string; color: string; bg: string; desc: string }> = {
+    GREEN: { label: 'LIBRE', color: '#10B981', bg: 'rgba(16,185,129,0.15)', desc: 'Sillón disponible ahora mismo' },
+    RED: { label: 'CORTANDO', color: '#EF4444', bg: 'rgba(239,68,68,0.15)', desc: 'En servicio (Cliente en sillón)' },
+    YELLOW: { label: 'SALA CON ESPERA', color: '#F59E0B', bg: 'rgba(245,158,11,0.15)', desc: 'Cortando con cola en sala' },
+    GRAY: { label: 'DESCONECTADO', color: '#71717A', bg: 'rgba(113,113,122,0.15)', desc: 'Barbero fuera de turno o receso' },
+  };
+
+  const current = statusConfig[chair.status] || statusConfig.GRAY;
+  const waitingText = chair.waitingCount === 0 ? 'Nadie' : chair.waitingCount === 1 ? '1 a 2' : '3+';
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FADE · Mapa de Ocupación en Vivo</title>
+  <style>
+    body { margin: 0; background: #000000; color: #F3F4F6; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; box-sizing: border-box; }
+    .card { width: 100%; max-width: 480px; background: #0B0B0B; border: 1px solid #222222; border-radius: 28px; padding: 32px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); }
+    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+    .title { font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: #B68F4E; font-weight: 800; }
+    .live-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: #10B981; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #10B981; animation: pulse 2s infinite; }
+    @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.3); } 100% { opacity: 1; transform: scale(1); } }
+    .shop-name { font-size: 26px; font-weight: 800; color: #FFFFFF; margin: 0 0 6px 0; }
+    .barber { font-size: 14px; color: #A1A1AA; margin: 0 0 24px 0; }
+    .status-badge { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-radius: 20px; background: ${current.bg}; border: 1px solid ${current.color}40; margin-bottom: 20px; transition: all 0.3s; }
+    .status-circle { width: 16px; height: 16px; border-radius: 50%; background: ${current.color}; box-shadow: 0 0 12px ${current.color}; transition: all 0.3s; }
+    .status-info { flex: 1; }
+    .status-label { font-size: 16px; font-weight: 800; color: ${current.color}; letter-spacing: 0.5px; transition: all 0.3s; }
+    .status-desc { font-size: 12px; color: #D1D5DB; margin-top: 2px; }
+    .details { background: #141414; border: 1px solid #1F1F1F; border-radius: 18px; padding: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; font-size: 12px; }
+    .details dt { color: #71717A; margin-bottom: 4px; }
+    .details dd { color: #D9C9B0; font-weight: 700; margin: 0; font-size: 13px; }
+    .cta-btn { display: block; text-align: center; background: #D9C9B0; color: #000000; font-weight: 800; padding: 16px; border-radius: 16px; text-decoration: none; font-size: 14px; transition: transform 0.1s; border: 1px solid #B68F4E; }
+    .cta-btn:hover { transform: scale(1.02); }
+    .raw-link { display: block; text-align: center; margin-top: 14px; font-size: 11px; color: #71717A; text-decoration: none; }
+    .raw-link:hover { color: #A1A1AA; }
+  </style>
+  <script>
+    setInterval(async () => {
+      try {
+        const res = await fetch('/presence/map?json=1');
+        const data = await res.json();
+        if (data && data[0]) {
+          const c = data[0];
+          const badge = document.getElementById('status-badge');
+          const circle = document.getElementById('status-circle');
+          const label = document.getElementById('status-label');
+          const desc = document.getElementById('status-desc');
+          const waiting = document.getElementById('waiting-count');
+          const updated = document.getElementById('updated-time');
+          
+          const cfg = {
+            GREEN: { label: 'LIBRE', color: '#10B981', bg: 'rgba(16,185,129,0.15)', desc: 'Sillón disponible ahora mismo' },
+            RED: { label: 'CORTANDO', color: '#EF4444', bg: 'rgba(239,68,68,0.15)', desc: 'En servicio (Cliente en sillón)' },
+            YELLOW: { label: 'SALA CON ESPERA', color: '#F59E0B', bg: 'rgba(245,158,11,0.15)', desc: 'Cortando con gente en sala' },
+            GRAY: { label: 'DESCONECTADO', color: '#71717A', bg: 'rgba(113,113,122,0.15)', desc: 'Barbero fuera de turno o receso' }
+          }[c.status] || { label: c.status, color: '#71717A', bg: 'rgba(113,113,122,0.15)', desc: '' };
+
+          badge.style.background = cfg.bg;
+          badge.style.borderColor = cfg.color + '40';
+          circle.style.background = cfg.color;
+          circle.style.boxShadow = '0 0 12px ' + cfg.color;
+          label.style.color = cfg.color;
+          label.textContent = cfg.label;
+          desc.textContent = cfg.desc;
+          waiting.textContent = c.waitingCount === 0 ? 'Nadie' : (c.waitingCount === 1 ? '1 a 2' : '3+');
+          updated.textContent = new Date(c.updatedAt).toLocaleTimeString();
+        }
+      } catch(e) {}
+    }, 2000);
+  </script>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <span class="title">Mapa Público de Ocupación</span>
+      <span class="live-tag"><span class="dot"></span> En Vivo (2s)</span>
+    </div>
+    <h1 class="shop-name">${chair.shopName || 'Darko Studio'}</h1>
+    <p class="barber">Barbero titular: <strong>${chair.displayName || 'Diego'}</strong> · Sopocachi</p>
+
+    <div class="status-badge" id="status-badge">
+      <div class="status-circle" id="status-circle"></div>
+      <div class="status-info">
+        <div class="status-label" id="status-label">${current.label}</div>
+        <div class="status-desc" id="status-desc">${current.desc}</div>
+      </div>
+    </div>
+
+    <div class="details">
+      <div>
+        <dt>Gente en Sala</dt>
+        <dd id="waiting-count">${waitingText}</dd>
+      </div>
+      <div>
+        <dt>Última Sincronización</dt>
+        <dd id="updated-time">${new Date(chair.updatedAt).toLocaleTimeString()}</dd>
+      </div>
+    </div>
+
+    <a href="http://localhost:5173" class="cta-btn" target="_blank">Abrir PWA de Barberos (FADE) &rarr;</a>
+    <a href="/presence/map?json=1" class="raw-link">Ver respuesta JSON cruda para desarrolladores</a>
+  </div>
+</body>
+</html>`;
+}
+

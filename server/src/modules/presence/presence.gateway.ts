@@ -67,6 +67,11 @@ export class PresenceGateway {
     excludeSocket?: WebSocket
   ): void {
     const payload = JSON.stringify(message);
+    const updatePayload = JSON.stringify({
+      ...message,
+      type: 'PRESENCE_UPDATE',
+      updatedAt: new Date().toISOString(),
+    });
 
     if (shopId) {
       // Broadcast to all active sockets belonging to the same shop
@@ -77,6 +82,7 @@ export class PresenceGateway {
           entry.socket.readyState === WebSocket.OPEN
         ) {
           entry.socket.send(payload);
+          entry.socket.send(updatePayload);
         }
       }
     } else {
@@ -88,6 +94,7 @@ export class PresenceGateway {
         entry.socket.readyState === WebSocket.OPEN
       ) {
         entry.socket.send(payload);
+        entry.socket.send(updatePayload);
       }
     }
   }

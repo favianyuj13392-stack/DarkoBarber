@@ -37,10 +37,21 @@ export const setStatusMessageSchema = z.object({
   status: z.enum(['GREEN', 'GRAY']),
 });
 
+export const pingMessageSchema = z.object({
+  type: z.literal('PING'),
+});
+
+export const updateStatusMessageSchema = z.object({
+  type: z.literal('UPDATE_STATUS'),
+  status: z.enum(['GREEN', 'GRAY', 'RED', 'YELLOW']),
+});
+
 export const clientPresenceMessageSchema = z.discriminatedUnion('type', [
   heartbeatMessageSchema,
+  pingMessageSchema,
   updateWaitingCountMessageSchema,
   setStatusMessageSchema,
+  updateStatusMessageSchema,
 ]);
 
 export type ClientPresenceMessage = z.infer<typeof clientPresenceMessageSchema>;
