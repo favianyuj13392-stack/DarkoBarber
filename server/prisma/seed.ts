@@ -65,8 +65,27 @@ export async function seed() {
     },
   });
 
+  // 4. Create or upsert Sample Client Carlos Mendoza
+  const client = await prisma.client.upsert({
+    where: { phone: '70123456' },
+    update: {},
+    create: {
+      phone: '70123456',
+      profiles: {
+        create: [
+          {
+            id: 'prof-carlos-456',
+            name: 'Carlos Mendoza',
+          },
+        ],
+      },
+    },
+    include: { profiles: true },
+  });
+
   console.log(`Seeded Barber: ${barber.displayName} (${barber.email} / ${barber.phone}) at ${shop.name} with Presence ${presence.status}`);
-  return { shop, barber, presence };
+  console.log(`Seeded Client: ${client.profiles[0].name} (${client.phone})`);
+  return { shop, barber, presence, client };
 }
 
 if (require.main === module) {
