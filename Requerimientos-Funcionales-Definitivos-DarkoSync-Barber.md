@@ -185,7 +185,7 @@ QR único por barbero. Al escanearlo se vincula cliente-barbero y se abre el his
 
 ## 7. Situaciones Excepcionales (Comportamiento Obligatorio)
 
-- **Sin conexión / sótanos (Offline-Light):** Registro local garantizado de chips + foto en cola simple (retención corta de 1-2 horas). La consulta de historiales remotos requiere red; si no hay señal y el cliente es nuevo o no está en la base local, se atiende y registra como corte nuevo sin trabar al barbero.
+- **Sin conexión / conectividad de campo:** Para el MVP se determinó estrategia **Online-First** con reintentos transparentes vía `clientRequestId`. El complejo motor Offline-Light (Dexie + Outbox en disco) queda en standby para fases posteriores, ya que la conectividad en las zonas piloto de La Paz es estable.
 - **Cliente se niega a foto:** Foto no es obligatoria. Se puede cerrar el corte solo con chips.
 - **Grupo (padre + hijo, amigos):** Múltiples perfiles de corte asociados al mismo número de teléfono, diferenciados por nombre (“Carlos” / “Carlos Jr.”).
 - **Manos con talco/gel/agua:** Todos los botones críticos deben funcionar con canto del dedo o toque grueso (touch targets ≥ 48×48 dp).

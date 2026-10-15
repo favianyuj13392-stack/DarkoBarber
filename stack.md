@@ -21,7 +21,7 @@
 | Storage de imágenes     | Cloudflare R2                       | Más barato del mercado, sin egress, ya lo tenemos            | Casi $0           |
 | ORM                     | Prisma                              | Productividad + type-safety + migraciones claras             | $0                |
 | Real-time (semáforo)    | WebSockets (Fastify p/ barberos) + HTTP/SSE (mapa público) | Control fino de sillones sin saturar sockets | Incluido |
-| Offline & Sync          | Service Worker + Dexie.js + Outbox ligero | Caídas breves de señal resueltas sin sobreingeniería   | $0                |
+| Offline & Sync          | Online-First + Reintentos simples con `clientRequestId` (Dexie/Outbox en standby post-MVP) | Simplicidad radical y estabilidad de red en La Paz | $0 |
 | Contenedores            | Docker + Docker Compose             | Reproducibilidad local y producción                          | $0                |
 | CI/CD                   | GitHub Actions                      | Simple y suficiente                                          | $0                |
 
@@ -33,14 +33,15 @@
 - **Vite** (bundler)
 - **React 18+** + **TypeScript**
 - **React Router**
-- **Zustand** (estado global transitorio y UI)
-- **Dexie.js** + `dexie-react-hooks` (`useLiveQuery` como fuente única de verdad reactiva para el barbero)
-- *TanStack Query:* reservado únicamente para el portal público de clientes si se requiere cachear endpoints HTTP de lectura
+- **Zustand** (estado global y UI optimista)
+- **TanStack Query / fetch nativo** (comunicación directa con API Fastify)
+- *Dexie.js / Outbox:* En standby (no implementado en MVP; reservado para fase post-MVP si se detecta necesidad de campo)
 
-### PWA & Offline-Light
-- `vite-plugin-pwa` (Workbox)
-- IndexedDB gobernado por Dexie.js para fichas locales y cola Outbox (retención corta de 1-2 horas)
-- Drenado de cola en eventos `online` y `visibilitychange` (compatible con Android y Safari iOS)
+### PWA & Resiliencia de Red
+- `vite-plugin-pwa` (Workbox) para instalación PWA y precaché de assets estáticos
+- **Online-First:** Conexión directa a API REST Fastify en puerto 4000
+- **Reintentos Idempotentes:** Envío de `X-Client-Request-Id` (UUID v4) en cada mutación de corte
+- **WebSocket en Vivo:** Conexión a `/ws/presence` para presencia y latidos cada 35 s
 - Modo oscuro OLED forzado (CSS variables + `prefers-color-scheme`)
 
 ### UI

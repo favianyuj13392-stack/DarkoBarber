@@ -87,7 +87,35 @@
 
 ---
 
-## 3. Capas de Datos (Local-First)
+## 2.1 Decisión: Offline-Light pospuesto / no implementado en MVP
+
+> **Fecha de la decisión:** 15 de octubre 2026  
+> **Estado:** APROBADO (Actualización de alcance MVP)  
+> **Estrategia activa:** Online-First con UI Optimista y Reintentos Simples.
+
+### Motivo
+Después de análisis de campo, se determina que la complejidad de Offline-Light / Local-First (Dexie.js + Outbox + sincronización completa) NO se justifica en el MVP de DarkoSync Barber / FADE:
+- En la gran mayoría de locales comerciales reales de La Paz (Sopocachi, Miraflores, San Miguel, Centro) la conectividad 4G y WiFi es estable y suficiente.
+- Los casos de “sótano sin señal” son extremadamente raros en salones comerciales de las zonas piloto.
+- El costo de sobreingeniería (código extra, tests con mocks de IndexedDB, colisiones de sincronización y riesgo de datos huérfanos) no se justifica por el beneficio real inmediato.
+
+### Qué se deja de lado (en Standby / No prioritario para MVP)
+- Persistencia local agresiva con Dexie.js como Single Source of Truth para la UI.
+- Cola Outbox FIFO persistida en disco con motor `syncEngine` y drenado en segundo plano.
+- Sincronización bidireccional compleja y persistencia de fotos en Blobs locales antes de subir.
+
+### Qué se mantiene como mínimo aceptable (Estándar MVP)
+- **Llamadas normales a la API REST (Fastify en puerto 4000):** Consumo directo vía HTTP `fetch` / TanStack Query.
+- **Idempotencia con `clientRequestId`:** Se mantiene intacta. Toda mutación sensible (`POST /cuts`, `PATCH /cuts/:id`) envía `X-Client-Request-Id` (UUID v4). El backend garantiza que los reintentos de red normales nunca dupliquen un corte.
+- **UI Optimista y Reintentos Simples:** Feedback visual inmediato al presionar botones (cambio de estado local en memoria reactiva) con 1 a 2 reintentos automáticos transparentes si una llamada HTTP falla por latencia transitoria.
+- **WebSocket en Vivo:** El barbero mantiene su conexión WebSocket a `/ws/presence` para presencia en tiempo real y latidos cada 35 s.
+
+---
+
+## 3. Capas de Datos (Local-First — Standby para Fase Post-MVP)
+
+> [!NOTE] STANDBY PARA FASE POST-MVP
+> Las especificaciones de Dexie.js y Outbox detalladas a continuación quedan documentadas como referencia de evolución futura, pero NO se implementan en el MVP. El frontend del MVP operará en modo Online-First con llamadas REST directas, UI optimista y reintentos simples con `clientRequestId`.
 
 ### 3.1 IndexedDB como fuente primaria (cliente)
 

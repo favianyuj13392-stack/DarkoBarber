@@ -58,11 +58,11 @@ The system MUST allow finalizing a cut, validating technical chips, and calculat
 
 ---
 
-### Requirement: Idempotent Sync for Offline Outbox
-The system MUST guarantee idempotency for cut mutations synced from the client outbox using `clientRequestId`.
+### Requirement: Idempotent Retries & Network Resilience
+The system MUST guarantee idempotency for cut mutations (including client-side retries) using `clientRequestId`.
 
-#### Scenario: Duplicate sync payload received
+#### Scenario: Duplicate mutation payload received on retry
 - **Given** a cut mutation with `clientRequestId: "550e8400-e29b-41d4-a716-446655440000"` already successfully processed
-- **When** the client resends the exact same payload with `clientRequestId: "550e8400-e29b-41d4-a716-446655440000"`
+- **When** the client resends the exact same payload with `clientRequestId: "550e8400-e29b-41d4-a716-446655440000"` due to network timeout or retry
 - **Then** the response status MUST be `200 OK`
 - **And** no duplicate cut record MUST be created in the database
