@@ -222,6 +222,30 @@ interface Presence {
 - Escuchar el evento de expiración de Redis y emitir el cambio a `green`.  
   Exactamente la idea elegante de la otra arquitectura, pero solo cuando el volumen lo justifique.
 
+### 5.4 Visualización del Mapa — Manejo de Densidad de Pines (FADE)
+
+Para evitar la superposición de pines en zonas de alta densidad de La Paz (Sopocachi, Miraflores, San Miguel y Centro con 12–20 barberos por radio de 50 m), la interfaz del mapa adopta una **estrategia híbrida de tres capas**:
+
+1. **Marker Clustering (Principal):**
+   - En zoom bajo/medio (ciudad y barrio), los pines cercanos se agrupan automáticamente en clusters circulares con el conteo de barberos.
+   - **Color inteligente del cluster:** Muestra el color más favorable del grupo (prioridad: `Verde` > `Amarillo` > `Rojo` > `Gris`).
+   - Al tocar el cluster: animación de zoom automático hasta el nivel de desagregación.
+2. **Spiderfy (Complemento para mismo local):**
+   - Los barberos que trabajan en el mismo salón (`Shop`) comparten coordenadas idénticas.
+   - Al tocar el pin o cluster residual en zoom de calle, se activa **Spiderfy**: los pines individuales se despliegan en abanico/espiral con líneas conectoras al punto físico.
+3. **Lista Inferior Sincronizada (Bottom Sheet móvil):**
+   - En móviles, el mapa se complementa permanentemente con una lista inferior tipo Bottom Sheet con las cards de los barberos visibles en el viewport actual.
+   - El mapa da orientación geoespacial; la lista garantiza selección rápida y sin fricción táctil.
+
+#### Reglas de Negocio del Mapa
+- **Unidad principal:** El **Barbero**. El pin representa al profesional, con su avatar y anillo/borde de color del semáforo en vivo.
+- **El Estudio:** Actúa como anclaje geográfico y agrupador lógico.
+- **Prioridad de implementación:**
+  1. Marker Clustering (obligatorio)
+  2. Bottom Sheet sincronizado con el viewport (obligatorio en móvil)
+  3. Spiderfy para barberos en la misma ubicación física (alta prioridad)
+  4. Color inteligente de clusters por disponibilidad (deseable)
+
 ---
 
 ## 6. Flujo de Fotos (R2 Presigned)
