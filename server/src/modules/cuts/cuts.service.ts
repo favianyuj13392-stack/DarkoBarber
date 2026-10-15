@@ -68,9 +68,15 @@ export class CutsService {
   }
 
   async finalizeCut(barberId: string, cutId: string, input: FinalizeCutInput) {
-    const cut = await this.prisma.cut.findUnique({
+    let cut = await this.prisma.cut.findUnique({
       where: { id: cutId },
     });
+
+    if (!cut) {
+      cut = await this.prisma.cut.findFirst({
+        where: { barberId, status: 'IN_PROGRESS' },
+      });
+    }
 
     if (!cut) {
       throw new NotFoundError('NOT_FOUND', 'Cut not found');

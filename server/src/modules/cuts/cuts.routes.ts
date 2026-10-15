@@ -10,7 +10,14 @@ export const cutsRoutes: FastifyPluginAsync = async (fastify) => {
     '/cuts',
     { preHandler: [fastify.authenticateBarber] },
     async (request, reply) => {
-      const parseResult = startCutSchema.safeParse(request.body);
+      const rawBody = (request.body as Record<string, unknown>) || {};
+      const headerReqId = request.headers['x-client-request-id'] as string | undefined;
+      const effectiveBody = {
+        ...rawBody,
+        clientRequestId: rawBody.clientRequestId || headerReqId || rawBody.cutId,
+      };
+
+      const parseResult = startCutSchema.safeParse(effectiveBody);
       if (!parseResult.success) {
         return reply.status(400).send({
           error: 'VALIDATION_ERROR',
@@ -39,6 +46,39 @@ export const cutsRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post(
     '/cuts/:id/finalize',
+    { preHandler: [fastify.authenticateBarber] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const parseResult = finalizeCutSchema.safeParse(request.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          error: 'VALIDATION_ERROR',
+          issues: parseResult.error.format(),
+        });
+      }
+
+      try {
+        const cut = await service.finalizeCut(
+          request.barber.id,
+          id,
+          parseResult.data
+        );
+        return reply.status(200).send({ cut });
+      } catch (err: any) {
+        if (err instanceof AppError) {
+          return reply.status(err.statusCode).send({
+            error: err.code,
+            message: err.message,
+          });
+        }
+        throw err;
+      }
+    }
+  );
+
+  // Alias PATCH /cuts/:id for frontend Outbox UPDATE_CUT compatibility
+  fastify.patch(
+    '/cuts/:id',
     { preHandler: [fastify.authenticateBarber] },
     async (request, reply) => {
       const { id } = request.params as { id: string };
