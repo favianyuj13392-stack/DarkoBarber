@@ -33,6 +33,15 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
   await app.register(cutsRoutes);
   await app.register(photosRoutes);
 
+  // Register API routes with /api prefix for full client compatibility
+  await app.register(async (api) => {
+    await api.register(authRoutes);
+    await api.register(clientsRoutes);
+    await api.register(cutsRoutes);
+    await api.register(photosRoutes);
+    await api.register(presenceRoutes);
+  }, { prefix: '/api' });
+
   app.addHook('onReady', async () => {
     if (app.presenceService) {
       startWatchdogs(app.presenceService);
