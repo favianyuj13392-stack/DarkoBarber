@@ -6,9 +6,5 @@ export async function cleanDatabase(prisma: PrismaClient) {
   await prisma.clientProfile.deleteMany({});
   await prisma.client.deleteMany({});
   await prisma.presence.deleteMany({});
-  await prisma.barber.deleteMany({
-    where: {
-      phone: { not: '77212345' },
-    },
-  });
+  await prisma.barber.deleteMany({});
 }

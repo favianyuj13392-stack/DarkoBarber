@@ -141,4 +141,125 @@ describe('Auth Module Integration Tests', () => {
     expect(meBody.plan).toBe('AUTONOMO');
     expect(meBody).toHaveProperty('activeCutId');
   });
+
+  it('should authenticate client with email and password and verify /auth/me', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: {
+        identifier: 'carlos@darkobarber.com',
+        secret: 'Secret123!',
+        type: 'password',
+        role: 'cliente',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.token).toBeDefined();
+    expect(body.user.role).toBe('cliente');
+    expect(body.user.email).toBe('carlos@darkobarber.com');
+    expect(body.user.displayName).toBe('Carlos Mendoza');
+
+    // Verify /auth/me for client
+    const meRes = await app.inject({
+      method: 'GET',
+      url: '/auth/me',
+      headers: { authorization: `Bearer ${body.token}` },
+    });
+
+    expect(meRes.statusCode).toBe(200);
+    const meBody = JSON.parse(meRes.body);
+    expect(meBody.role).toBe('cliente');
+    expect(meBody.email).toBe('carlos@darkobarber.com');
+    expect(meBody.displayName).toBe('Carlos Mendoza');
+  });
+
+  it('should register a new client and allow immediate login', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: {
+        email: 'valeria@darkobarber.com',
+        password: 'Password123!',
+        displayName: 'Valeria Rios',
+        role: 'cliente',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const body = JSON.parse(res.body);
+    expect(body.token).toBeDefined();
+    expect(body.user.role).toBe('cliente');
+    expect(body.user.email).toBe('valeria@darkobarber.com');
+    expect(body.user.displayName).toBe('Valeria Rios');
+
+    // Reject duplicate registration
+    const dupRes = await app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: {
+        email: 'valeria@darkobarber.com',
+        password: 'Password123!',
+        displayName: 'Valeria Rios',
+        role: 'cliente',
+      },
+    });
+    expect(dupRes.statusCode).toBe(409);
+    expect(JSON.parse(dupRes.body).error).toBe('EMAIL_ALREADY_EXISTS');
+  });
+
+  it('should register a new barber with automated presence record initialization', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: {
+        email: 'rodrigo@darkobarber.com',
+        password: 'Password123!',
+        displayName: 'Rodrigo Barbero',
+        role: 'barbero',
+        deviceId: 'device-rodrigo-1',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const body = JSON.parse(res.body);
+    expect(body.token).toBeDefined();
+    expect(body.user.role).toBe('barbero');
+    expect(body.user.plan).toBe('AUTONOMO');
+
+    // Confirm presence was created in DB
+    const presenceInDb = await app.prisma.presence.findUnique({
+      where: { barberId: body.user.id },
+    });
+    expect(presenceInDb).toBeDefined();
+    expect(presenceInDb?.status).toBe('GRAY');
+  });
+
+  it('should authenticate or register user via Google OAuth endpoint', async () => {
+    // Generate valid base64 payload for Google ID token mock
+    const googlePayload = {
+      sub: 'google-sub-987654321',
+      email: 'sofia.google@gmail.com',
+      name: 'Sofia Google',
+      picture: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2',
+    };
+    const mockToken = `header.${Buffer.from(JSON.stringify(googlePayload)).toString('base64')}.signature`;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/google',
+      payload: {
+        idToken: mockToken,
+        role: 'cliente',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.token).toBeDefined();
+    expect(body.user.email).toBe('sofia.google@gmail.com');
+    expect(body.user.displayName).toBe('Sofia Google');
+    expect(body.user.role).toBe('cliente');
+  });
 });

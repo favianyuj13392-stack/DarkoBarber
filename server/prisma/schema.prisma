@@ -41,10 +41,11 @@ model Shop {
 model Barber {
   id            String    @id @default(uuid())
   email         String?   @unique
-  phone         String    @unique
+  phone         String?   @unique
   displayName   String
-  pinHash       String
+  pinHash       String?
   passwordHash  String?
+  googleId      String?   @unique
   avatarUrl     String?
   bio           String?
   linkedin      String?
@@ -59,6 +60,7 @@ model Barber {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
+  @@index([email])
   @@index([phone])
 }
 
@@ -76,12 +78,18 @@ model Presence {
 }
 
 model Client {
-  id          String          @id @default(uuid())
-  phone       String          @unique
-  profiles    ClientProfile[]
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id           String          @id @default(uuid())
+  email        String?         @unique
+  passwordHash String?
+  googleId     String?         @unique
+  displayName  String?
+  avatarUrl    String?
+  phone        String?         @unique
+  profiles     ClientProfile[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
 
+  @@index([email])
   @@index([phone])
 }
 

@@ -236,9 +236,16 @@ export async function seed() {
   // 4. Seed Sample Client Carlos Mendoza
   const client = await prisma.client.upsert({
     where: { phone: '70123456' },
-    update: {},
+    update: {
+      email: 'carlos@darkobarber.com',
+      displayName: 'Carlos Mendoza',
+      passwordHash,
+    },
     create: {
       phone: '70123456',
+      email: 'carlos@darkobarber.com',
+      displayName: 'Carlos Mendoza',
+      passwordHash,
       profiles: {
         create: [
           {
