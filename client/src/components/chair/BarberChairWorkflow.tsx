@@ -215,6 +215,10 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
         onClose={() => setIsConfigModalOpen(false)}
         onCutFinalized={handleCutFinalized}
         onCapturePhoto={handleCapturePhoto}
+        barberName={barberName}
+        barberId={barberId}
+        clientPhone={activeClientPhone || '+591 712 34567'}
+        clientName="Santiago López"
       />
 
       {/* Modal de Consentimiento de Privacidad de Foto */}

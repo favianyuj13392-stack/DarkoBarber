@@ -23,6 +23,28 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
 
   const pendingChairBindings = new Map<string, ChairBindingPayload>();
 
+  interface ConsentRequestPayload {
+    barberId: string;
+    barberName: string;
+    clientPhone: string;
+    photoUrl: string;
+    photos?: Array<{ id: string; url: string; angle: string }>;
+    styleName: string;
+    chips?: Record<string, unknown>;
+    notes?: string;
+    timestamp: number;
+  }
+
+  interface ConsentResponsePayload {
+    barberId: string;
+    clientPhone: string;
+    isPublic: boolean;
+    timestamp: number;
+  }
+
+  const pendingConsentRequests = new Map<string, ConsentRequestPayload>();
+  const pendingConsentResponses = new Map<string, ConsentResponsePayload>();
+
   // Expose service on root fastify instance for watchdog and cut hooks
   fastify.decorate('presenceService', service);
 
@@ -283,7 +305,74 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
     });
   });
 
-  // 6. Update Barber Presence: PUT /presence/:barberId
+  // 6. Barber sends Photo Consent Request to Client: POST /presence/chair/consent-request
+  fastify.post('/presence/chair/consent-request', async (request, reply) => {
+    const body = request.body as ConsentRequestPayload;
+    if (!body || !body.clientPhone) {
+      return reply.status(400).send({ error: 'INVALID_PAYLOAD', message: 'clientPhone is required' });
+    }
+    const cleanPhone = body.clientPhone.replace(/\D/g, '');
+    const payload: ConsentRequestPayload = {
+      ...body,
+      timestamp: Date.now(),
+    };
+    pendingConsentRequests.set(cleanPhone, payload);
+
+    return reply.status(200).send({ success: true, message: 'Consent request stored' });
+  });
+
+  // 7. Client polls for Photo Consent Request: GET /presence/chair/consent-request
+  fastify.get('/presence/chair/consent-request', async (request, reply) => {
+    const query = (request.query as { phone?: string }) || {};
+    const cleanPhone = (query.phone || '').replace(/\D/g, '');
+    const req = pendingConsentRequests.get(cleanPhone);
+    if (req && Date.now() - req.timestamp < 120000) {
+      pendingConsentRequests.delete(cleanPhone);
+      return reply.status(200).send({ hasPending: true, request: req });
+    }
+    return reply.status(200).send({ hasPending: false, request: null });
+  });
+
+  // 8. Client sends Photo Consent Response: POST /presence/chair/consent-response
+  fastify.post('/presence/chair/consent-response', async (request, reply) => {
+    const body = request.body as ConsentResponsePayload;
+    if (!body || !body.barberId) {
+      return reply.status(400).send({ error: 'INVALID_PAYLOAD', message: 'barberId is required' });
+    }
+    const payload: ConsentResponsePayload = {
+      ...body,
+      timestamp: Date.now(),
+    };
+    pendingConsentResponses.set(body.barberId.toLowerCase(), payload);
+
+    // Notify active Barber WebSocket
+    for (const entry of presenceGateway.getAllSockets()) {
+      if (entry.barberId.toLowerCase() === body.barberId.toLowerCase() && entry.socket.readyState === WebSocket.OPEN) {
+        entry.socket.send(JSON.stringify({
+          type: 'PHOTO_CONSENT_RESPONSE',
+          isPublic: body.isPublic,
+          clientPhone: body.clientPhone,
+          timestamp: payload.timestamp,
+        }));
+      }
+    }
+
+    return reply.status(200).send({ success: true, message: 'Consent response recorded' });
+  });
+
+  // 9. Barber polls for Photo Consent Response: GET /presence/chair/consent-response
+  fastify.get('/presence/chair/consent-response', async (request, reply) => {
+    const query = (request.query as { barberId?: string }) || {};
+    const barberId = (query.barberId || '').toLowerCase();
+    const resp = pendingConsentResponses.get(barberId);
+    if (resp && Date.now() - resp.timestamp < 120000) {
+      pendingConsentResponses.delete(barberId);
+      return reply.status(200).send({ hasResponse: true, response: resp });
+    }
+    return reply.status(200).send({ hasResponse: false, response: null });
+  });
+
+  // 10. Update Barber Presence: PUT /presence/:barberId
   fastify.put(
     '/presence/:barberId',
     { preHandler: [fastify.authenticateBarber] },

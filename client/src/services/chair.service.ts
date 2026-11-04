@@ -2,6 +2,8 @@ import type { IncomingClientHandshake } from './presence.service';
 
 export const CHAIR_SYNC_CHANNEL_NAME = 'fade_chair_sync';
 export const CHAIR_PENDING_STORAGE_KEY = 'fade_pending_chair_handshake';
+export const PHOTO_CONSENT_REQUEST_STORAGE_KEY = 'fade_photo_consent_request';
+export const PHOTO_CONSENT_RESPONSE_STORAGE_KEY = 'fade_photo_consent_response';
 
 export interface ChairHandshakePayload {
   barberId: string;
@@ -10,12 +12,27 @@ export interface ChairHandshakePayload {
   timestamp: number;
 }
 
+export interface PhotoConsentRequestPayload {
+  barberId: string;
+  barberName: string;
+  clientPhone: string;
+  photoUrl: string;
+  photos?: Array<{ id: string; url: string; angle: string }>;
+  styleName: string;
+  chips?: Record<string, unknown>;
+  notes?: string;
+  timestamp: number;
+}
+
+export interface PhotoConsentResponsePayload {
+  barberId: string;
+  clientPhone: string;
+  isPublic: boolean;
+  timestamp: number;
+}
+
 /**
  * Emite la solicitud de vinculación del cliente al sillón del barbero.
- * Utiliza 3 vías simultáneas para garantizar 100% de confiabilidad:
- * 1. BroadcastChannel (0ms entre pestañas/ventanas del mismo navegador).
- * 2. LocalStorage Event (soporte cross-tab).
- * 3. Backend REST API (/api/presence/chair/bind) con WebSocket push (para dispositivos cruzados, ej. celular a PC).
  */
 export async function sendChairHandshake(
   barberId: string,
@@ -65,7 +82,7 @@ export async function sendChairHandshake(
         });
         if (res.ok) break;
       } catch {
-        // try fallback endpoint
+        // try fallback
       }
     }
   } catch (err) {
@@ -106,6 +123,177 @@ export async function pollPendingChairSession(
     }
   } catch (err) {
     console.warn('Poll chair session error:', err);
+  }
+  return null;
+}
+
+/**
+ * El barbero envía la solicitud de publicación al celular del cliente.
+ */
+export async function requestPhotoConsent(
+  payload: Omit<PhotoConsentRequestPayload, 'timestamp'>
+): Promise<void> {
+  const fullPayload: PhotoConsentRequestPayload = {
+    ...payload,
+    timestamp: Date.now(),
+  };
+
+  // 1. BroadcastChannel
+  if (typeof BroadcastChannel !== 'undefined') {
+    try {
+      const bc = new BroadcastChannel(CHAIR_SYNC_CHANNEL_NAME);
+      bc.postMessage({
+        type: 'PHOTO_CONSENT_REQUEST',
+        ...fullPayload,
+      });
+      bc.close();
+    } catch (err) {
+      console.warn('BroadcastChannel error:', err);
+    }
+  }
+
+  // 2. LocalStorage
+  try {
+    localStorage.setItem(PHOTO_CONSENT_REQUEST_STORAGE_KEY, JSON.stringify(fullPayload));
+  } catch (err) {
+    console.warn('LocalStorage error:', err);
+  }
+
+  // 3. Backend REST API
+  try {
+    const endpoints = ['/api/presence/chair/consent-request', '/presence/chair/consent-request'];
+    for (const url of endpoints) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(fullPayload),
+        });
+        if (res.ok) break;
+      } catch {
+        // fallback
+      }
+    }
+  } catch (err) {
+    console.warn('Request photo consent error:', err);
+  }
+}
+
+/**
+ * El cliente consulta si su barbero le mandó solicitud de publicación de fotos.
+ */
+export async function pollPhotoConsentRequest(
+  clientPhone: string
+): Promise<PhotoConsentRequestPayload | null> {
+  try {
+    const cleanPhone = clientPhone.replace(/\D/g, '');
+    const endpoints = [
+      `/api/presence/chair/consent-request?phone=${encodeURIComponent(cleanPhone)}`,
+      `/presence/chair/consent-request?phone=${encodeURIComponent(cleanPhone)}`,
+    ];
+
+    for (const url of endpoints) {
+      try {
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.hasPending && data.request) {
+            return data.request as PhotoConsentRequestPayload;
+          }
+        }
+      } catch {
+        // fallback
+      }
+    }
+  } catch (err) {
+    console.warn('Poll photo consent request error:', err);
+  }
+  return null;
+}
+
+/**
+ * El cliente responde si autoriza publicación pública o solo privado.
+ */
+export async function respondPhotoConsent(
+  barberId: string,
+  clientPhone: string,
+  isPublic: boolean
+): Promise<void> {
+  const payload: PhotoConsentResponsePayload = {
+    barberId,
+    clientPhone,
+    isPublic,
+    timestamp: Date.now(),
+  };
+
+  // 1. BroadcastChannel
+  if (typeof BroadcastChannel !== 'undefined') {
+    try {
+      const bc = new BroadcastChannel(CHAIR_SYNC_CHANNEL_NAME);
+      bc.postMessage({
+        type: 'PHOTO_CONSENT_RESPONSE',
+        ...payload,
+      });
+      bc.close();
+    } catch (err) {
+      console.warn('BroadcastChannel error:', err);
+    }
+  }
+
+  // 2. LocalStorage
+  try {
+    localStorage.setItem(PHOTO_CONSENT_RESPONSE_STORAGE_KEY, JSON.stringify(payload));
+  } catch (err) {
+    console.warn('LocalStorage error:', err);
+  }
+
+  // 3. Backend REST API
+  try {
+    const endpoints = ['/api/presence/chair/consent-response', '/presence/chair/consent-response'];
+    for (const url of endpoints) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) break;
+      } catch {
+        // fallback
+      }
+    }
+  } catch (err) {
+    console.warn('Respond photo consent error:', err);
+  }
+}
+
+/**
+ * El barbero consulta si el cliente ya respondió a la solicitud de consentimiento.
+ */
+export async function pollPhotoConsentResponse(
+  barberId: string
+): Promise<PhotoConsentResponsePayload | null> {
+  try {
+    const endpoints = [
+      `/api/presence/chair/consent-response?barberId=${encodeURIComponent(barberId)}`,
+      `/presence/chair/consent-response?barberId=${encodeURIComponent(barberId)}`,
+    ];
+
+    for (const url of endpoints) {
+      try {
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.hasResponse && data.response) {
+            return data.response as PhotoConsentResponsePayload;
+          }
+        }
+      } catch {
+        // fallback
+      }
+    }
+  } catch (err) {
+    console.warn('Poll photo consent response error:', err);
   }
   return null;
 }

@@ -21,7 +21,15 @@ import { ClientNotesModal } from './ClientNotesModal';
 import { CutReminderModal } from './CutReminderModal';
 import { QrScannerModal, type ScannedBarberInfo } from '../chair/QrScannerModal';
 import { ShareHistoryModal } from '../chair/ShareHistoryModal';
-import { sendChairHandshake } from '../../services/chair.service';
+import { ClientPhotoConsentModal } from '../chair/ClientPhotoConsentModal';
+import {
+  sendChairHandshake,
+  respondPhotoConsent,
+  pollPhotoConsentRequest,
+  CHAIR_SYNC_CHANNEL_NAME,
+  PHOTO_CONSENT_REQUEST_STORAGE_KEY,
+  type PhotoConsentRequestPayload,
+} from '../../services/chair.service';
 import { MOCK_HAIRCUTS, INITIAL_PREFERENCES } from '../../data/mockHistory';
 import type { HaircutItem, ClientPreferences } from '../../types/history';
 import { SPRING_TOUCH } from '../../constants/springs';
@@ -55,6 +63,8 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
   const [scannedBarber, setScannedBarber] = useState<ScannedBarberInfo | null>(initialScannedBarber || null);
   const [isShareHistoryOpen, setIsShareHistoryOpen] = useState(Boolean(initialScannedBarber));
   const [shareSuccessToast, setShareSuccessToast] = useState(false);
+  const [incomingConsentReq, setIncomingConsentReq] = useState<PhotoConsentRequestPayload | null>(null);
+  const [consentToastMsg, setConsentToastMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (initialScannedBarber) {
@@ -65,6 +75,64 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
 
   const currentUser = getStoredUser();
   const userName = currentUser?.displayName || 'Ernesto Salinas';
+
+  useEffect(() => {
+    // 1. Escuchar solicitudes de consentimiento vía BroadcastChannel
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel(CHAIR_SYNC_CHANNEL_NAME);
+      bc.onmessage = (event) => {
+        if (event.data?.type === 'PHOTO_CONSENT_REQUEST') {
+          setIncomingConsentReq(event.data);
+        }
+      };
+      return () => bc.close();
+    }
+  }, []);
+
+  useEffect(() => {
+    // 2. Escuchar solicitudes vía Storage Event (Cross-window)
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === PHOTO_CONSENT_REQUEST_STORAGE_KEY && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          setIncomingConsentReq(parsed);
+        } catch {
+          // ignore
+        }
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  useEffect(() => {
+    // 3. Polling cada 3s al backend por si el barbero mandó desde otro dispositivo
+    const phone = currentUser?.phone || '+591 712 34567';
+    const interval = setInterval(async () => {
+      const req = await pollPhotoConsentRequest(phone);
+      if (req) {
+        setIncomingConsentReq(req);
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
+  const handleClientConsent = async (isPublic: boolean) => {
+    if (incomingConsentReq) {
+      await respondPhotoConsent(
+        incomingConsentReq.barberId,
+        incomingConsentReq.clientPhone,
+        isPublic
+      );
+      setConsentToastMsg(
+        isPublic
+          ? '¡Corte autorizado con éxito para el portafolio público de tu barbero!'
+          : 'Corte guardado con éxito en tu historial privado.'
+      );
+      setTimeout(() => setConsentToastMsg(null), 4000);
+      setIncomingConsentReq(null);
+    }
+  };
 
   // Filtering cuts
   const filteredCuts = MOCK_HAIRCUTS.filter((cut) => {
@@ -552,6 +620,27 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
           >
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span>Historial compartido con éxito. El barbero ya tiene tu ficha técnica en sillón.</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Solicitud de Consentimiento de Fotos de Portafolio del Barbero */}
+      <ClientPhotoConsentModal
+        request={incomingConsentReq}
+        onConsent={handleClientConsent}
+      />
+
+      {/* Toast de Consentimiento Registrado */}
+      <AnimatePresence>
+        {consentToastMsg && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl bg-amber-950/90 border border-amber-500/40 text-amber-200 text-xs font-semibold backdrop-blur-xl shadow-2xl flex items-center gap-2 max-w-sm text-center"
+          >
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+            <span>{consentToastMsg}</span>
           </motion.div>
         )}
       </AnimatePresence>
