@@ -21,6 +21,7 @@ import { ClientNotesModal } from './ClientNotesModal';
 import { CutReminderModal } from './CutReminderModal';
 import { QrScannerModal, type ScannedBarberInfo } from '../chair/QrScannerModal';
 import { ShareHistoryModal } from '../chair/ShareHistoryModal';
+import { sendChairHandshake } from '../../services/chair.service';
 import { MOCK_HAIRCUTS, INITIAL_PREFERENCES } from '../../data/mockHistory';
 import type { HaircutItem, ClientPreferences } from '../../types/history';
 import { SPRING_TOUCH } from '../../constants/springs';
@@ -522,6 +523,17 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
           setActiveNavTab('historial');
         }}
         onConfirmShare={() => {
+          if (scannedBarber) {
+            sendChairHandshake(
+              scannedBarber.barberId,
+              scannedBarber.barberName,
+              {
+                displayName: userName,
+                phone: currentUser?.phone || '+591 712 34567',
+                avatarUrl: '/assets/images/1.png',
+              }
+            );
+          }
           setIsShareHistoryOpen(false);
           setShareSuccessToast(true);
           setTimeout(() => setShareSuccessToast(false), 3500);

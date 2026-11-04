@@ -9,6 +9,20 @@ import { BarberAuthPayload } from '../../types';
 const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
   const service = new PresenceService(fastify.prisma);
 
+  interface ChairBindingPayload {
+    barberId: string;
+    barberName?: string;
+    client: {
+      displayName: string;
+      phone: string;
+      avatarUrl?: string;
+      notes?: string;
+    };
+    timestamp: number;
+  }
+
+  const pendingChairBindings = new Map<string, ChairBindingPayload>();
+
   // Expose service on root fastify instance for watchdog and cut hooks
   fastify.decorate('presenceService', service);
 
@@ -181,7 +195,95 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
     }
   );
 
-  // 4. Update Barber Presence: PUT /presence/:barberId
+  // 4. Client-to-Barber Chair Handshake: POST /presence/chair/bind
+  fastify.post('/presence/chair/bind', async (request, reply) => {
+    const body = request.body as {
+      barberId: string;
+      barberName?: string;
+      client: {
+        displayName: string;
+        phone: string;
+        avatarUrl?: string;
+        notes?: string;
+      };
+    };
+
+    if (!body || !body.barberId || !body.client) {
+      return reply.status(400).send({
+        error: 'INVALID_PAYLOAD',
+        message: 'barberId and client data are required',
+      });
+    }
+
+    const payload: ChairBindingPayload = {
+      barberId: body.barberId,
+      barberName: body.barberName,
+      client: body.client,
+      timestamp: Date.now(),
+    };
+
+    // Store under various lookup keys for fuzzy matching
+    pendingChairBindings.set(body.barberId.toLowerCase(), payload);
+    if (body.barberName) {
+      const normalizedName = body.barberName.toLowerCase().replace(/[^a-z0-9]/g, '');
+      pendingChairBindings.set(normalizedName, payload);
+    }
+
+    // Attempt to notify active WebSocket connection directly
+    const allSockets = presenceGateway.getAllSockets();
+    for (const entry of allSockets) {
+      const matchId = entry.barberId.toLowerCase() === body.barberId.toLowerCase();
+      if (matchId && entry.socket.readyState === WebSocket.OPEN) {
+        entry.socket.send(
+          JSON.stringify({
+            type: 'CLIENT_CHAIR_HANDSHAKE',
+            client: body.client,
+            barberId: body.barberId,
+            timestamp: payload.timestamp,
+          })
+        );
+      }
+    }
+
+    return reply.status(200).send({
+      success: true,
+      message: 'Chair handshake recorded and broadcasted',
+      client: body.client,
+    });
+  });
+
+  // 5. Barber Polling for Pending Chair Handshake: GET /presence/chair/session
+  fastify.get('/presence/chair/session', async (request, reply) => {
+    const query = (request.query as { barberId?: string; name?: string }) || {};
+    const barberId = query.barberId?.toLowerCase() || '';
+    const normalizedName = query.name?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
+
+    let binding = pendingChairBindings.get(barberId);
+    if (!binding && normalizedName) {
+      binding = pendingChairBindings.get(normalizedName);
+    }
+
+    // Expire bindings older than 90 seconds
+    const now = Date.now();
+    if (binding && now - binding.timestamp < 90000) {
+      // Clear after read so it only pops up once
+      if (barberId) pendingChairBindings.delete(barberId);
+      if (normalizedName) pendingChairBindings.delete(normalizedName);
+
+      return reply.status(200).send({
+        hasPending: true,
+        client: binding.client,
+        timestamp: binding.timestamp,
+      });
+    }
+
+    return reply.status(200).send({
+      hasPending: false,
+      client: null,
+    });
+  });
+
+  // 6. Update Barber Presence: PUT /presence/:barberId
   fastify.put(
     '/presence/:barberId',
     { preHandler: [fastify.authenticateBarber] },

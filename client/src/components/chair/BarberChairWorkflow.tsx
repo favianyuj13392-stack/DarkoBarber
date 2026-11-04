@@ -6,7 +6,17 @@ import { RepeatCutConfigModal } from './RepeatCutConfigModal';
 import { PhotoConsentModal } from './PhotoConsentModal';
 import { LoungeWaitingModal } from './LoungeWaitingModal';
 import { BarberQrModal } from './BarberQrModal';
-import { presenceService, type BarberPresenceStatus } from '../../services/presence.service';
+import { IncomingClientChairModal } from './IncomingClientChairModal';
+import {
+  presenceService,
+  type BarberPresenceStatus,
+  type IncomingClientHandshake,
+} from '../../services/presence.service';
+import {
+  CHAIR_SYNC_CHANNEL_NAME,
+  CHAIR_PENDING_STORAGE_KEY,
+  pollPendingChairSession,
+} from '../../services/chair.service';
 import type { ClientHistoryResponse } from '../../services/cuts.service';
 import { getStoredUser } from '../../services/auth.service';
 
@@ -16,6 +26,7 @@ interface BarberChairWorkflowProps {
 
 export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) => {
   const [activeClientPhone, setActiveClientPhone] = useState<string | null>(null);
+  const [incomingClient, setIncomingClient] = useState<IncomingClientHandshake | null>(null);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [isPhotoConsentOpen, setIsPhotoConsentOpen] = useState(false);
   const [isLoungeWaitingOpen, setIsLoungeWaitingOpen] = useState(false);
@@ -28,12 +39,73 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
   const barberId = currentUser?.id || 'barber-diego';
   const shopName = 'Fade Studio — Sopocachi';
 
-  // Suscribirse a cambios de presencia
+  // 1. Suscribirse a cambios de presencia y conectar WebSocket
   useEffect(() => {
-    return presenceService.subscribe((status) => {
+    presenceService.connect();
+
+    const unsubPresence = presenceService.subscribe((status) => {
       setPresenceStatus(status);
     });
+
+    // Escuchar solicitudes de clientes entrantes vía WebSocket
+    const unsubHandshake = presenceService.onClientHandshake((client) => {
+      setIncomingClient(client);
+    });
+
+    return () => {
+      unsubPresence();
+      unsubHandshake();
+    };
   }, []);
+
+  // 2. Escuchar solicitudes vía BroadcastChannel (Cross-tab instantáneo en el mismo navegador)
+  useEffect(() => {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel(CHAIR_SYNC_CHANNEL_NAME);
+      bc.onmessage = (event) => {
+        if (event.data?.client) {
+          setIncomingClient(event.data.client);
+        }
+      };
+      return () => {
+        bc.close();
+      };
+    }
+  }, []);
+
+  // 3. Escuchar solicitudes vía localStorage (Cross-window)
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === CHAIR_PENDING_STORAGE_KEY && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed?.client) {
+            setIncomingClient(parsed.client);
+          }
+        } catch {
+          // ignore
+        }
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+  // 4. Polling periódico al servidor para clientes que escaneen desde otro dispositivo
+  useEffect(() => {
+    if (activeClientPhone) return;
+
+    const interval = setInterval(async () => {
+      const client = await pollPendingChairSession(barberId, barberName);
+      if (client) {
+        setIncomingClient(client);
+      }
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [activeClientPhone, barberId, barberName]);
 
   const handleConnectClient = (phone: string) => {
     setActiveClientPhone(phone);
@@ -43,6 +115,11 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
   const handleDisconnectClient = () => {
     setActiveClientPhone(null);
     presenceService.setStatus('GREEN');
+  };
+
+  const handleAcceptIncomingClient = (client: IncomingClientHandshake) => {
+    setIncomingClient(null);
+    handleConnectClient(client.phone);
   };
 
   const handleRepeatCut = (cut: ClientHistoryResponse['cuts'][0]) => {
@@ -124,6 +201,13 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
           />
         </>
       )}
+
+      {/* Modal Notificación: ¡Nuevo Cliente en Sillón! (Pop-up con Audio/Haptic) */}
+      <IncomingClientChairModal
+        client={incomingClient}
+        onAccept={handleAcceptIncomingClient}
+        onDismiss={() => setIncomingClient(null)}
+      />
 
       {/* Modal de Configuración de Chips y Fotos del Corte */}
       <RepeatCutConfigModal

@@ -2,6 +2,13 @@ import { getStoredToken } from './auth.service';
 
 export type BarberPresenceStatus = 'GREEN' | 'YELLOW' | 'RED' | 'OFFLINE';
 
+export interface IncomingClientHandshake {
+  displayName: string;
+  phone: string;
+  avatarUrl?: string;
+  notes?: string;
+}
+
 export interface PresenceMessage {
   type: 'UPDATE_WAITING_COUNT' | 'SET_STATUS' | 'HEARTBEAT' | 'PING';
   waitingCount?: number;
@@ -15,6 +22,7 @@ class PresenceClient {
   private currentStatus: BarberPresenceStatus = 'GREEN';
   private waitingCount: number = 0;
   private listeners: Set<(status: BarberPresenceStatus, waitingCount: number) => void> = new Set();
+  private handshakeListeners: Set<(client: IncomingClientHandshake) => void> = new Set();
 
   connect(): void {
     const token = getStoredToken();
@@ -42,6 +50,8 @@ class PresenceClient {
             if (data.status) this.currentStatus = data.status;
             if (typeof data.waitingCount === 'number') this.waitingCount = data.waitingCount;
             this.notify();
+          } else if (data.type === 'CLIENT_CHAIR_HANDSHAKE' && data.client) {
+            this.notifyHandshake(data.client);
           }
         } catch {
           // ignore non-json
@@ -126,6 +136,17 @@ class PresenceClient {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  onClientHandshake(listener: (client: IncomingClientHandshake) => void): () => void {
+    this.handshakeListeners.add(listener);
+    return () => {
+      this.handshakeListeners.delete(listener);
+    };
+  }
+
+  notifyHandshake(client: IncomingClientHandshake): void {
+    this.handshakeListeners.forEach((l) => l(client));
   }
 
   private notify(): void {
