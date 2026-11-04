@@ -30,7 +30,9 @@ services:
       - "traefik.http.routers.fade-frontend.entrypoints=websecure"
       - "traefik.http.routers.fade-frontend.tls=true"
       - "traefik.http.routers.fade-frontend.middlewares=security-headers@file,compress@file"
+      - "traefik.http.routers.fade-frontend.service=fade-frontend"
       - "traefik.http.services.fade-frontend.loadbalancer.server.port=8080"
+      - "traefik.http.services.frontend.loadbalancer.server.port=8080"
 
   # -------------------------------------------------------------
   # BACKEND API (Node.js / Fastify Core Engine)
