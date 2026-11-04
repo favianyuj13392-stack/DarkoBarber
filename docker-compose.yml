@@ -29,7 +29,6 @@ services:
       - "traefik.http.routers.fade-frontend.priority=2000"
       - "traefik.http.routers.fade-frontend.entrypoints=websecure"
       - "traefik.http.routers.fade-frontend.tls=true"
-      - "traefik.http.routers.fade-frontend.tls.certresolver=letsencrypt"
       - "traefik.http.routers.fade-frontend.middlewares=security-headers@file,compress@file"
       - "traefik.http.services.fade-frontend.loadbalancer.server.port=8080"
 
@@ -56,14 +55,6 @@ services:
         limits:
           cpus: '1.0'
           memory: 768m
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=proxy"
-      - "traefik.http.routers.fade-api.rule=Host(`api.fade.darkosync.com`)"
-      - "traefik.http.routers.fade-api.entrypoints=websecure"
-      - "traefik.http.routers.fade-api.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.fade-api.middlewares=security-headers@file,compress@file"
-      - "traefik.http.services.fade-api.loadbalancer.server.port=4000"
 
 networks:
   proxy:
