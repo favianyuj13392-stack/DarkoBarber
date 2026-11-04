@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import type { FC } from 'react';
+import { QrCode } from 'lucide-react';
 import { BarberClientHistoryView } from './BarberClientHistoryView';
 import { RepeatCutConfigModal } from './RepeatCutConfigModal';
 import { PhotoConsentModal } from './PhotoConsentModal';
 import { LoungeWaitingModal } from './LoungeWaitingModal';
+import { BarberQrModal } from './BarberQrModal';
 import { presenceService, type BarberPresenceStatus } from '../../services/presence.service';
 import type { ClientHistoryResponse } from '../../services/cuts.service';
+import { getStoredUser } from '../../services/auth.service';
 
 interface BarberChairWorkflowProps {
   onExit?: () => void;
@@ -15,8 +18,14 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [isPhotoConsentOpen, setIsPhotoConsentOpen] = useState(false);
   const [isLoungeWaitingOpen, setIsLoungeWaitingOpen] = useState(false);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [selectedCut, setSelectedCut] = useState<ClientHistoryResponse['cuts'][0] | null>(null);
   const [presenceStatus, setPresenceStatus] = useState<BarberPresenceStatus>('GREEN');
+
+  const currentUser = getStoredUser();
+  const barberName = currentUser?.displayName || 'Diego Armando';
+  const barberId = currentUser?.id || 'barber-diego';
+  const shopName = 'Fade Studio — Sopocachi';
 
   // Suscribirse a cambios de presencia
   useState(() => {
@@ -52,6 +61,19 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
 
   return (
     <div className="relative min-h-screen w-full bg-black">
+      {/* Botón Flotante para QR del Espejo */}
+      <div className="fixed top-4 left-4 z-40 flex items-center gap-2 select-none">
+        <button
+          type="button"
+          onClick={() => setIsQrModalOpen(true)}
+          className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/80 hover:bg-black border border-[#B68F4E]/50 hover:border-[#B68F4E] backdrop-blur-md shadow-[0_4px_12px_rgba(182,143,78,0.25)] text-[#F5EBDD] text-xs font-semibold cursor-pointer transition-all hover:scale-105 active:scale-95"
+          aria-label="Abrir código QR del espejo"
+        >
+          <QrCode className="w-3.5 h-3.5 text-[#B68F4E]" />
+          <span>Mi QR del Espejo</span>
+        </button>
+      </div>
+
       {/* Barra de Estado de Presencia Flotante */}
       <div className="fixed top-4 right-4 z-40 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/80 border border-white/10 backdrop-blur-md shadow-lg select-none">
         <span
@@ -99,6 +121,15 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
       <LoungeWaitingModal
         isOpen={isLoungeWaitingOpen}
         onComplete={handleLoungeComplete}
+      />
+
+      {/* Modal del Código QR del Espejo (Descargar & Compartir) */}
+      <BarberQrModal
+        isOpen={isQrModalOpen}
+        onClose={() => setIsQrModalOpen(false)}
+        barberId={barberId}
+        barberName={barberName}
+        shopName={shopName}
       />
     </div>
   );

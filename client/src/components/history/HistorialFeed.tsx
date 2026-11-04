@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { FC } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -30,6 +30,7 @@ import { ExploreCoordinator } from '../explore/ExploreCoordinator';
 interface HistorialFeedProps {
   onNavigateTab?: (tab: ClientNavTab) => void;
   onLogout?: () => void;
+  initialScannedBarber?: ScannedBarberInfo | null;
 }
 
 type CategoryFilter = 'todos' | 'cortes' | 'barba' | 'favoritos';
@@ -37,6 +38,7 @@ type CategoryFilter = 'todos' | 'cortes' | 'barba' | 'favoritos';
 export const HistorialFeed: FC<HistorialFeedProps> = ({
   onNavigateTab,
   onLogout,
+  initialScannedBarber,
 }) => {
   const [activeNavTab, setActiveNavTab] = useState<ClientNavTab>('historial');
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('todos');
@@ -49,9 +51,16 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
   const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
-  const [scannedBarber, setScannedBarber] = useState<ScannedBarberInfo | null>(null);
-  const [isShareHistoryOpen, setIsShareHistoryOpen] = useState(false);
+  const [scannedBarber, setScannedBarber] = useState<ScannedBarberInfo | null>(initialScannedBarber || null);
+  const [isShareHistoryOpen, setIsShareHistoryOpen] = useState(Boolean(initialScannedBarber));
   const [shareSuccessToast, setShareSuccessToast] = useState(false);
+
+  useEffect(() => {
+    if (initialScannedBarber) {
+      setScannedBarber(initialScannedBarber);
+      setIsShareHistoryOpen(true);
+    }
+  }, [initialScannedBarber]);
 
   const currentUser = getStoredUser();
   const userName = currentUser?.displayName || 'Ernesto Salinas';

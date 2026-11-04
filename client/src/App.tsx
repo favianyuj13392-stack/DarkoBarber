@@ -10,6 +10,7 @@ import { AuthenticatedView } from './components/dashboard/AuthenticatedView';
 import { HistorialFeed } from './components/history/HistorialFeed';
 import { ExploreCoordinator } from './components/explore/ExploreCoordinator';
 import { ClientNavBar } from './components/common/ClientNavBar';
+import type { ScannedBarberInfo } from './components/chair/QrScannerModal';
 import {
   getStoredToken,
   getStoredUser,
@@ -33,8 +34,25 @@ export function App() {
   const [authData, setAuthData] = useState<LoginResponse | null>(null);
   const [clientRegisterStep, setClientRegisterStep] = useState(1);
   const [barberRegisterStep, setBarberRegisterStep] = useState(1);
+  const [pendingChairScan, setPendingChairScan] = useState<ScannedBarberInfo | null>(null);
 
   useEffect(() => {
+    // Si la URL contiene ?chair= o ?scan=, se enlaza directamente la sesión del sillón
+    const params = new URLSearchParams(window.location.search);
+    const chairBarberId = params.get('chair') || params.get('scan');
+    if (chairBarberId) {
+      const barberName = params.get('name') || 'Diego Armando';
+      const shopName = params.get('shop') || 'Fade Studio — Sopocachi';
+      setPendingChairScan({
+        barberId: chairBarberId,
+        barberName,
+        shopName,
+        avatarUrl: '/assets/images/1.png',
+      });
+      setCurrentScreen('historial');
+      return;
+    }
+
     const token = getStoredToken();
     const user = getStoredUser();
     if (token && user) {
@@ -342,6 +360,7 @@ export function App() {
             className="w-full min-h-screen"
           >
             <HistorialFeed
+              initialScannedBarber={pendingChairScan}
               onNavigateTab={(tab) => {
                 if (tab === 'perfil') {
                   setCurrentScreen('authenticated');
