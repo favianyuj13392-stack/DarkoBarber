@@ -26,6 +26,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.routers.fade-frontend.rule=Host(`fade.darkosync.com`)"
+      - "traefik.http.routers.fade-frontend.priority=200"
       - "traefik.http.routers.fade-frontend.entrypoints=websecure"
       - "traefik.http.routers.fade-frontend.tls.certresolver=letsencrypt"
       - "traefik.http.routers.fade-frontend.middlewares=security-headers@file,compress@file"
