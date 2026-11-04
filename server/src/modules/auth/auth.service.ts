@@ -1,4 +1,5 @@
 import { PrismaClient, Barber, Client } from '@prisma/client';
+import { OAuth2Client } from 'google-auth-library';
 import { LoginInput, RegisterInput, GoogleAuthInput } from './auth.schemas';
 import { hashSecret, verifySecret } from '../../utils/crypto';
 
@@ -42,30 +43,6 @@ export class AuthService {
           },
         });
         if (!barber || !barber.passwordHash || !verifySecret(input.secret, barber.passwordHash)) {
-          // Fallback: check if client exists with this identifier
-          const client = await this.prisma.client.findFirst({
-            where: {
-              OR: [
-                { email: input.identifier },
-                { phone: input.identifier },
-              ],
-            },
-          });
-          if (client && client.passwordHash && verifySecret(input.secret, client.passwordHash)) {
-            return {
-              role: 'cliente',
-              user: {
-                id: client.id,
-                email: client.email,
-                displayName: client.displayName,
-                role: 'cliente',
-                avatarUrl: client.avatarUrl,
-                shopId: null,
-                phone: client.phone,
-              },
-              client,
-            };
-          }
           return null;
         }
       }
@@ -221,37 +198,72 @@ export class AuthService {
     }
   }
 
-  async googleAuth(input: GoogleAuthInput): Promise<AuthResult> {
-    let payload: { sub?: string; email?: string; name?: string; picture?: string } = {};
+  private googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-    try {
-      if (input.idToken.includes('.')) {
+  async googleAuth(input: GoogleAuthInput): Promise<AuthResult> {
+    let payload: { sub: string; email: string; name?: string; picture?: string };
+
+    const googleClientId = process.env.GOOGLE_CLIENT_ID;
+
+    // In local non-production environment, permit explicit test tokens for CI
+    if (
+      process.env.NODE_ENV !== 'production' &&
+      (input.idToken.startsWith('mock-') || input.idToken.startsWith('test-') || input.idToken.startsWith('header.'))
+    ) {
+      try {
         const parts = input.idToken.split('.');
-        const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-        const json = Buffer.from(base64, 'base64').toString('utf8');
-        payload = JSON.parse(json);
-      } else if (input.idToken.startsWith('{')) {
-        payload = JSON.parse(input.idToken);
-      } else {
-        const emailMatch = input.idToken.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-        const email = emailMatch ? emailMatch[0] : `user-${input.idToken.slice(0, 8)}@gmail.com`;
+        if (parts.length === 3) {
+          const parsed = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+          payload = {
+            sub: parsed.sub || `mock-${Date.now()}`,
+            email: parsed.email || `${input.role}-test@darkobarber.com`,
+            name: parsed.name || 'Test User',
+            picture: parsed.picture,
+          };
+        } else {
+          payload = {
+            sub: `mock-google-${input.idToken}`,
+            email: `${input.role}-test@darkobarber.com`,
+            name: 'Test User',
+          };
+        }
+      } catch {
         payload = {
-          sub: `google-${Buffer.from(input.idToken).toString('hex').slice(0, 16)}`,
-          email,
-          name: 'Google User',
-          picture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+          sub: `mock-google-${input.idToken}`,
+          email: `${input.role}-test@darkobarber.com`,
+          name: 'Test User',
         };
       }
-    } catch {
-      payload = {
-        sub: `google-${Date.now()}`,
-        email: 'google-user@darkobarber.com',
-        name: 'Google User',
-      };
+    } else {
+      if (!googleClientId) {
+        throw new Error(
+          'Security Error: GOOGLE_CLIENT_ID is not configured in environment variables. Google token audience validation is required.'
+        );
+      }
+
+      try {
+        const ticket = await this.googleClient.verifyIdToken({
+          idToken: input.idToken,
+          audience: googleClientId,
+        });
+        const ticketPayload = ticket.getPayload();
+        if (!ticketPayload || !ticketPayload.sub || !ticketPayload.email) {
+          throw new Error('Invalid token payload from Google');
+        }
+        payload = {
+          sub: ticketPayload.sub,
+          email: ticketPayload.email,
+          name: ticketPayload.name,
+          picture: ticketPayload.picture,
+        };
+      } catch (err: unknown) {
+        const reason = err instanceof Error ? err.message : 'Invalid cryptographic signature or expired token';
+        throw new Error(`Google token verification failed: ${reason}`);
+      }
     }
 
-    const googleId = payload.sub || `google-${Date.now()}`;
-    const email = payload.email || `google-${Date.now()}@darkobarber.com`;
+    const googleId = payload.sub;
+    const email = payload.email.toLowerCase();
     const displayName = payload.name || 'Usuario';
     const avatarUrl = payload.picture || null;
 

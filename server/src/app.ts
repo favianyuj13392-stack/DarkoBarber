@@ -17,8 +17,24 @@ dotenv.config();
 export async function buildApp(opts: FastifyServerOptions = {}): Promise<FastifyInstance> {
   const app = Fastify(opts);
 
+  const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+    : [
+        'https://fade.darkosync.com',
+        'https://api.fade.darkosync.com',
+        'http://localhost:3000',
+        'http://localhost:5173',
+      ];
+
   await app.register(cors, {
-    origin: true,
+    origin: (origin, cb) => {
+      // Allow requests with no origin (like mobile apps or curl) or within allowed list
+      if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+        cb(null, true);
+        return;
+      }
+      cb(new Error('Blocked by CORS policy'), false);
+    },
     credentials: true,
   });
 

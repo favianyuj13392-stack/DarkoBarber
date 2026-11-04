@@ -1,0 +1,70 @@
+services:
+  # -------------------------------------------------------------
+  # FRONTEND (Vite React PWA served via Nginx)
+  # -------------------------------------------------------------
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: fade_frontend
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:noexec,nosuid,nodev,size=64m
+      - /var/cache/nginx:noexec,nosuid,nodev,size=64m
+      - /var/run:noexec,nosuid,nodev,size=16m
+    networks:
+      - proxy
+      - fade_internal
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512m
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.fade-frontend.rule=Host(`fade.darkosync.com`)"
+      - "traefik.http.routers.fade-frontend.entrypoints=websecure"
+      - "traefik.http.routers.fade-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.fade-frontend.middlewares=security-headers@file,compress@file"
+      - "traefik.http.services.fade-frontend.loadbalancer.server.port=8080"
+
+  # -------------------------------------------------------------
+  # BACKEND API (Node.js / Fastify Core Engine)
+  # -------------------------------------------------------------
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: fade_api
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:noexec,nosuid,nodev,size=64m
+    env_file:
+      - ./server/.env
+    networks:
+      - proxy
+      - fade_internal
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 768m
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.fade-api.rule=Host(`api.fade.darkosync.com`)"
+      - "traefik.http.routers.fade-api.entrypoints=websecure"
+      - "traefik.http.routers.fade-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.fade-api.middlewares=security-headers@file,compress@file"
+      - "traefik.http.services.fade-api.loadbalancer.server.port=4000"
+
+networks:
+  proxy:
+    external: true
+  fade_internal:
+    driver: bridge

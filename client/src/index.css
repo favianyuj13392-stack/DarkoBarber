@@ -1,0 +1,138 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+@theme {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Playfair Display', Georgia, serif;
+
+  --color-oled: #000000;
+  --color-carbon: #121212;
+  --color-carbon-light: #1A1A1A;
+  --color-fade-gray: #2A2A2A;
+  --color-fade-gold: #B68F4E;
+  --color-fade-gold-dim: #8B6F4E;
+  --color-fade-crema: #D9C9B0;
+  --color-fade-crema-light: #F5EBDD;
+  --color-fade-coral: #E85A44;
+  --color-fade-coral-dark: #C93F2B;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html,
+  body {
+    background-color: #000000;
+    color: #F5EBDD;
+    font-family: var(--font-sans);
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+  }
+}
+
+/* ==========================================================================
+   Dark Luxury Design Tokens (FADE Master Specification)
+   ========================================================================== */
+
+/* Superficie Primaria (Cards y Contenedores) */
+.fade-surface {
+  background: linear-gradient(180deg, rgba(22, 22, 22, 0.96) 0%, rgba(10, 10, 10, 0.98) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.14), /* Luz cenital */
+    0 20px 40px -12px rgba(0, 0, 0, 0.90);     /* Oclusión ambiental */
+  backdrop-filter: blur(24px) saturate(180%);
+}
+
+/* Superficie Elevada (Modales, Drawers y Floating Bars) */
+.fade-surface-elevated {
+  background: linear-gradient(180deg, rgba(28, 28, 28, 0.96) 0%, rgba(14, 14, 14, 0.99) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
+    0 28px 56px -14px rgba(0, 0, 0, 0.95);
+  backdrop-filter: blur(30px) saturate(200%);
+}
+
+/* Bisel Especular Independiente */
+.specular-bevel {
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.14);
+}
+
+.specular-bevel-gold {
+  box-shadow: inset 0 1px 0 0 rgba(217, 201, 176, 0.35);
+}
+
+/* Botón Primario (Crema/Oro - CTA Principal) */
+.fade-btn-primary {
+  background: linear-gradient(180deg, #F3E9DC 0%, #D9C9B0 45%, #C2AE91 100%);
+  color: #000000;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: 
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 8px 24px -4px rgba(217, 201, 176, 0.35);
+}
+
+/* Botón Coral (Acciones de Sillón y Finalización) */
+.fade-btn-coral {
+  background: linear-gradient(180deg, #F06548 0%, #E85A44 50%, #C93F2B 100%);
+  color: #FFFFFF;
+  font-weight: 900;
+  box-shadow: 
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 8px 28px -4px rgba(232, 90, 68, 0.45);
+}
+
+/* Botón Secundario Interactivo */
+.fade-btn-secondary {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  color: #F5EBDD;
+  transition: all 0.2s ease;
+}
+
+.fade-btn-secondary:hover {
+  border-color: rgba(182, 143, 78, 0.40);
+  box-shadow: 0 0 16px rgba(182, 143, 78, 0.18);
+}
+
+/* Gradientes Tipográficos */
+.text-gold-gradient {
+  background: linear-gradient(180deg, #F5EBDD 0%, #D9C9B0 50%, #B68F4E 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.text-luxury-gradient {
+  background: linear-gradient(180deg, #FFFFFF 0%, #EADBCA 50%, #C9B69B 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ==========================================================================
+   Spiderfy & Silo/Cluster Animations (Dark Luxury Map)
+   ========================================================================== */
+@keyframes spiderPop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.2);
+  }
+  70% {
+    transform: translate(-50%, -50%) scale(1.08);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.animate-spider-pop {
+  animation: spiderPop 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
