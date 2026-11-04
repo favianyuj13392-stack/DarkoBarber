@@ -256,7 +256,7 @@ export const LoginView: FC<LoginViewProps> = ({
             <button
               type="button"
               onClick={onShowOnboarding}
-              className="lg:hidden flex items-center gap-1.5 text-[11px] text-[#B68F4E]/80 hover:text-[#B68F4E] transition-colors mt-1 cursor-pointer"
+              className="flex items-center gap-1.5 text-[11px] text-[#B68F4E]/80 hover:text-[#B68F4E] transition-colors mt-1 cursor-pointer"
             >
               <Smartphone className="w-3.5 h-3.5" />
               <span>Ver presentación interactiva</span>

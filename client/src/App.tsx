@@ -29,8 +29,21 @@ type AppScreen =
   | 'explore'
   | 'authenticated';
 
+const HAS_SEEN_ONBOARDING_KEY = 'fade_has_seen_onboarding';
+
 export function App() {
-  const [currentScreen, setCurrentScreen] = useState<AppScreen>('login');
+  const [currentScreen, setCurrentScreen] = useState<AppScreen>(() => {
+    if (typeof window === 'undefined') return 'splash';
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('chair') || params.get('scan')) return 'historial';
+    const token = getStoredToken();
+    const user = getStoredUser();
+    if (token && user) {
+      return user.role === 'cliente' ? 'historial' : 'barber-chair';
+    }
+    const hasSeen = localStorage.getItem(HAS_SEEN_ONBOARDING_KEY);
+    return hasSeen ? 'login' : 'splash';
+  });
   const [authData, setAuthData] = useState<LoginResponse | null>(null);
   const [clientRegisterStep, setClientRegisterStep] = useState(1);
   const [barberRegisterStep, setBarberRegisterStep] = useState(1);
@@ -270,7 +283,10 @@ export function App() {
           >
             <SplashScreen
               onStart={() => setCurrentScreen('onboarding')}
-              onDirectLogin={() => setCurrentScreen('login')}
+              onDirectLogin={() => {
+                localStorage.setItem(HAS_SEEN_ONBOARDING_KEY, 'true');
+                setCurrentScreen('login');
+              }}
             />
           </motion.div>
         )}
@@ -284,7 +300,12 @@ export function App() {
             transition={{ duration: 0.25 }}
             className="w-full min-h-screen"
           >
-            <OnboardingCarousel onComplete={() => setCurrentScreen('login')} />
+            <OnboardingCarousel
+              onComplete={() => {
+                localStorage.setItem(HAS_SEEN_ONBOARDING_KEY, 'true');
+                setCurrentScreen('login');
+              }}
+            />
           </motion.div>
         )}
 

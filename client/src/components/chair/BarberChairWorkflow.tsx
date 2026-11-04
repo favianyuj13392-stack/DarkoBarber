@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { FC } from 'react';
-import { QrCode } from 'lucide-react';
+import { BarberChairStandbyView } from './BarberChairStandbyView';
 import { BarberClientHistoryView } from './BarberClientHistoryView';
 import { RepeatCutConfigModal } from './RepeatCutConfigModal';
 import { PhotoConsentModal } from './PhotoConsentModal';
@@ -15,6 +15,7 @@ interface BarberChairWorkflowProps {
 }
 
 export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) => {
+  const [activeClientPhone, setActiveClientPhone] = useState<string | null>(null);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [isPhotoConsentOpen, setIsPhotoConsentOpen] = useState(false);
   const [isLoungeWaitingOpen, setIsLoungeWaitingOpen] = useState(false);
@@ -28,11 +29,21 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
   const shopName = 'Fade Studio — Sopocachi';
 
   // Suscribirse a cambios de presencia
-  useState(() => {
+  useEffect(() => {
     return presenceService.subscribe((status) => {
       setPresenceStatus(status);
     });
-  });
+  }, []);
+
+  const handleConnectClient = (phone: string) => {
+    setActiveClientPhone(phone);
+    presenceService.setStatus('RED');
+  };
+
+  const handleDisconnectClient = () => {
+    setActiveClientPhone(null);
+    presenceService.setStatus('GREEN');
+  };
 
   const handleRepeatCut = (cut: ClientHistoryResponse['cuts'][0]) => {
     setSelectedCut(cut);
@@ -47,7 +58,8 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
 
   const handleLoungeComplete = (waitingCount: number) => {
     setIsLoungeWaitingOpen(false);
-    console.log(`Espera en sala actualizada: ${waitingCount} clientes.`);
+    handleDisconnectClient();
+    console.log(`Corte registrado. Espera en sala actualizada: ${waitingCount} clientes.`);
   };
 
   const handleCapturePhoto = () => {
@@ -61,45 +73,57 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
 
   return (
     <div className="relative min-h-screen w-full bg-black">
-      {/* Botón Flotante para QR del Espejo */}
-      <div className="fixed top-4 left-4 z-40 flex items-center gap-2 select-none">
-        <button
-          type="button"
-          onClick={() => setIsQrModalOpen(true)}
-          className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/80 hover:bg-black border border-[#B68F4E]/50 hover:border-[#B68F4E] backdrop-blur-md shadow-[0_4px_12px_rgba(182,143,78,0.25)] text-[#F5EBDD] text-xs font-semibold cursor-pointer transition-all hover:scale-105 active:scale-95"
-          aria-label="Abrir código QR del espejo"
-        >
-          <QrCode className="w-3.5 h-3.5 text-[#B68F4E]" />
-          <span>Mi QR del Espejo</span>
-        </button>
-      </div>
-
-      {/* Barra de Estado de Presencia Flotante */}
-      <div className="fixed top-4 right-4 z-40 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/80 border border-white/10 backdrop-blur-md shadow-lg select-none">
-        <span
-          className={`w-2.5 h-2.5 rounded-full ${
-            presenceStatus === 'GREEN'
-              ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]'
-              : presenceStatus === 'RED'
-              ? 'bg-red-500 shadow-[0_0_8px_#ef4444]'
-              : 'bg-amber-400 shadow-[0_0_8px_#fbbf24]'
-          }`}
+      {/* 1. Si no hay cliente activo en el sillón: Pantalla de Standby / Espera */}
+      {!activeClientPhone ? (
+        <BarberChairStandbyView
+          barber={currentUser}
+          onConnectClient={handleConnectClient}
+          onOpenQrModal={() => setIsQrModalOpen(true)}
+          onExit={onExit}
         />
-        <span className="text-[10px] font-mono tracking-wider text-[#D9C9B0] uppercase">
-          {presenceStatus === 'GREEN'
-            ? 'Disponible (GREEN)'
-            : presenceStatus === 'RED'
-            ? 'En Sillón (RED)'
-            : 'En Espera (YELLOW)'}
-        </span>
-      </div>
+      ) : (
+        /* 2. Si hay cliente vinculado: Vista de Historial del Cliente en Sillón */
+        <>
+          {/* Botón Superior Izquierdo: Liberar Sillón */}
+          <div className="fixed top-4 left-4 z-40 flex items-center gap-2 select-none">
+            <button
+              type="button"
+              onClick={handleDisconnectClient}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-black/80 hover:bg-black border border-white/20 hover:border-white/40 backdrop-blur-md shadow-lg text-[#F5EBDD] text-xs font-semibold cursor-pointer transition-all hover:scale-105 active:scale-95"
+              aria-label="Liberar sillón"
+            >
+              <span>← Liberar sillón</span>
+            </button>
+          </div>
 
-      {/* Vista Principal del Barbero: Historial del Cliente */}
-      <BarberClientHistoryView
-        clientPhone="+591 712 34567"
-        onClose={onExit}
-        onRepeatCut={handleRepeatCut}
-      />
+          {/* Barra de Estado de Presencia Flotante */}
+          <div className="fixed top-4 right-4 z-40 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/80 border border-white/10 backdrop-blur-md shadow-lg select-none">
+            <span
+              className={`w-2.5 h-2.5 rounded-full ${
+                presenceStatus === 'GREEN'
+                  ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]'
+                  : presenceStatus === 'RED'
+                  ? 'bg-red-500 shadow-[0_0_8px_#ef4444]'
+                  : 'bg-amber-400 shadow-[0_0_8px_#fbbf24]'
+              }`}
+            />
+            <span className="text-[10px] font-mono tracking-wider text-[#D9C9B0] uppercase">
+              {presenceStatus === 'GREEN'
+                ? 'Disponible (GREEN)'
+                : presenceStatus === 'RED'
+                ? 'En Sillón (RED)'
+                : 'En Espera (YELLOW)'}
+            </span>
+          </div>
+
+          {/* Ficha e Historial del Cliente Conectado */}
+          <BarberClientHistoryView
+            clientPhone={activeClientPhone}
+            onClose={handleDisconnectClient}
+            onRepeatCut={handleRepeatCut}
+          />
+        </>
+      )}
 
       {/* Modal de Configuración de Chips y Fotos del Corte */}
       <RepeatCutConfigModal
