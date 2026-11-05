@@ -106,23 +106,27 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
   }, []);
 
   useEffect(() => {
-    // 3. Polling cada 3s al backend por si el barbero mandó desde otro dispositivo
+    // 3. Polling rápido cada 1s al backend por si el barbero mandó desde otro dispositivo
     const phone = currentUser?.phone || '+591 712 34567';
+    const barberId = scannedBarber?.barberId;
+    const barberName = scannedBarber?.barberName;
+
     const interval = setInterval(async () => {
-      const req = await pollPhotoConsentRequest(phone);
+      const req = await pollPhotoConsentRequest(phone, barberId, barberName);
       if (req) {
         setIncomingConsentReq(req);
       }
-    }, 3000);
+    }, 1000);
     return () => clearInterval(interval);
-  }, [currentUser]);
+  }, [currentUser, scannedBarber]);
 
   const handleClientConsent = async (isPublic: boolean) => {
     if (incomingConsentReq) {
       await respondPhotoConsent(
         incomingConsentReq.barberId,
         incomingConsentReq.clientPhone,
-        isPublic
+        isPublic,
+        scannedBarber?.barberName || incomingConsentReq.barberName
       );
       setConsentToastMsg(
         isPublic

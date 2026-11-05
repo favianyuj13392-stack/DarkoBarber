@@ -308,26 +308,56 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
   // 6. Barber sends Photo Consent Request to Client: POST /presence/chair/consent-request
   fastify.post('/presence/chair/consent-request', async (request, reply) => {
     const body = request.body as ConsentRequestPayload;
-    if (!body || !body.clientPhone) {
-      return reply.status(400).send({ error: 'INVALID_PAYLOAD', message: 'clientPhone is required' });
+    if (!body || !body.barberId) {
+      return reply.status(400).send({ error: 'INVALID_PAYLOAD', message: 'barberId is required' });
     }
-    const cleanPhone = body.clientPhone.replace(/\D/g, '');
+    const cleanPhone = (body.clientPhone || '').replace(/\D/g, '');
     const payload: ConsentRequestPayload = {
       ...body,
       timestamp: Date.now(),
     };
-    pendingConsentRequests.set(cleanPhone, payload);
+
+    // Store under all potential keys so client query never misses
+    if (cleanPhone) {
+      pendingConsentRequests.set(cleanPhone, payload);
+      if (cleanPhone.length >= 8) {
+        pendingConsentRequests.set(cleanPhone.slice(-8), payload);
+      }
+    }
+    if (body.barberId) {
+      pendingConsentRequests.set(body.barberId.toLowerCase(), payload);
+    }
+    if (body.barberName) {
+      const normName = body.barberName.toLowerCase().replace(/[^a-z0-9]/g, '');
+      pendingConsentRequests.set(normName, payload);
+    }
 
     return reply.status(200).send({ success: true, message: 'Consent request stored' });
   });
 
   // 7. Client polls for Photo Consent Request: GET /presence/chair/consent-request
   fastify.get('/presence/chair/consent-request', async (request, reply) => {
-    const query = (request.query as { phone?: string }) || {};
+    const query = (request.query as { phone?: string; barberId?: string; name?: string }) || {};
     const cleanPhone = (query.phone || '').replace(/\D/g, '');
-    const req = pendingConsentRequests.get(cleanPhone);
-    if (req && Date.now() - req.timestamp < 120000) {
-      pendingConsentRequests.delete(cleanPhone);
+    const barberId = (query.barberId || '').toLowerCase();
+    const normName = (query.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    let req: ConsentRequestPayload | undefined;
+
+    if (cleanPhone) {
+      req = pendingConsentRequests.get(cleanPhone);
+      if (!req && cleanPhone.length >= 8) {
+        req = pendingConsentRequests.get(cleanPhone.slice(-8));
+      }
+    }
+    if (!req && barberId) {
+      req = pendingConsentRequests.get(barberId);
+    }
+    if (!req && normName) {
+      req = pendingConsentRequests.get(normName);
+    }
+
+    if (req && Date.now() - req.timestamp < 180000) {
       return reply.status(200).send({ hasPending: true, request: req });
     }
     return reply.status(200).send({ hasPending: false, request: null });
@@ -335,7 +365,7 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
 
   // 8. Client sends Photo Consent Response: POST /presence/chair/consent-response
   fastify.post('/presence/chair/consent-response', async (request, reply) => {
-    const body = request.body as ConsentResponsePayload;
+    const body = request.body as ConsentResponsePayload & { barberName?: string };
     if (!body || !body.barberId) {
       return reply.status(400).send({ error: 'INVALID_PAYLOAD', message: 'barberId is required' });
     }
@@ -343,17 +373,34 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
       ...body,
       timestamp: Date.now(),
     };
+
     pendingConsentResponses.set(body.barberId.toLowerCase(), payload);
+    if (body.barberName) {
+      const normName = body.barberName.toLowerCase().replace(/[^a-z0-9]/g, '');
+      pendingConsentResponses.set(normName, payload);
+    }
+    if (body.clientPhone) {
+      const cleanPhone = body.clientPhone.replace(/\D/g, '');
+      pendingConsentResponses.set(cleanPhone, payload);
+      if (cleanPhone.length >= 8) {
+        pendingConsentResponses.set(cleanPhone.slice(-8), payload);
+      }
+    }
 
     // Notify active Barber WebSocket
     for (const entry of presenceGateway.getAllSockets()) {
-      if (entry.barberId.toLowerCase() === body.barberId.toLowerCase() && entry.socket.readyState === WebSocket.OPEN) {
-        entry.socket.send(JSON.stringify({
-          type: 'PHOTO_CONSENT_RESPONSE',
-          isPublic: body.isPublic,
-          clientPhone: body.clientPhone,
-          timestamp: payload.timestamp,
-        }));
+      if (
+        (entry.barberId.toLowerCase() === body.barberId.toLowerCase()) &&
+        entry.socket.readyState === WebSocket.OPEN
+      ) {
+        entry.socket.send(
+          JSON.stringify({
+            type: 'PHOTO_CONSENT_RESPONSE',
+            isPublic: body.isPublic,
+            clientPhone: body.clientPhone,
+            timestamp: payload.timestamp,
+          })
+        );
       }
     }
 
@@ -362,11 +409,22 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
 
   // 9. Barber polls for Photo Consent Response: GET /presence/chair/consent-response
   fastify.get('/presence/chair/consent-response', async (request, reply) => {
-    const query = (request.query as { barberId?: string }) || {};
+    const query = (request.query as { barberId?: string; name?: string; phone?: string }) || {};
     const barberId = (query.barberId || '').toLowerCase();
-    const resp = pendingConsentResponses.get(barberId);
-    if (resp && Date.now() - resp.timestamp < 120000) {
-      pendingConsentResponses.delete(barberId);
+    const normName = (query.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanPhone = (query.phone || '').replace(/\D/g, '');
+
+    let resp: ConsentResponsePayload | undefined;
+    if (barberId) resp = pendingConsentResponses.get(barberId);
+    if (!resp && normName) resp = pendingConsentResponses.get(normName);
+    if (!resp && cleanPhone) {
+      resp = pendingConsentResponses.get(cleanPhone);
+      if (!resp && cleanPhone.length >= 8) {
+        resp = pendingConsentResponses.get(cleanPhone.slice(-8));
+      }
+    }
+
+    if (resp && Date.now() - resp.timestamp < 180000) {
       return reply.status(200).send({ hasResponse: true, response: resp });
     }
     return reply.status(200).send({ hasResponse: false, response: null });

@@ -183,13 +183,19 @@ export async function requestPhotoConsent(
  * El cliente consulta si su barbero le mandó solicitud de publicación de fotos.
  */
 export async function pollPhotoConsentRequest(
-  clientPhone: string
+  clientPhone?: string,
+  barberId?: string,
+  barberName?: string
 ): Promise<PhotoConsentRequestPayload | null> {
   try {
-    const cleanPhone = clientPhone.replace(/\D/g, '');
+    const params = new URLSearchParams();
+    if (clientPhone) params.append('phone', clientPhone.replace(/\D/g, ''));
+    if (barberId) params.append('barberId', barberId);
+    if (barberName) params.append('name', barberName);
+
     const endpoints = [
-      `/api/presence/chair/consent-request?phone=${encodeURIComponent(cleanPhone)}`,
-      `/presence/chair/consent-request?phone=${encodeURIComponent(cleanPhone)}`,
+      `/api/presence/chair/consent-request?${params.toString()}`,
+      `/presence/chair/consent-request?${params.toString()}`,
     ];
 
     for (const url of endpoints) {
@@ -217,10 +223,12 @@ export async function pollPhotoConsentRequest(
 export async function respondPhotoConsent(
   barberId: string,
   clientPhone: string,
-  isPublic: boolean
+  isPublic: boolean,
+  barberName?: string
 ): Promise<void> {
-  const payload: PhotoConsentResponsePayload = {
+  const payload: PhotoConsentResponsePayload & { barberName?: string } = {
     barberId,
+    barberName,
     clientPhone,
     isPublic,
     timestamp: Date.now(),
@@ -271,12 +279,19 @@ export async function respondPhotoConsent(
  * El barbero consulta si el cliente ya respondió a la solicitud de consentimiento.
  */
 export async function pollPhotoConsentResponse(
-  barberId: string
+  barberId?: string,
+  barberName?: string,
+  clientPhone?: string
 ): Promise<PhotoConsentResponsePayload | null> {
   try {
+    const params = new URLSearchParams();
+    if (barberId) params.append('barberId', barberId);
+    if (barberName) params.append('name', barberName);
+    if (clientPhone) params.append('phone', clientPhone.replace(/\D/g, ''));
+
     const endpoints = [
-      `/api/presence/chair/consent-response?barberId=${encodeURIComponent(barberId)}`,
-      `/presence/chair/consent-response?barberId=${encodeURIComponent(barberId)}`,
+      `/api/presence/chair/consent-response?${params.toString()}`,
+      `/presence/chair/consent-response?${params.toString()}`,
     ];
 
     for (const url of endpoints) {

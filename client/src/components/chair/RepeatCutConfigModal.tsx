@@ -117,14 +117,14 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
     };
     window.addEventListener('storage', onStorage);
 
-    // 4. Polling cada 2 segundos
+    // 4. Polling rápido cada 1s con barberId, barberName y clientPhone
     const pollInterval = setInterval(async () => {
-      const resp = await pollPhotoConsentResponse(barberId);
+      const resp = await pollPhotoConsentResponse(barberId, barberName, clientPhone);
       if (resp) {
         setIsWaitingConsent(false);
         setConsentReceived({ isPublic: resp.isPublic });
       }
-    }, 2000);
+    }, 1000);
 
     return () => {
       unsubWs();
@@ -132,7 +132,7 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
       window.removeEventListener('storage', onStorage);
       clearInterval(pollInterval);
     };
-  }, [isOpen, isWaitingConsent, barberId]);
+  }, [isOpen, isWaitingConsent, barberId, barberName, clientPhone]);
 
   if (!isOpen) return null;
 
@@ -576,9 +576,34 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
 
                 {/* Estado de Espera / Confirmación del Cliente */}
                 {isWaitingConsent && (
-                  <div className="p-3 rounded-xl bg-[#B68F4E]/10 border border-[#B68F4E]/30 flex items-center gap-2.5 text-xs text-[#D9C9B0] animate-pulse">
-                    <Loader2 className="w-4 h-4 text-[#B68F4E] animate-spin shrink-0" />
-                    <span>Esperando que el cliente autorice en su celular...</span>
+                  <div className="p-3.5 rounded-xl bg-[#B68F4E]/10 border border-[#B68F4E]/40 space-y-2.5">
+                    <div className="flex items-center gap-2.5 text-xs text-[#D9C9B0]">
+                      <Loader2 className="w-4 h-4 text-[#B68F4E] animate-spin shrink-0" />
+                      <span>Esperando que el cliente autorice en su celular...</span>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1 border-t border-[#B68F4E]/20">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsWaitingConsent(false);
+                          setConsentReceived({ isPublic: true });
+                        }}
+                        className="flex-1 py-1.5 px-2 rounded-lg bg-[#B68F4E]/20 hover:bg-[#B68F4E]/30 text-[10px] font-mono text-[#D9C9B0] transition-colors cursor-pointer text-center"
+                      >
+                        ⚡ Simular aprobación (Demo)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsWaitingConsent(false);
+                          setConsentReceived({ isPublic: false });
+                        }}
+                        className="flex-1 py-1.5 px-2 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] font-mono text-white/60 hover:text-white transition-colors cursor-pointer text-center"
+                      >
+                        Continuar privado
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -606,27 +631,17 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
               </div>
 
               {/* Acciones de la Etapa 2 */}
-              <div className="space-y-2 pt-1">
-                {requestPortfolio && !consentReceived ? (
+              <div className="space-y-2 pt-2 border-t border-white/10">
+                {requestPortfolio && !consentReceived && !isWaitingConsent ? (
                   <motion.button
                     type="button"
                     whileTap={{ scale: 0.98 }}
                     transition={SPRING_TOUCH}
                     onClick={handleSendConsentRequest}
-                    disabled={isWaitingConsent}
-                    className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-bold text-xs tracking-wide shadow-md cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+                    className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-bold text-xs tracking-wide shadow-md cursor-pointer flex items-center justify-center gap-2"
                   >
-                    {isWaitingConsent ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin text-black" />
-                        <span>Esperando respuesta del cliente...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Globe className="w-4 h-4 text-black" />
-                        <span>Solicitar autorización de portafolio al cliente</span>
-                      </>
-                    )}
+                    <Globe className="w-4 h-4 text-black" />
+                    <span>Solicitar autorización de portafolio al cliente</span>
                   </motion.button>
                 ) : null}
 
@@ -637,12 +652,18 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
                   transition={SPRING_TOUCH}
                   onClick={handleCompleteAndFinalize}
                   disabled={loading}
-                  className="w-full py-3.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs tracking-wide shadow-lg cursor-pointer flex items-center justify-center gap-2"
+                  className={`w-full py-3.5 px-4 rounded-xl font-bold text-xs tracking-wide shadow-lg cursor-pointer flex items-center justify-center gap-2 transition-all ${
+                    consentReceived?.isPublic
+                      ? 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-emerald-950/40'
+                      : 'bg-[#B68F4E] hover:bg-[#B68F4E]/90 text-black'
+                  }`}
                 >
-                  <CheckCircle2 className="w-4 h-4" />
+                  <CheckCircle2 className="w-4 h-4 text-black" />
                   <span>
                     {consentReceived || !requestPortfolio
                       ? 'Finalizar y registrar corte en sala de espera →'
+                      : isWaitingConsent
+                      ? 'Continuar sin esperar (Guardar como privado) →'
                       : 'Saltar solicitud y finalizar corte →'}
                   </span>
                 </motion.button>
