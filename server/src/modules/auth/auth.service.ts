@@ -489,6 +489,7 @@ export class AuthService {
 
   async getAllShops() {
     return this.prisma.shop.findMany({
+      where: { isActive: true },
       orderBy: { name: 'asc' },
     });
   }

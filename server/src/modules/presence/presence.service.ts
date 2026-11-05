@@ -395,6 +395,7 @@ export class PresenceService {
    */
   async getMapChairs(): Promise<ChairMapItem[]> {
     const barbers = await this.prisma.barber.findMany({
+      where: { isActive: true },
       include: {
         presence: true,
         shop: true,

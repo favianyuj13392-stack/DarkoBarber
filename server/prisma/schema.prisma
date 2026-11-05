@@ -34,9 +34,12 @@ model Shop {
   zone        String?
   latitude    Float?
   longitude   Float?
+  isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   barbers     Barber[]
+
+  @@index([isActive])
 }
 
 model Barber {
@@ -54,8 +57,9 @@ model Barber {
   specialties   String[]  @default([])
   plan          Plan      @default(AUTONOMO)
   shopId        String?
-  shop          Shop?     @relation(fields: [shopId], references: [id])
+  shop          Shop?     @relation(fields: [shopId], references: [id], onDelete: SetNull)
   deviceId      String?
+  isActive      Boolean   @default(true)
   cuts          Cut[]
   presence      Presence?
   createdAt     DateTime  @default(now())
@@ -63,6 +67,8 @@ model Barber {
 
   @@index([email])
   @@index([phone])
+  @@index([shopId])
+  @@index([isActive])
 }
 
 model Presence {
@@ -136,4 +142,5 @@ model CutPhoto {
   createdAt   DateTime @default(now())
 
   @@index([cutId])
+  @@index([isPublic])
 }
