@@ -302,3 +302,106 @@ export async function updateBarberProfile(
 
   return localUpdated;
 }
+
+export interface ShopInfo {
+  id: string;
+  name: string;
+  address?: string | null;
+  zone?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+}
+
+export async function fetchShops(): Promise<ShopInfo[]> {
+  try {
+    const res = await fetch('/api/shops');
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('Could not fetch shops from server, using defaults:', err);
+  }
+
+  return [
+    {
+      id: 'shop-sopocachi-darko',
+      name: 'Darko Studio',
+      address: 'Av. 20 de Octubre #2314, esq. Rosendo Gutiérrez',
+      zone: 'Sopocachi',
+      latitude: -16.5113,
+      longitude: -68.1287,
+    },
+    {
+      id: 'shop-miraflores-fade',
+      name: 'FADE Miraflores',
+      address: 'Av. Busch #1420, entre Villalobos y Pasoskanki',
+      zone: 'Miraflores',
+      latitude: -16.4998,
+      longitude: -68.1205,
+    },
+    {
+      id: 'shop-san-miguel-fade',
+      name: 'FADE San Miguel Studio',
+      address: 'Calle 21 de Calacoto #8320, San Miguel',
+      zone: 'San Miguel',
+      latitude: -16.5412,
+      longitude: -68.0821,
+    },
+  ];
+}
+
+export async function updateBarberLocation(payload: {
+  shopId?: string;
+  customShop?: {
+    name: string;
+    address?: string;
+    zone?: string;
+    latitude?: number;
+    longitude?: number;
+  };
+}): Promise<UserProfile> {
+  const token = getStoredToken();
+  const current = getStoredUser() || ({} as UserProfile);
+
+  let updatedUser: UserProfile = { ...current };
+
+  if (payload.shopId) {
+    updatedUser.shopId = payload.shopId;
+  }
+  if (payload.customShop) {
+    updatedUser.shopName = payload.customShop.name;
+    updatedUser.shopAddress = payload.customShop.address;
+    updatedUser.shopZone = payload.customShop.zone;
+  }
+  localStorage.setItem(USER_KEY, JSON.stringify(updatedUser));
+
+  if (token) {
+    try {
+      const res = await fetch('/api/barbers/me/location', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        updatedUser = {
+          ...current,
+          shopId: data.shopId,
+          shopName: data.shop?.name || updatedUser.shopName,
+          shopAddress: data.shop?.address || updatedUser.shopAddress,
+          shopZone: data.shop?.zone || updatedUser.shopZone,
+        };
+        localStorage.setItem(USER_KEY, JSON.stringify(updatedUser));
+        return updatedUser;
+      }
+    } catch (err) {
+      console.warn('Could not update barber location on server, saved locally:', err);
+    }
+  }
+
+  return updatedUser;
+}

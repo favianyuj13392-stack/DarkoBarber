@@ -486,4 +486,73 @@ export class AuthService {
 
     return updated;
   }
+
+  async getAllShops() {
+    return this.prisma.shop.findMany({
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async updateBarberLocation(
+    barberId: string,
+    input: {
+      shopId?: string;
+      customShop?: {
+        name: string;
+        address?: string;
+        zone?: string;
+        latitude?: number;
+        longitude?: number;
+      };
+    }
+  ) {
+    let resolvedShopId = input.shopId;
+
+    if (input.customShop) {
+      const barber = await this.prisma.barber.findUnique({
+        where: { id: barberId },
+        include: { shop: true },
+      });
+
+      const isDefaultShop = barber?.shopId && ['shop-sopocachi-darko', 'shop-miraflores-fade', 'shop-san-miguel-fade'].includes(barber.shopId);
+
+      if (barber?.shopId && barber.shop && !isDefaultShop) {
+        await this.prisma.shop.update({
+          where: { id: barber.shopId },
+          data: {
+            name: input.customShop.name,
+            address: input.customShop.address,
+            zone: input.customShop.zone,
+            latitude: input.customShop.latitude,
+            longitude: input.customShop.longitude,
+          },
+        });
+        resolvedShopId = barber.shopId;
+      } else {
+        const newShop = await this.prisma.shop.create({
+          data: {
+            name: input.customShop.name,
+            address: input.customShop.address,
+            zone: input.customShop.zone,
+            latitude: input.customShop.latitude,
+            longitude: input.customShop.longitude,
+          },
+        });
+        resolvedShopId = newShop.id;
+      }
+    }
+
+    const updated = await this.prisma.barber.update({
+      where: { id: barberId },
+      data: {
+        shopId: resolvedShopId,
+      },
+      include: {
+        shop: true,
+        presence: true,
+      },
+    });
+
+    return updated;
+  }
 }

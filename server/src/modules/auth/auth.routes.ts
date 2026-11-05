@@ -196,4 +196,27 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.put('/auth/barber/profile', { preHandler: [fastify.authenticateBarber] }, updateBarberProfileHandler);
   fastify.put('/barbers/me', { preHandler: [fastify.authenticateBarber] }, updateBarberProfileHandler);
+
+  // GET /shops (Público: lista de salones registrados)
+  fastify.get('/shops', async (_request, reply) => {
+    const shops = await service.getAllShops();
+    return reply.status(200).send(shops);
+  });
+
+  // PUT /barbers/me/location & PUT /auth/barber/location
+  const updateBarberLocationHandler = async (request: any, reply: any) => {
+    const barberId = request.barber?.id || request.authUser?.id;
+    if (!barberId) {
+      return reply.status(401).send({
+        error: 'UNAUTHORIZED',
+        message: 'Barber token required',
+      });
+    }
+
+    const updated = await service.updateBarberLocation(barberId, request.body as any);
+    return reply.status(200).send(updated);
+  };
+
+  fastify.put('/barbers/me/location', { preHandler: [fastify.authenticateBarber] }, updateBarberLocationHandler);
+  fastify.put('/auth/barber/location', { preHandler: [fastify.authenticateBarber] }, updateBarberLocationHandler);
 };
