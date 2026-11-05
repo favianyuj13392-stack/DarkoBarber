@@ -21,6 +21,15 @@ export const chipsSchema = z.object({
 export const finalizeCutSchema = z.object({
   chips: chipsSchema,
   finishedAt: z.string().optional(),
+  photos: z
+    .array(
+      z.object({
+        url: z.string(),
+        angle: z.string().optional(),
+      })
+    )
+    .optional(),
+  isPublic: z.boolean().optional(),
 });
 
 export type StartCutInput = z.infer<typeof startCutSchema>;

@@ -104,5 +104,6 @@ export interface ChairMapItem {
   longitude: number | null;
   status: PresenceStatus;
   waitingCount: number;
+  portfolio?: string[];
   updatedAt: string;
 }

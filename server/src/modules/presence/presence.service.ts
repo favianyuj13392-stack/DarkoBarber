@@ -398,30 +398,44 @@ export class PresenceService {
       include: {
         presence: true,
         shop: true,
+        cuts: {
+          where: { status: 'FINISHED' },
+          include: {
+            photos: {
+              where: { isPublic: true },
+            },
+          },
+          orderBy: { finishedAt: 'desc' },
+        },
       },
       orderBy: {
         displayName: 'asc',
       },
     });
 
-    return barbers.map((barber) => ({
-      barberId: barber.id,
-      displayName: barber.displayName,
-      avatarUrl: barber.avatarUrl,
-      bio: barber.bio,
-      linkedin: barber.linkedin,
-      instagram: barber.instagram,
-      specialties: barber.specialties,
-      shopId: barber.shopId,
-      shopName: barber.shop?.name ?? null,
-      address: barber.shop?.address ?? null,
-      zone: barber.shop?.zone ?? null,
-      latitude: barber.shop?.latitude ?? null,
-      longitude: barber.shop?.longitude ?? null,
-      status: barber.presence?.status ?? PresenceStatus.GRAY,
-      waitingCount: barber.presence?.waitingCount ?? 0,
-      updatedAt: (barber.presence?.updatedAt ?? barber.updatedAt).toISOString(),
-    }));
+    return barbers.map((barber) => {
+      const publicPhotos = barber.cuts.flatMap((c) => c.photos.map((p) => p.r2Key));
+
+      return {
+        barberId: barber.id,
+        displayName: barber.displayName,
+        avatarUrl: barber.avatarUrl,
+        bio: barber.bio,
+        linkedin: barber.linkedin,
+        instagram: barber.instagram,
+        specialties: barber.specialties,
+        shopId: barber.shopId,
+        shopName: barber.shop?.name ?? 'Fade Studio — Sopocachi',
+        address: barber.shop?.address ?? 'Av. 20 de Octubre #2140',
+        zone: barber.shop?.zone ?? 'Sopocachi',
+        latitude: barber.shop?.latitude ?? -16.5118,
+        longitude: barber.shop?.longitude ?? -68.1292,
+        status: barber.presence?.status ?? PresenceStatus.GRAY,
+        waitingCount: barber.presence?.waitingCount ?? 0,
+        portfolio: publicPhotos,
+        updatedAt: (barber.presence?.updatedAt ?? barber.updatedAt).toISOString(),
+      };
+    });
   }
 
   /**

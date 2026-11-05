@@ -111,7 +111,9 @@ export async function startCut(
  */
 export async function finalizeCut(
   cutId: string,
-  chips: CutChips
+  chips: CutChips,
+  photos?: Array<{ url: string; angle: string }>,
+  isPublic?: boolean
 ): Promise<{ cut: CutRecord }> {
   const token = getStoredToken();
 
@@ -124,40 +126,30 @@ export async function finalizeCut(
       },
       body: JSON.stringify({
         chips,
+        photos,
+        isPublic,
         finishedAt: new Date().toISOString(),
       }),
     });
 
-    if (!response.ok) {
-      console.warn('Backend finalizeCut returned error, simulating local completion');
-      return {
-        cut: {
-          id: cutId,
-          barberId: 'barber-diego',
-          clientProfileId: 'client-santiago',
-          status: 'COMPLETED',
-          startedAt: new Date(Date.now() - 30 * 60000).toISOString(),
-          finishedAt: new Date().toISOString(),
-          chips,
-        },
-      };
+    if (response.ok) {
+      return await response.json();
     }
-
-    return await response.json();
   } catch (error) {
     console.warn('Network error finalizeCut, simulating local completion:', error);
-    return {
-      cut: {
-        id: cutId,
-        barberId: 'barber-diego',
-        clientProfileId: 'client-santiago',
-        status: 'COMPLETED',
-        startedAt: new Date(Date.now() - 30 * 60000).toISOString(),
-        finishedAt: new Date().toISOString(),
-        chips,
-      },
-    };
   }
+
+  return {
+    cut: {
+      id: cutId,
+      barberId: 'barber-diego',
+      clientProfileId: 'client-active',
+      status: 'COMPLETED',
+      startedAt: new Date(Date.now() - 30 * 60000).toISOString(),
+      finishedAt: new Date().toISOString(),
+      chips,
+    },
+  };
 }
 
 /**

@@ -303,41 +303,50 @@ export async function fetchExploreData(): Promise<{
 
       if (Array.isArray(rawList) && rawList.length > 0) {
         // Map backend barbers and merge with our rich presentation profiles
-        const mergedBarbers: ExploreBarber[] = rawList
-          .filter((item) => item.latitude !== null && item.longitude !== null)
-          .map((item) => {
-            const existing = MOCK_BARBERS.find(
-              (b) => b.id === item.barberId || b.name.toLowerCase().includes(item.displayName.toLowerCase())
-            );
+        const mergedBarbers: ExploreBarber[] = rawList.map((item) => {
+          const existing = MOCK_BARBERS.find(
+            (b) =>
+              b.id === item.barberId ||
+              b.name.toLowerCase().includes(item.displayName.toLowerCase())
+          );
 
-            return {
-              id: item.barberId,
-              name: item.displayName,
-              avatar:
-                item.avatarUrl ||
-                existing?.avatar ||
-                'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=80',
-              shopId: item.shopId || 'shop-sopocachi-darko',
-              shopName: item.shopName || 'Darko Studio',
-              address: item.address || 'Av. 20 de Octubre #2314',
-              zone: item.zone || 'Sopocachi',
-              lat: item.latitude || -16.5113,
-              lng: item.longitude || -68.1287,
-              status: (item.status as any) || 'GREEN',
-              waitingCount: item.waitingCount || 0,
-              rating: existing?.rating || 4.9,
-              reviewCount: existing?.reviewCount || 108,
-              distanceKm: existing?.distanceKm || 0.5,
-              specialties: item.specialties?.length > 0 ? item.specialties : existing?.specialties || ['Fade', 'Barba'],
-              bio: item.bio || existing?.bio || 'Master Barber profesional en FADE.',
-              experienceYears: existing?.experienceYears || 4,
-              totalCuts: existing?.totalCuts || 120,
-              priceRange: existing?.priceRange || 'Bs 50 - 90',
-              services: existing?.services || DEFAULT_SERVICES,
-              portfolio: existing?.portfolio || MOCK_BARBERS[0].portfolio,
-              isFavorite: existing?.isFavorite || false,
-            };
-          });
+          // Si el barbero tiene fotos públicas en su portafolio de la base de datos, usarlas
+          const realPortfolio =
+            item.portfolio && item.portfolio.length > 0
+              ? item.portfolio
+              : existing?.portfolio || MOCK_BARBERS[0].portfolio;
+
+          return {
+            id: item.barberId,
+            name: item.displayName,
+            avatar:
+              item.avatarUrl ||
+              existing?.avatar ||
+              'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=80',
+            shopId: item.shopId || 'shop-sopocachi-darko',
+            shopName: item.shopName || 'Darko Studio',
+            address: item.address || 'Av. 20 de Octubre #2314',
+            zone: item.zone || 'Sopocachi',
+            lat: typeof item.latitude === 'number' ? item.latitude : -16.5113,
+            lng: typeof item.longitude === 'number' ? item.longitude : -68.1287,
+            status: (item.status as any) || 'GREEN',
+            waitingCount: item.waitingCount || 0,
+            rating: existing?.rating || 5.0,
+            reviewCount: existing?.reviewCount || 1,
+            distanceKm: existing?.distanceKm || 0.5,
+            specialties:
+              item.specialties?.length > 0
+                ? item.specialties
+                : existing?.specialties || ['Fade', 'Barba'],
+            bio: item.bio || existing?.bio || 'Master Barber profesional en FADE.',
+            experienceYears: existing?.experienceYears || 2,
+            totalCuts: existing?.totalCuts || 1,
+            priceRange: existing?.priceRange || 'Bs 50 - 90',
+            services: existing?.services || DEFAULT_SERVICES,
+            portfolio: realPortfolio,
+            isFavorite: existing?.isFavorite || false,
+          };
+        });
 
         // Ensure Brian López is in list (from mockups)
         if (!mergedBarbers.some((b) => b.id === 'barber-brian-16')) {

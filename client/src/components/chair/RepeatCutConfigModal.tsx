@@ -219,10 +219,61 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
       notasEspeciales: cutNotes ? [cutNotes] : [],
     };
 
+    const validPhotos = newPhotos
+      .filter((p) => p.img)
+      .map((p) => ({ url: p.img, angle: p.angle }));
+
+    const isPublic = Boolean(consentReceived?.isPublic);
+
     try {
       if (activeCutId) {
-        await finalizeCut(activeCutId, chips);
+        await finalizeCut(activeCutId, chips, validPhotos, isPublic);
       }
+
+      // Sincronizar corte terminado para que el feed del cliente lo muestre de inmediato
+      const newCutItem = {
+        id: activeCutId || `cut-${Date.now()}`,
+        date: 'Hoy',
+        rawDate: new Date().toISOString(),
+        monthGroup: 'Noviembre 2026',
+        styleName: `${tipoDegradado} · ${parteSuperior}`,
+        barberName,
+        shopName: 'Fade Studio — Sopocachi',
+        durationMinutes: 35,
+        priceBs: 60,
+        barberNotes: cutNotes || 'Corte finalizado en sillón.',
+        photos: validPhotos.map((p, idx) => ({
+          id: `photo-${idx}`,
+          url: p.url,
+          angle: (p.angle as any) || 'Frontal',
+          isPublic,
+        })),
+        coverPhoto: validPhotos[0]?.url || '/assets/images/1.png',
+        category: (barbaOption !== 'No' ? 'combo' : 'corte') as any,
+        isVerified: true,
+        specs: {
+          degradedNumber: baseLateral,
+          fadeType: tipoDegradado,
+          upperTreatment: parteSuperior,
+          beardTreatment: barbaOption !== 'No' ? barbaOption : 'Sin barba',
+        },
+      };
+
+      try {
+        const stored = localStorage.getItem('fade_completed_cuts');
+        const list = stored ? JSON.parse(stored) : [];
+        list.unshift(newCutItem);
+        localStorage.setItem('fade_completed_cuts', JSON.stringify(list));
+
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel(CHAIR_SYNC_CHANNEL_NAME);
+          bc.postMessage({ type: 'CUT_FINALIZED', cut: newCutItem });
+          bc.close();
+        }
+      } catch (err) {
+        console.warn('Error saving local completed cut:', err);
+      }
+
       setIsCutActive(false);
       setStep('config');
       onCutFinalized();

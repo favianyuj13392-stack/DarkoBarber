@@ -160,23 +160,73 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
     }
   };
 
+  const [cutsList, setCutsList] = useState<HaircutItem[]>(() => {
+    try {
+      const stored = localStorage.getItem('fade_completed_cuts');
+      const local = stored ? JSON.parse(stored) : [];
+      return [...local, ...MOCK_HAIRCUTS];
+    } catch {
+      return MOCK_HAIRCUTS;
+    }
+  });
+
+  useEffect(() => {
+    // Cargar cortes reales desde la base de datos (GET /api/clients/:phone/history)
+    async function loadCutsFromDb() {
+      try {
+        const phone = currentUser?.phone || '+591 712 34567';
+        const cleanPhone = phone.replace(/\D/g, '');
+        const res = await fetch(`/api/clients/${cleanPhone}/history`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.cuts && Array.isArray(data.cuts) && data.cuts.length > 0) {
+            setCutsList((prev) => {
+              const dbIds = new Set(data.cuts.map((c: HaircutItem) => c.id));
+              const remaining = prev.filter((c) => !dbIds.has(c.id));
+              return [...data.cuts, ...remaining];
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Could not fetch cuts from DB:', err);
+      }
+    }
+
+    loadCutsFromDb();
+
+    // Escuchar cortes finalizados en tiempo real
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel(CHAIR_SYNC_CHANNEL_NAME);
+      const onMsg = (event: MessageEvent) => {
+        if (event.data?.type === 'CUT_FINALIZED' && event.data.cut) {
+          setCutsList((prev) => [event.data.cut, ...prev.filter((c) => c.id !== event.data.cut.id)]);
+        }
+      };
+      bc.addEventListener('message', onMsg);
+      return () => {
+        bc.removeEventListener('message', onMsg);
+        bc.close();
+      };
+    }
+  }, [currentUser]);
+
   // Filtering cuts
-  const filteredCuts = MOCK_HAIRCUTS.filter((cut) => {
+  const filteredCuts = cutsList.filter((cut) => {
     // Category filter
     if (categoryFilter === 'cortes' && cut.category !== 'corte') return false;
     if (categoryFilter === 'barba' && cut.category !== 'barba' && cut.category !== 'combo') return false;
     if (categoryFilter === 'favoritos' && !cut.isFavorite) return false;
 
     // Barber filter
-    if (selectedBarberId === 'brian' && !cut.barberName.includes('Brian')) return false;
-    if (selectedBarberId === 'matias' && !cut.barberName.includes('Matias')) return false;
-    if (selectedBarberId === 'diego' && !cut.barberName.includes('Diego')) return false;
-    if (selectedBarberId === 'luis' && !cut.barberName.includes('Luis')) return false;
+    if (selectedBarberId === 'brian' && !cut.barberName.toLowerCase().includes('brian')) return false;
+    if (selectedBarberId === 'matias' && !cut.barberName.toLowerCase().includes('matias')) return false;
+    if (selectedBarberId === 'diego' && !cut.barberName.toLowerCase().includes('diego')) return false;
+    if (selectedBarberId === 'luis' && !cut.barberName.toLowerCase().includes('luis')) return false;
 
     return true;
   });
 
-  const latestCut = MOCK_HAIRCUTS[0];
+  const latestCut = filteredCuts[0] || cutsList[0] || MOCK_HAIRCUTS[0];
 
   // Grouping remaining cuts by month
   const monthGroups = Array.from(new Set(filteredCuts.map((c) => c.monthGroup)));
