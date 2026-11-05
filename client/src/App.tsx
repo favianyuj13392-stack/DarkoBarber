@@ -5,7 +5,7 @@ import { OnboardingCarousel } from './components/presentation/OnboardingCarousel
 import { LoginView } from './components/auth/LoginView';
 import { ClientRegisterWizard } from './components/register/ClientRegisterWizard';
 import { BarberRegisterWizard } from './components/register/BarberRegisterWizard';
-import { BarberChairWorkflow } from './components/chair/BarberChairWorkflow';
+import { BarberHubCoordinator } from './components/barber/BarberHubCoordinator';
 import { AuthenticatedView } from './components/dashboard/AuthenticatedView';
 import { HistorialFeed } from './components/history/HistorialFeed';
 import { ExploreCoordinator } from './components/explore/ExploreCoordinator';
@@ -401,7 +401,10 @@ export function App() {
             transition={{ duration: 0.25 }}
             className="w-full min-h-screen"
           >
-            <BarberChairWorkflow onExit={() => setCurrentScreen('authenticated')} />
+            <BarberHubCoordinator
+              onExit={() => setCurrentScreen('authenticated')}
+              onLogout={handleLogout}
+            />
           </motion.div>
         )}
 

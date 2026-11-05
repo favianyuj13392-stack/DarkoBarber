@@ -6,6 +6,16 @@ export interface UserProfile {
   role: 'barbero' | 'cliente';
   plan?: string;
   shopId?: string;
+  avatarUrl?: string;
+  bio?: string;
+  instagram?: string;
+  linkedin?: string;
+  specialties?: string[];
+  shopName?: string;
+  shopAddress?: string;
+  shopZone?: string;
+  totalCuts?: number;
+  portfolio?: string[];
 }
 
 export interface LoginResponse {
@@ -221,4 +231,74 @@ export async function loginWithGoogle(credential: string, role: 'barbero' | 'cli
   localStorage.setItem(USER_KEY, JSON.stringify(data.user));
 
   return data;
+}
+
+export async function fetchBarberProfile(): Promise<UserProfile | null> {
+  const token = getStoredToken();
+  if (!token) return getStoredUser();
+
+  try {
+    const res = await fetch('/api/barbers/me', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const currentUser = getStoredUser();
+      const merged: UserProfile = {
+        ...currentUser,
+        ...data,
+        role: 'barbero',
+      };
+      localStorage.setItem(USER_KEY, JSON.stringify(merged));
+      return merged;
+    }
+  } catch (err) {
+    console.warn('Could not fetch remote barber profile:', err);
+  }
+
+  return getStoredUser();
+}
+
+export async function updateBarberProfile(
+  updates: Partial<UserProfile>
+): Promise<UserProfile> {
+  const token = getStoredToken();
+  const current = getStoredUser() || ({} as UserProfile);
+
+  const localUpdated: UserProfile = {
+    ...current,
+    ...updates,
+  };
+  localStorage.setItem(USER_KEY, JSON.stringify(localUpdated));
+
+  if (token) {
+    try {
+      const res = await fetch('/api/barbers/me', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(updates),
+      });
+
+      if (res.ok) {
+        const remoteUpdated = await res.json();
+        const merged: UserProfile = {
+          ...localUpdated,
+          ...remoteUpdated,
+          role: 'barbero',
+        };
+        localStorage.setItem(USER_KEY, JSON.stringify(merged));
+        return merged;
+      }
+    } catch (err) {
+      console.warn('Could not persist barber profile to server, saved locally:', err);
+    }
+  }
+
+  return localUpdated;
 }

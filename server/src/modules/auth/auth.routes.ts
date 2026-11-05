@@ -155,4 +155,45 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(200).send(me);
     }
   );
+
+  // GET /auth/barber/profile & GET /barbers/me
+  const getBarberProfileHandler = async (request: any, reply: any) => {
+    const barberId = request.barber?.id || request.authUser?.id;
+    if (!barberId) {
+      return reply.status(401).send({
+        error: 'UNAUTHORIZED',
+        message: 'Barber token required',
+      });
+    }
+
+    const profile = await service.getBarberFullProfile(barberId);
+    if (!profile) {
+      return reply.status(404).send({
+        error: 'NOT_FOUND',
+        message: 'Barber not found',
+      });
+    }
+
+    return reply.status(200).send(profile);
+  };
+
+  fastify.get('/auth/barber/profile', { preHandler: [fastify.authenticateBarber] }, getBarberProfileHandler);
+  fastify.get('/barbers/me', { preHandler: [fastify.authenticateBarber] }, getBarberProfileHandler);
+
+  // PUT /auth/barber/profile & PUT /barbers/me
+  const updateBarberProfileHandler = async (request: any, reply: any) => {
+    const barberId = request.barber?.id || request.authUser?.id;
+    if (!barberId) {
+      return reply.status(401).send({
+        error: 'UNAUTHORIZED',
+        message: 'Barber token required',
+      });
+    }
+
+    const updated = await service.updateBarberProfile(barberId, request.body as any);
+    return reply.status(200).send(updated);
+  };
+
+  fastify.put('/auth/barber/profile', { preHandler: [fastify.authenticateBarber] }, updateBarberProfileHandler);
+  fastify.put('/barbers/me', { preHandler: [fastify.authenticateBarber] }, updateBarberProfileHandler);
 };

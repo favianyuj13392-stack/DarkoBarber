@@ -410,4 +410,80 @@ export class AuthService {
 
     return null;
   }
+
+  async getBarberFullProfile(barberId: string) {
+    const barber = await this.prisma.barber.findUnique({
+      where: { id: barberId },
+      include: {
+        shop: true,
+        presence: true,
+        cuts: {
+          where: { status: 'FINISHED' },
+          include: {
+            photos: {
+              where: { isPublic: true },
+            },
+          },
+          orderBy: { finishedAt: 'desc' },
+        },
+      },
+    });
+
+    if (!barber) return null;
+
+    const publicPhotos = barber.cuts.flatMap((c) => c.photos.map((p) => p.r2Key));
+
+    return {
+      id: barber.id,
+      displayName: barber.displayName,
+      email: barber.email,
+      phone: barber.phone,
+      avatarUrl: barber.avatarUrl,
+      bio: barber.bio || 'Master Barber profesional en FADE.',
+      specialties: barber.specialties?.length > 0 ? barber.specialties : ['Fade', 'Barba', 'Tijera'],
+      instagram: barber.instagram || null,
+      linkedin: barber.linkedin || null,
+      plan: barber.plan,
+      shopId: barber.shopId,
+      shopName: barber.shop?.name || 'Fade Studio — Sopocachi',
+      shopAddress: barber.shop?.address || 'Av. 20 de Octubre #2140',
+      shopZone: barber.shop?.zone || 'Sopocachi',
+      status: barber.presence?.status || 'GREEN',
+      waitingCount: barber.presence?.waitingCount || 0,
+      totalCuts: barber.cuts.length,
+      portfolio: publicPhotos,
+    };
+  }
+
+  async updateBarberProfile(
+    barberId: string,
+    data: {
+      displayName?: string;
+      bio?: string;
+      specialties?: string[];
+      instagram?: string;
+      linkedin?: string;
+      avatarUrl?: string;
+      phone?: string;
+    }
+  ) {
+    const updated = await this.prisma.barber.update({
+      where: { id: barberId },
+      data: {
+        ...(data.displayName ? { displayName: data.displayName } : {}),
+        ...(data.bio !== undefined ? { bio: data.bio } : {}),
+        ...(data.specialties ? { specialties: data.specialties } : {}),
+        ...(data.instagram !== undefined ? { instagram: data.instagram } : {}),
+        ...(data.linkedin !== undefined ? { linkedin: data.linkedin } : {}),
+        ...(data.avatarUrl !== undefined ? { avatarUrl: data.avatarUrl } : {}),
+        ...(data.phone !== undefined ? { phone: data.phone } : {}),
+      },
+      include: {
+        shop: true,
+        presence: true,
+      },
+    });
+
+    return updated;
+  }
 }
