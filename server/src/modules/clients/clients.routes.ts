@@ -39,4 +39,18 @@ export const clientsRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(201).send(created);
     }
   );
+
+  // GET /clients/me
+  fastify.get('/clients/me', async (request, reply) => {
+    const query = (request.query as { email?: string; phone?: string; name?: string }) || {};
+    const client = await service.getClientHistory(query.phone || '', query);
+    return reply.status(200).send(client || {});
+  });
+
+  // PUT /clients/me
+  fastify.put('/clients/me', async (request, reply) => {
+    const body = (request.body as { id?: string; email?: string; phone?: string; displayName?: string; avatarUrl?: string }) || {};
+    const updated = await service.updateClientProfile(body);
+    return reply.status(200).send(updated);
+  });
 };

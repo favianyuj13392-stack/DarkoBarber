@@ -165,4 +165,17 @@ export const photosRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
   );
+
+  // PATCH /photos/:photoId/consent (Conceder o revocar autorización de portafolio público)
+  fastify.patch('/photos/:photoId/consent', async (request, reply) => {
+    const { photoId } = request.params as { photoId: string };
+    const { isPublic } = (request.body as { isPublic: boolean }) || {};
+
+    const updated = await fastify.prisma.cutPhoto.update({
+      where: { id: photoId },
+      data: { isPublic: Boolean(isPublic) },
+    });
+
+    return reply.status(200).send(updated);
+  });
 };

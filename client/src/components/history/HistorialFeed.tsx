@@ -33,8 +33,9 @@ import {
 import { MOCK_HAIRCUTS, INITIAL_PREFERENCES } from '../../data/mockHistory';
 import type { HaircutItem, ClientPreferences } from '../../types/history';
 import { SPRING_TOUCH } from '../../constants/springs';
-import { getStoredUser } from '../../services/auth.service';
+import { getStoredUser, type UserProfile } from '../../services/auth.service';
 import { ExploreCoordinator } from '../explore/ExploreCoordinator';
+import { ClientProfileView } from '../profile/ClientProfileView';
 
 interface HistorialFeedProps {
   onNavigateTab?: (tab: ClientNavTab) => void;
@@ -84,7 +85,7 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
     }
   }, [initialScannedBarber]);
 
-  const currentUser = getStoredUser();
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => getStoredUser());
   const userName = currentUser?.displayName || 'Ernesto Salinas';
 
   // Evitar re-aperturas en bucle de solicitudes ya respondidas
@@ -280,6 +281,17 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
       {activeNavTab === 'explorar' && (
         <div className="pt-2 lg:pt-4">
           <ExploreCoordinator initialView="list" />
+        </div>
+      )}
+
+      {activeNavTab === 'perfil' && (
+        <div className="pt-2 lg:pt-4">
+          <ClientProfileView
+            currentUser={currentUser}
+            cuts={cutsList}
+            onLogout={onLogout}
+            onProfileUpdated={(updated) => setCurrentUser(updated)}
+          />
         </div>
       )}
 

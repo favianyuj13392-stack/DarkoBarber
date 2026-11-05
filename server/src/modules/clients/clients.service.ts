@@ -168,4 +168,43 @@ export class ClientsService {
       },
     };
   }
+
+  async updateClientProfile(data: {
+    id?: string;
+    email?: string;
+    phone?: string;
+    displayName?: string;
+    avatarUrl?: string;
+  }) {
+    let client = null;
+    if (data.id) {
+      client = await this.prisma.client.findUnique({ where: { id: data.id } });
+    }
+    if (!client && data.email) {
+      client = await this.prisma.client.findFirst({ where: { email: data.email } });
+    }
+    if (!client && data.phone) {
+      client = await this.prisma.client.findFirst({ where: { phone: data.phone } });
+    }
+
+    if (!client) {
+      client = await this.prisma.client.findFirst({
+        where: { displayName: { contains: 'Ernesto Salinas', mode: 'insensitive' } },
+      });
+    }
+
+    if (!client) return null;
+
+    const updated = await this.prisma.client.update({
+      where: { id: client.id },
+      data: {
+        ...(data.displayName ? { displayName: data.displayName } : {}),
+        ...(data.phone ? { phone: data.phone } : {}),
+        ...(data.email ? { email: data.email } : {}),
+        ...(data.avatarUrl !== undefined ? { avatarUrl: data.avatarUrl } : {}),
+      },
+    });
+
+    return updated;
+  }
 }
