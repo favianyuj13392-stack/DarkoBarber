@@ -15,7 +15,10 @@ import { startWatchdogs, stopWatchdogs } from './modules/presence/presence.watch
 dotenv.config();
 
 export async function buildApp(opts: FastifyServerOptions = {}): Promise<FastifyInstance> {
-  const app = Fastify(opts);
+  const app = Fastify({
+    bodyLimit: 30 * 1024 * 1024, // 30 MB body limit for mobile photos and multi-angle portfolios
+    ...opts,
+  });
 
   const allowedOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())

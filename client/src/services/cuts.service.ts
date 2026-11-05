@@ -79,7 +79,7 @@ export async function startCut(
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      console.warn('Backend startCut returned error, falling back to local simulation:', err);
+      console.warn('Backend startCut returned error, using offline cut session:', err);
       return {
         cut: {
           id: reqId,
@@ -93,7 +93,7 @@ export async function startCut(
 
     return await response.json();
   } catch (error) {
-    console.warn('Network error calling startCut, simulating locally:', error);
+    console.warn('Network error calling startCut, continuing offline:', error);
     return {
       cut: {
         id: reqId,
@@ -136,7 +136,7 @@ export async function finalizeCut(
       return await response.json();
     }
   } catch (error) {
-    console.warn('Network error finalizeCut, simulating local completion:', error);
+    console.warn('Network error finalizeCut, using local completion:', error);
   }
 
   return {

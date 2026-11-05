@@ -60,7 +60,15 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
   const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
-  const [scannedBarber, setScannedBarber] = useState<ScannedBarberInfo | null>(initialScannedBarber || null);
+  const [scannedBarber, setScannedBarber] = useState<ScannedBarberInfo | null>(() => {
+    if (initialScannedBarber) return initialScannedBarber;
+    try {
+      const stored = sessionStorage.getItem('fade_last_scanned_barber');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
   const [isShareHistoryOpen, setIsShareHistoryOpen] = useState(Boolean(initialScannedBarber));
   const [shareSuccessToast, setShareSuccessToast] = useState(false);
   const [incomingConsentReq, setIncomingConsentReq] = useState<PhotoConsentRequestPayload | null>(null);
@@ -69,6 +77,9 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
   useEffect(() => {
     if (initialScannedBarber) {
       setScannedBarber(initialScannedBarber);
+      try {
+        sessionStorage.setItem('fade_last_scanned_barber', JSON.stringify(initialScannedBarber));
+      } catch {}
       setIsShareHistoryOpen(true);
     }
   }, [initialScannedBarber]);
@@ -125,13 +136,13 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
     const barberName = scannedBarber?.barberName;
 
     const interval = setInterval(async () => {
-      const req = await pollPhotoConsentRequest(phone, barberId, barberName);
+      const req = await pollPhotoConsentRequest(phone, barberId, barberName, userName);
       if (req && !isRequestAnswered(req)) {
         setIncomingConsentReq(req);
       }
     }, 1000);
     return () => clearInterval(interval);
-  }, [currentUser, scannedBarber]);
+  }, [currentUser, scannedBarber, userName]);
 
   const handleClientConsent = async (isPublic: boolean) => {
     if (incomingConsentReq) {
@@ -149,7 +160,8 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
         req.barberId,
         req.clientPhone,
         isPublic,
-        scannedBarber?.barberName || req.barberName
+        scannedBarber?.barberName || req.barberName,
+        userName
       );
       setConsentToastMsg(
         isPublic
@@ -654,6 +666,9 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
         onScanSuccess={(barber) => {
           setIsQrScannerOpen(false);
           setScannedBarber(barber);
+          try {
+            sessionStorage.setItem('fade_last_scanned_barber', JSON.stringify(barber));
+          } catch {}
           setIsShareHistoryOpen(true);
         }}
       />

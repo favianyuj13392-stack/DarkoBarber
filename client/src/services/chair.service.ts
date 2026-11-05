@@ -16,6 +16,7 @@ export interface PhotoConsentRequestPayload {
   barberId: string;
   barberName: string;
   clientPhone: string;
+  clientName?: string;
   photoUrl: string;
   photos?: Array<{ id: string; url: string; angle: string }>;
   styleName: string;
@@ -27,6 +28,7 @@ export interface PhotoConsentRequestPayload {
 export interface PhotoConsentResponsePayload {
   barberId: string;
   clientPhone: string;
+  clientName?: string;
   isPublic: boolean;
   timestamp: number;
 }
@@ -169,9 +171,13 @@ export async function requestPhotoConsent(
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(fullPayload),
         });
-        if (res.ok) break;
-      } catch {
-        // fallback
+        if (res.ok) {
+          break;
+        } else {
+          console.warn(`POST consent-request to ${url} returned status: ${res.status}`);
+        }
+      } catch (err) {
+        console.warn(`Fetch error for ${url}:`, err);
       }
     }
   } catch (err) {
@@ -185,13 +191,15 @@ export async function requestPhotoConsent(
 export async function pollPhotoConsentRequest(
   clientPhone?: string,
   barberId?: string,
-  barberName?: string
+  barberName?: string,
+  clientName?: string
 ): Promise<PhotoConsentRequestPayload | null> {
   try {
     const params = new URLSearchParams();
     if (clientPhone) params.append('phone', clientPhone.replace(/\D/g, ''));
     if (barberId) params.append('barberId', barberId);
     if (barberName) params.append('name', barberName);
+    if (clientName) params.append('clientName', clientName);
 
     const endpoints = [
       `/api/presence/chair/consent-request?${params.toString()}`,
@@ -200,7 +208,9 @@ export async function pollPhotoConsentRequest(
 
     for (const url of endpoints) {
       try {
-        const res = await fetch(url);
+        const res = await fetch(url, {
+          headers: { 'Cache-Control': 'no-cache' },
+        });
         if (res.ok) {
           const data = await res.json();
           if (data.hasPending && data.request) {
@@ -224,12 +234,14 @@ export async function respondPhotoConsent(
   barberId: string,
   clientPhone: string,
   isPublic: boolean,
-  barberName?: string
+  barberName?: string,
+  clientName?: string
 ): Promise<void> {
-  const payload: PhotoConsentResponsePayload & { barberName?: string } = {
+  const payload: PhotoConsentResponsePayload & { barberName?: string; clientName?: string } = {
     barberId,
     barberName,
     clientPhone,
+    clientName,
     isPublic,
     timestamp: Date.now(),
   };
@@ -282,13 +294,15 @@ export async function respondPhotoConsent(
 export async function pollPhotoConsentResponse(
   barberId?: string,
   barberName?: string,
-  clientPhone?: string
+  clientPhone?: string,
+  clientName?: string
 ): Promise<PhotoConsentResponsePayload | null> {
   try {
     const params = new URLSearchParams();
     if (barberId) params.append('barberId', barberId);
     if (barberName) params.append('name', barberName);
     if (clientPhone) params.append('phone', clientPhone.replace(/\D/g, ''));
+    if (clientName) params.append('clientName', clientName);
 
     const endpoints = [
       `/api/presence/chair/consent-response?${params.toString()}`,
@@ -297,7 +311,9 @@ export async function pollPhotoConsentResponse(
 
     for (const url of endpoints) {
       try {
-        const res = await fetch(url);
+        const res = await fetch(url, {
+          headers: { 'Cache-Control': 'no-cache' },
+        });
         if (res.ok) {
           const data = await res.json();
           if (data.hasResponse && data.response) {

@@ -10,7 +10,6 @@ import {
   Sparkles,
   Scissors,
   Share2,
-  ExternalLink,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { SPRING_TOUCH, SPRING_MODAL } from '../../constants/springs';
@@ -368,17 +367,6 @@ export const BarberQrModal: FC<BarberQrModalProps> = ({
                   <span>Compartir</span>
                 </button>
               </div>
-
-              {/* Botón Simular Prueba Directa (Para feedback inmediato) */}
-              <a
-                href={qrLink}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 text-[11px] font-mono text-[#B68F4E] hover:underline pt-1 cursor-pointer"
-              >
-                <ExternalLink className="w-3 h-3" />
-                <span>Abrir enlace como cliente para probar flujo</span>
-              </a>
             </div>
           </div>
         </motion.div>

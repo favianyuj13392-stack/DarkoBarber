@@ -7,7 +7,6 @@ import {
   Copy,
   Check,
   Phone,
-  UserCheck,
   Users,
   Sparkles,
   LogOut,
@@ -275,7 +274,7 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
         </div>
 
         {/* =========================================================================
-            VINCULACIÓN MANUAL POR TELÉFONO O DEMO
+            VINCULACIÓN MANUAL POR TELÉFONO
             ========================================================================= */}
         <div className="fade-surface rounded-3xl p-5 border border-white/10 space-y-4 text-left">
           <div className="space-y-1">
@@ -315,23 +314,6 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
           {phoneError && (
             <p className="text-[11px] text-red-400 font-mono">{phoneError}</p>
           )}
-
-          {/* Botón de Prueba Rápida con Ernesto Salinas */}
-          <div className="pt-2 border-t border-white/5">
-            <button
-              type="button"
-              onClick={() => onConnectClient('+591 712 34567')}
-              className="w-full py-2.5 px-3 rounded-xl bg-[#B68F4E]/10 hover:bg-[#B68F4E]/20 border border-[#B68F4E]/30 text-[#D9C9B0] hover:text-white transition-all text-xs font-medium cursor-pointer flex items-center justify-between"
-            >
-              <div className="flex items-center gap-2">
-                <UserCheck className="w-3.5 h-3.5 text-[#B68F4E]" />
-                <span>Probar con cliente de prueba (Ernesto Salinas)</span>
-              </div>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#B68F4E]/20 text-[#B68F4E]">
-                Demo
-              </span>
-            </button>
-          </div>
         </div>
 
         {/* =========================================================================

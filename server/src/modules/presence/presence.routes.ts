@@ -27,6 +27,7 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
     barberId: string;
     barberName: string;
     clientPhone: string;
+    clientName?: string;
     photoUrl: string;
     photos?: Array<{ id: string; url: string; angle: string }>;
     styleName: string;
@@ -38,6 +39,7 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
   interface ConsentResponsePayload {
     barberId: string;
     clientPhone: string;
+    clientName?: string;
     isPublic: boolean;
     timestamp: number;
   }
@@ -276,6 +278,10 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
 
   // 5. Barber Polling for Pending Chair Handshake: GET /presence/chair/session
   fastify.get('/presence/chair/session', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    reply.header('Pragma', 'no-cache');
+    reply.header('Expires', '0');
+
     const query = (request.query as { barberId?: string; name?: string }) || {};
     const barberId = query.barberId?.toLowerCase() || '';
     const normalizedName = query.name?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
@@ -307,11 +313,13 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
 
   // 6. Barber sends Photo Consent Request to Client: POST /presence/chair/consent-request
   fastify.post('/presence/chair/consent-request', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     const body = request.body as ConsentRequestPayload;
     if (!body || !body.barberId) {
       return reply.status(400).send({ error: 'INVALID_PAYLOAD', message: 'barberId is required' });
     }
     const cleanPhone = (body.clientPhone || '').replace(/\D/g, '');
+    const normClient = body.clientName?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
     const payload: ConsentRequestPayload = {
       ...body,
       timestamp: Date.now(),
@@ -320,6 +328,7 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
     // Limpiar respuestas residuales previas para esta vinculación
     if (body.barberId) pendingConsentResponses.delete(body.barberId.toLowerCase());
     if (body.barberName) pendingConsentResponses.delete(body.barberName.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    if (normClient) pendingConsentResponses.delete(normClient);
     if (cleanPhone) {
       pendingConsentResponses.delete(cleanPhone);
       if (cleanPhone.length >= 8) pendingConsentResponses.delete(cleanPhone.slice(-8));
@@ -331,6 +340,9 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
       if (cleanPhone.length >= 8) {
         pendingConsentRequests.set(cleanPhone.slice(-8), payload);
       }
+    }
+    if (normClient) {
+      pendingConsentRequests.set(normClient, payload);
     }
     if (body.barberId) {
       pendingConsentRequests.set(body.barberId.toLowerCase(), payload);
@@ -345,10 +357,15 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
 
   // 7. Client polls for Photo Consent Request: GET /presence/chair/consent-request
   fastify.get('/presence/chair/consent-request', async (request, reply) => {
-    const query = (request.query as { phone?: string; barberId?: string; name?: string }) || {};
+    reply.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    reply.header('Pragma', 'no-cache');
+    reply.header('Expires', '0');
+
+    const query = (request.query as { phone?: string; barberId?: string; name?: string; clientName?: string }) || {};
     const cleanPhone = (query.phone || '').replace(/\D/g, '');
     const barberId = (query.barberId || '').toLowerCase();
     const normName = (query.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normClient = (query.clientName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
     let req: ConsentRequestPayload | undefined;
 
@@ -357,6 +374,9 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
       if (!req && cleanPhone.length >= 8) {
         req = pendingConsentRequests.get(cleanPhone.slice(-8));
       }
+    }
+    if (!req && normClient) {
+      req = pendingConsentRequests.get(normClient);
     }
     if (!req && barberId) {
       req = pendingConsentRequests.get(barberId);
@@ -373,10 +393,12 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
 
   // 8. Client sends Photo Consent Response: POST /presence/chair/consent-response
   fastify.post('/presence/chair/consent-response', async (request, reply) => {
-    const body = request.body as ConsentResponsePayload & { barberName?: string };
+    reply.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    const body = request.body as ConsentResponsePayload & { barberName?: string; clientName?: string };
     if (!body || !body.barberId) {
       return reply.status(400).send({ error: 'INVALID_PAYLOAD', message: 'barberId is required' });
     }
+    const normClient = body.clientName?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
     const payload: ConsentResponsePayload = {
       ...body,
       timestamp: Date.now(),
@@ -387,6 +409,9 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
     if (body.barberName) {
       const normName = body.barberName.toLowerCase().replace(/[^a-z0-9]/g, '');
       pendingConsentRequests.delete(normName);
+    }
+    if (normClient) {
+      pendingConsentRequests.delete(normClient);
     }
     if (body.clientPhone) {
       const cleanPhone = body.clientPhone.replace(/\D/g, '');
@@ -400,6 +425,9 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
     if (body.barberName) {
       const normName = body.barberName.toLowerCase().replace(/[^a-z0-9]/g, '');
       pendingConsentResponses.set(normName, payload);
+    }
+    if (normClient) {
+      pendingConsentResponses.set(normClient, payload);
     }
     if (body.clientPhone) {
       const cleanPhone = body.clientPhone.replace(/\D/g, '');
@@ -431,14 +459,20 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
 
   // 9. Barber polls for Photo Consent Response: GET /presence/chair/consent-response
   fastify.get('/presence/chair/consent-response', async (request, reply) => {
-    const query = (request.query as { barberId?: string; name?: string; phone?: string }) || {};
+    reply.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    reply.header('Pragma', 'no-cache');
+    reply.header('Expires', '0');
+
+    const query = (request.query as { barberId?: string; name?: string; phone?: string; clientName?: string }) || {};
     const barberId = (query.barberId || '').toLowerCase();
     const normName = (query.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const cleanPhone = (query.phone || '').replace(/\D/g, '');
+    const normClient = (query.clientName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
     let resp: ConsentResponsePayload | undefined;
     if (barberId) resp = pendingConsentResponses.get(barberId);
     if (!resp && normName) resp = pendingConsentResponses.get(normName);
+    if (!resp && normClient) resp = pendingConsentResponses.get(normClient);
     if (!resp && cleanPhone) {
       resp = pendingConsentResponses.get(cleanPhone);
       if (!resp && cleanPhone.length >= 8) {
@@ -450,6 +484,7 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
       // Consumir la respuesta para que no interfiera en cortes futuros
       if (barberId) pendingConsentResponses.delete(barberId);
       if (normName) pendingConsentResponses.delete(normName);
+      if (normClient) pendingConsentResponses.delete(normClient);
       if (cleanPhone) {
         pendingConsentResponses.delete(cleanPhone);
         if (cleanPhone.length >= 8) {

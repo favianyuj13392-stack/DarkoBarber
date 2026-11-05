@@ -37,12 +37,44 @@ interface RepeatCutConfigModalProps {
 
 type ModalStep = 'config' | 'recording';
 
-const DEMO_NEW_PHOTOS = [
-  { angle: 'Frontal', img: '/assets/images/1.png' },
-  { angle: 'Lado izquierdo', img: '/assets/images/2.png' },
-  { angle: 'Lado derecho', img: '/assets/images/3.png' },
-  { angle: 'Posterior', img: '/assets/images/4.png' },
-];
+/**
+ * Comprime imágenes en el cliente mediante canvas para evitar sobrepasar límites de payload y almacenamiento.
+ * Convierte fotos tomadas en cámaras móviles (8-15MB) a ~70KB con excelente nitidez.
+ */
+function compressImage(file: File, maxDimension = 960, quality = 0.8): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        } else {
+          resolve((e.target?.result as string) || '');
+        }
+      };
+      img.onerror = () => resolve((e.target?.result as string) || '');
+      img.src = (e.target?.result as string) || '';
+    };
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(file);
+  });
+}
 
 export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
   isOpen,
@@ -117,9 +149,9 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
     };
     window.addEventListener('storage', onStorage);
 
-    // 4. Polling rápido cada 1s con barberId, barberName y clientPhone
+    // 4. Polling rápido cada 1s con barberId, barberName, clientPhone y clientName
     const pollInterval = setInterval(async () => {
-      const resp = await pollPhotoConsentResponse(barberId, barberName, clientPhone);
+      const resp = await pollPhotoConsentResponse(barberId, barberName, clientPhone, clientName);
       if (resp) {
         setIsWaitingConsent(false);
         setConsentReceived({ isPublic: resp.isPublic });
@@ -132,7 +164,7 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
       window.removeEventListener('storage', onStorage);
       clearInterval(pollInterval);
     };
-  }, [isOpen, isWaitingConsent, barberId, barberName, clientPhone]);
+  }, [isOpen, isWaitingConsent, barberId, barberName, clientPhone, clientName]);
 
   if (!isOpen) return null;
 
@@ -158,27 +190,29 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
     fileInputRef.current?.click();
   };
 
-  const handleFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleFileInputChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
+    try {
+      const compressedDataUrl = await compressImage(file, 960, 0.8);
+      if (!compressedDataUrl) return;
+
       setNewPhotos((prev) => {
         const next = [...prev];
         next[activeAngleSlotRef.current] = {
           ...next[activeAngleSlotRef.current],
-          img: result,
+          img: compressedDataUrl,
         };
         return next;
       });
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleLoadDemoPhotos = () => {
-    setNewPhotos(DEMO_NEW_PHOTOS);
+    } catch (err) {
+      console.warn('Error compressing photo:', err);
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
   };
 
   const handleSendConsentRequest = async () => {
@@ -194,6 +228,7 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
       barberId,
       barberName,
       clientPhone,
+      clientName,
       photoUrl: mainPhoto,
       styleName: `${tipoDegradado} · ${parteSuperior}`,
       chips: {
@@ -544,13 +579,6 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
                   <label className="text-xs font-bold text-white font-mono uppercase tracking-wider">
                     Fotos del corte de hoy (1-4)
                   </label>
-                  <button
-                    type="button"
-                    onClick={handleLoadDemoPhotos}
-                    className="text-[11px] text-[#B68F4E] hover:underline cursor-pointer font-mono"
-                  >
-                    ⚡ Cargar fotos de prueba
-                  </button>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2.5">
@@ -630,34 +658,9 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
 
                 {/* Estado de Espera / Confirmación del Cliente */}
                 {isWaitingConsent && (
-                  <div className="p-3.5 rounded-xl bg-[#B68F4E]/10 border border-[#B68F4E]/40 space-y-2.5">
-                    <div className="flex items-center gap-2.5 text-xs text-[#D9C9B0]">
-                      <Loader2 className="w-4 h-4 text-[#B68F4E] animate-spin shrink-0" />
-                      <span>Esperando que el cliente autorice en su celular...</span>
-                    </div>
-
-                    <div className="flex items-center gap-2 pt-1 border-t border-[#B68F4E]/20">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsWaitingConsent(false);
-                          setConsentReceived({ isPublic: true });
-                        }}
-                        className="flex-1 py-1.5 px-2 rounded-lg bg-[#B68F4E]/20 hover:bg-[#B68F4E]/30 text-[10px] font-mono text-[#D9C9B0] transition-colors cursor-pointer text-center"
-                      >
-                        ⚡ Simular aprobación (Demo)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsWaitingConsent(false);
-                          setConsentReceived({ isPublic: false });
-                        }}
-                        className="flex-1 py-1.5 px-2 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] font-mono text-white/60 hover:text-white transition-colors cursor-pointer text-center"
-                      >
-                        Continuar privado
-                      </button>
-                    </div>
+                  <div className="p-3.5 rounded-xl bg-[#B68F4E]/10 border border-[#B68F4E]/40 flex items-center gap-2.5 text-xs text-[#D9C9B0]">
+                    <Loader2 className="w-4 h-4 text-[#B68F4E] animate-spin shrink-0" />
+                    <span>Esperando que {clientName} autorice en su celular...</span>
                   </div>
                 )}
 

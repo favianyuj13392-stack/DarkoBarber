@@ -9,10 +9,9 @@ import {
   AlertCircle,
   Loader2,
   CheckCircle2,
-  Sparkles,
 } from 'lucide-react';
 import jsQR from 'jsqr';
-import { SPRING_TOUCH, SPRING_MODAL } from '../../constants/springs';
+import { SPRING_MODAL } from '../../constants/springs';
 
 export interface ScannedBarberInfo {
   barberId: string;
@@ -264,13 +263,6 @@ export const QrScannerModal: FC<QrScannerModalProps> = ({
     reader.readAsDataURL(file);
   };
 
-  const handleSimulateScan = () => {
-    isScanningRef.current = true;
-    handleDetectedCode(
-      'https://fade.darkosync.com/?chair=barber-brian&name=Brian%20L%C3%B3pez&shop=Fade%20Studio%20%E2%80%94%20Sopocachi'
-    );
-  };
-
   if (!isOpen) return null;
 
   return (
@@ -432,18 +424,6 @@ export const QrScannerModal: FC<QrScannerModalProps> = ({
                 <span>Reiniciar cámara</span>
               </button>
             </div>
-
-            {/* Acceso Rápido Demo (Brian López / Barbero Activo) */}
-            <motion.button
-              type="button"
-              whileTap={{ scale: 0.98 }}
-              transition={SPRING_TOUCH}
-              onClick={handleSimulateScan}
-              className="w-full py-3 rounded-xl bg-[#B68F4E]/15 hover:bg-[#B68F4E]/25 border border-[#B68F4E]/40 text-[#D9C9B0] hover:text-white text-xs font-semibold tracking-wide cursor-pointer flex items-center justify-center gap-2"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-[#B68F4E]" />
-              <span>Simular escaneo de prueba (Brian López)</span>
-            </motion.button>
           </div>
         </motion.div>
       </div>
