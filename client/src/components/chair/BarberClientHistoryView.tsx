@@ -19,6 +19,8 @@ import { getClientHistory, type ClientHistoryResponse } from '../../services/cut
 
 interface BarberClientHistoryViewProps {
   clientPhone?: string;
+  clientName?: string;
+  clientAvatar?: string;
   onClose?: () => void;
   onRepeatCut: (selectedCut: ClientHistoryResponse['cuts'][0]) => void;
 }
@@ -27,6 +29,8 @@ type TabType = 'cortes' | 'notas' | 'preferencias';
 
 export const BarberClientHistoryView: FC<BarberClientHistoryViewProps> = ({
   clientPhone = '+591 712 34567',
+  clientName = 'Ernesto Salinas',
+  clientAvatar = '/assets/images/1.png',
   onClose,
   onRepeatCut,
 }) => {
@@ -37,12 +41,12 @@ export const BarberClientHistoryView: FC<BarberClientHistoryViewProps> = ({
   useEffect(() => {
     async function loadData() {
       setLoading(true);
-      const data = await getClientHistory(clientPhone);
+      const data = await getClientHistory(clientPhone, clientName);
       setHistoryData(data);
       setLoading(false);
     }
     loadData();
-  }, [clientPhone]);
+  }, [clientPhone, clientName]);
 
   if (loading) {
     return (
@@ -52,7 +56,13 @@ export const BarberClientHistoryView: FC<BarberClientHistoryViewProps> = ({
     );
   }
 
-  const client = historyData?.client;
+  const client = historyData?.client
+    ? {
+        ...historyData.client,
+        displayName: clientName || historyData.client.displayName,
+        avatarUrl: clientAvatar || historyData.client.avatarUrl || '/assets/images/1.png',
+      }
+    : null;
   const cuts = historyData?.cuts || [];
   const latestCut = cuts[0];
 

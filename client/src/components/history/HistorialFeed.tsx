@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { FC } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -76,13 +76,24 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
   const currentUser = getStoredUser();
   const userName = currentUser?.displayName || 'Ernesto Salinas';
 
+  // Evitar re-aperturas en bucle de solicitudes ya respondidas
+  const answeredRequestsRef = useRef<Set<string>>(new Set());
+
+  const isRequestAnswered = (req: PhotoConsentRequestPayload | null | undefined): boolean => {
+    if (!req) return false;
+    const reqId = `${req.barberId}_${req.timestamp}`;
+    return answeredRequestsRef.current.has(reqId);
+  };
+
   useEffect(() => {
     // 1. Escuchar solicitudes de consentimiento vía BroadcastChannel
     if (typeof BroadcastChannel !== 'undefined') {
       const bc = new BroadcastChannel(CHAIR_SYNC_CHANNEL_NAME);
       bc.onmessage = (event) => {
         if (event.data?.type === 'PHOTO_CONSENT_REQUEST') {
-          setIncomingConsentReq(event.data);
+          if (!isRequestAnswered(event.data)) {
+            setIncomingConsentReq(event.data);
+          }
         }
       };
       return () => bc.close();
@@ -95,7 +106,9 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
       if (e.key === PHOTO_CONSENT_REQUEST_STORAGE_KEY && e.newValue) {
         try {
           const parsed = JSON.parse(e.newValue);
-          setIncomingConsentReq(parsed);
+          if (!isRequestAnswered(parsed)) {
+            setIncomingConsentReq(parsed);
+          }
         } catch {
           // ignore
         }
@@ -113,7 +126,7 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
 
     const interval = setInterval(async () => {
       const req = await pollPhotoConsentRequest(phone, barberId, barberName);
-      if (req) {
+      if (req && !isRequestAnswered(req)) {
         setIncomingConsentReq(req);
       }
     }, 1000);
@@ -122,11 +135,21 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
 
   const handleClientConsent = async (isPublic: boolean) => {
     if (incomingConsentReq) {
+      const req = incomingConsentReq;
+      const reqId = `${req.barberId}_${req.timestamp}`;
+      answeredRequestsRef.current.add(reqId);
+      setIncomingConsentReq(null);
+
+      // Limpiar de localStorage para evitar re-aperturas locales
+      try {
+        localStorage.removeItem(PHOTO_CONSENT_REQUEST_STORAGE_KEY);
+      } catch {}
+
       await respondPhotoConsent(
-        incomingConsentReq.barberId,
-        incomingConsentReq.clientPhone,
+        req.barberId,
+        req.clientPhone,
         isPublic,
-        scannedBarber?.barberName || incomingConsentReq.barberName
+        scannedBarber?.barberName || req.barberName
       );
       setConsentToastMsg(
         isPublic
@@ -134,7 +157,6 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
           : 'Corte guardado con éxito en tu historial privado.'
       );
       setTimeout(() => setConsentToastMsg(null), 4000);
-      setIncomingConsentReq(null);
     }
   };
 

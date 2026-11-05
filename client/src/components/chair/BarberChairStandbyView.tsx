@@ -316,7 +316,7 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
             <p className="text-[11px] text-red-400 font-mono">{phoneError}</p>
           )}
 
-          {/* Botón de Prueba Rápida con Santiago López */}
+          {/* Botón de Prueba Rápida con Ernesto Salinas */}
           <div className="pt-2 border-t border-white/5">
             <button
               type="button"
@@ -325,7 +325,7 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
             >
               <div className="flex items-center gap-2">
                 <UserCheck className="w-3.5 h-3.5 text-[#B68F4E]" />
-                <span>Probar con cliente de prueba (Santiago López)</span>
+                <span>Probar con cliente de prueba (Ernesto Salinas)</span>
               </div>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#B68F4E]/20 text-[#B68F4E]">
                 Demo

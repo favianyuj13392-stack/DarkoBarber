@@ -51,7 +51,7 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
   barberName = 'Brian López',
   barberId = 'barber-brian',
   clientPhone = '+591 712 34567',
-  clientName = 'Santiago López',
+  clientName = 'Ernesto Salinas',
 }) => {
   const [step, setStep] = useState<ModalStep>('config');
 
@@ -139,7 +139,7 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
   const handleStartCut = async () => {
     setLoading(true);
     try {
-      const res = await startCut('client-santiago');
+      const res = await startCut('client-active');
       setActiveCutId(res.cut.id);
       setIsCutActive(true);
       presenceService.setStatus('RED');
@@ -186,6 +186,9 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
 
     setIsWaitingConsent(true);
     setConsentReceived(null);
+    try {
+      localStorage.removeItem(PHOTO_CONSENT_RESPONSE_STORAGE_KEY);
+    } catch {}
 
     await requestPhotoConsent({
       barberId,

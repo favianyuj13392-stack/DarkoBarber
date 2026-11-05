@@ -317,6 +317,14 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
       timestamp: Date.now(),
     };
 
+    // Limpiar respuestas residuales previas para esta vinculación
+    if (body.barberId) pendingConsentResponses.delete(body.barberId.toLowerCase());
+    if (body.barberName) pendingConsentResponses.delete(body.barberName.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    if (cleanPhone) {
+      pendingConsentResponses.delete(cleanPhone);
+      if (cleanPhone.length >= 8) pendingConsentResponses.delete(cleanPhone.slice(-8));
+    }
+
     // Store under all potential keys so client query never misses
     if (cleanPhone) {
       pendingConsentRequests.set(cleanPhone, payload);
@@ -374,6 +382,20 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
       timestamp: Date.now(),
     };
 
+    // 1. Consumir y ELIMINAR la solicitud pendiente de inmediato para cortar el bucle del cliente
+    pendingConsentRequests.delete(body.barberId.toLowerCase());
+    if (body.barberName) {
+      const normName = body.barberName.toLowerCase().replace(/[^a-z0-9]/g, '');
+      pendingConsentRequests.delete(normName);
+    }
+    if (body.clientPhone) {
+      const cleanPhone = body.clientPhone.replace(/\D/g, '');
+      pendingConsentRequests.delete(cleanPhone);
+      if (cleanPhone.length >= 8) {
+        pendingConsentRequests.delete(cleanPhone.slice(-8));
+      }
+    }
+
     pendingConsentResponses.set(body.barberId.toLowerCase(), payload);
     if (body.barberName) {
       const normName = body.barberName.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -425,6 +447,15 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
     }
 
     if (resp && Date.now() - resp.timestamp < 180000) {
+      // Consumir la respuesta para que no interfiera en cortes futuros
+      if (barberId) pendingConsentResponses.delete(barberId);
+      if (normName) pendingConsentResponses.delete(normName);
+      if (cleanPhone) {
+        pendingConsentResponses.delete(cleanPhone);
+        if (cleanPhone.length >= 8) {
+          pendingConsentResponses.delete(cleanPhone.slice(-8));
+        }
+      }
       return reply.status(200).send({ hasResponse: true, response: resp });
     }
     return reply.status(200).send({ hasResponse: false, response: null });

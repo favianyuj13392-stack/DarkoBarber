@@ -26,6 +26,7 @@ interface BarberChairWorkflowProps {
 
 export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) => {
   const [activeClientPhone, setActiveClientPhone] = useState<string | null>(null);
+  const [activeClient, setActiveClient] = useState<IncomingClientHandshake | null>(null);
   const [incomingClient, setIncomingClient] = useState<IncomingClientHandshake | null>(null);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [isPhotoConsentOpen, setIsPhotoConsentOpen] = useState(false);
@@ -107,19 +108,29 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
     return () => clearInterval(interval);
   }, [activeClientPhone, barberId, barberName]);
 
-  const handleConnectClient = (phone: string) => {
+  const handleConnectClient = (phone: string, clientInfo?: IncomingClientHandshake) => {
     setActiveClientPhone(phone);
+    if (clientInfo) {
+      setActiveClient(clientInfo);
+    } else {
+      setActiveClient({
+        displayName: 'Ernesto Salinas',
+        phone,
+        avatarUrl: '/assets/images/1.png',
+      });
+    }
     presenceService.setStatus('RED');
   };
 
   const handleDisconnectClient = () => {
     setActiveClientPhone(null);
+    setActiveClient(null);
     presenceService.setStatus('GREEN');
   };
 
   const handleAcceptIncomingClient = (client: IncomingClientHandshake) => {
     setIncomingClient(null);
-    handleConnectClient(client.phone);
+    handleConnectClient(client.phone, client);
   };
 
   const handleRepeatCut = (cut: ClientHistoryResponse['cuts'][0]) => {
@@ -195,7 +206,9 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
 
           {/* Ficha e Historial del Cliente Conectado */}
           <BarberClientHistoryView
-            clientPhone={activeClientPhone}
+            clientPhone={activeClient?.phone || activeClientPhone || '+591 712 34567'}
+            clientName={activeClient?.displayName || 'Ernesto Salinas'}
+            clientAvatar={activeClient?.avatarUrl || '/assets/images/1.png'}
             onClose={handleDisconnectClient}
             onRepeatCut={handleRepeatCut}
           />
@@ -217,8 +230,8 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
         onCapturePhoto={handleCapturePhoto}
         barberName={barberName}
         barberId={barberId}
-        clientPhone={activeClientPhone || '+591 712 34567'}
-        clientName="Santiago López"
+        clientPhone={activeClient?.phone || activeClientPhone || '+591 712 34567'}
+        clientName={activeClient?.displayName || 'Ernesto Salinas'}
       />
 
       {/* Modal de Consentimiento de Privacidad de Foto */}

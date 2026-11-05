@@ -163,7 +163,10 @@ export async function finalizeCut(
 /**
  * Obtener historial de cliente por teléfono (GET /api/clients/:phone/history)
  */
-export async function getClientHistory(phone: string): Promise<ClientHistoryResponse> {
+export async function getClientHistory(
+  phone: string,
+  clientName?: string
+): Promise<ClientHistoryResponse> {
   const token = getStoredToken();
   const cleanPhone = phone.replace(/\D/g, '');
 
@@ -175,18 +178,22 @@ export async function getClientHistory(phone: string): Promise<ClientHistoryResp
     });
 
     if (response.ok) {
-      return await response.json();
+      const data = await response.json();
+      if (clientName && data?.client) {
+        data.client.displayName = clientName;
+      }
+      return data;
     }
   } catch (error) {
     console.warn('Could not fetch client history from backend, using canonical fallback:', error);
   }
 
-  // Fallback con fidelidad exacta a los mockups (flujoPrincipalBarbero/1.png)
+  // Fallback con fidelidad exacta a los mockups
   return {
     client: {
-      id: 'client-santiago',
-      phone: '+591 712 34567',
-      displayName: 'Santiago López',
+      id: 'client-active',
+      phone: phone || '+591 712 34567',
+      displayName: clientName || 'Ernesto Salinas',
       avatarUrl: '/assets/images/1.png',
       isVerified: true,
       notes: 'Prefiere corte con tijera en parte superior sin vaciar demasiado. Cuidado con remolino en la coronilla.',

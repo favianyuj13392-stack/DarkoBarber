@@ -248,8 +248,9 @@ export async function respondPhotoConsent(
     }
   }
 
-  // 2. LocalStorage
+  // 2. LocalStorage: Registrar respuesta y limpiar solicitud previa
   try {
+    localStorage.removeItem(PHOTO_CONSENT_REQUEST_STORAGE_KEY);
     localStorage.setItem(PHOTO_CONSENT_RESPONSE_STORAGE_KEY, JSON.stringify(payload));
   } catch (err) {
     console.warn('LocalStorage error:', err);
