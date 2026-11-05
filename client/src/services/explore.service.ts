@@ -310,11 +310,13 @@ export async function fetchExploreData(): Promise<{
               b.name.toLowerCase().includes(item.displayName.toLowerCase())
           );
 
-          // Si el barbero tiene fotos públicas en su portafolio de la base de datos, usarlas
+          // Si el barbero tiene fotos públicas en su portafolio de la base de datos, ponerlas primero
+          const dbPhotos: string[] = Array.isArray(item.portfolio) ? item.portfolio : [];
+          const basePhotos = existing?.portfolio || MOCK_BARBERS[0].portfolio;
           const realPortfolio =
-            item.portfolio && item.portfolio.length > 0
-              ? item.portfolio
-              : existing?.portfolio || MOCK_BARBERS[0].portfolio;
+            dbPhotos.length > 0
+              ? [...dbPhotos, ...basePhotos.filter((p: string) => !dbPhotos.includes(p))]
+              : basePhotos;
 
           return {
             id: item.barberId,
@@ -348,8 +350,8 @@ export async function fetchExploreData(): Promise<{
           };
         });
 
-        // Ensure Brian López is in list (from mockups)
-        if (!mergedBarbers.some((b) => b.id === 'barber-brian-16')) {
+        // Ensure Brian López is in list (from mockups) ONLY if neither DB nor merged list already has him
+        if (!mergedBarbers.some((b) => b.id === 'barber-brian-16' || b.name.toLowerCase().includes('brian'))) {
           mergedBarbers.unshift(MOCK_BARBERS[0]);
         }
 

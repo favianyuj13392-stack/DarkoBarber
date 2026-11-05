@@ -1,7 +1,9 @@
 import { z } from 'zod';
 
 export const startCutSchema = z.object({
-  clientProfileId: z.string().min(1, 'Client profile ID is required'),
+  clientProfileId: z.string().optional(),
+  clientPhone: z.string().optional(),
+  clientName: z.string().optional(),
   clientRequestId: z.string().min(1, 'Client request ID is required'),
   startedAt: z.string().optional(),
 });

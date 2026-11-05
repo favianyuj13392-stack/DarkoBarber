@@ -53,27 +53,54 @@ export class CutsService {
       throw new ForbiddenError('PLAN_LIMIT_REACHED', 'Monthly cut limit reached for BARBERIA_BASE plan (200 cuts)');
     }
 
-    // 4. Asegurar que existe un ClientProfile válido en PostgreSQL para que no falle la FK
-    let profile = await this.prisma.clientProfile.findUnique({
-      where: { id: input.clientProfileId },
-    });
+    // 4. Asegurar que existe un ClientProfile válido en PostgreSQL asociado al cliente correcto
+    let profile = input.clientProfileId && input.clientProfileId !== 'client-active'
+      ? await this.prisma.clientProfile.findUnique({
+          where: { id: input.clientProfileId },
+        })
+      : null;
 
     if (!profile) {
-      let client = await this.prisma.client.findFirst({
-        include: { profiles: true },
-      });
+      const cleanPhone = (input.clientPhone || '').replace(/\D/g, '');
+      let client = cleanPhone
+        ? await this.prisma.client.findFirst({
+            where: {
+              OR: [
+                { phone: input.clientPhone },
+                { phone: cleanPhone },
+                { phone: `+591${cleanPhone.slice(-8)}` },
+                { phone: cleanPhone.slice(-8) },
+              ],
+            },
+            include: { profiles: true },
+          })
+        : null;
+
+      if (!client && input.clientName) {
+        client = await this.prisma.client.findFirst({
+          where: {
+            displayName: { contains: input.clientName, mode: 'insensitive' },
+          },
+          include: { profiles: true },
+        });
+      }
 
       if (!client) {
         client = await this.prisma.client.create({
           data: {
-            displayName: 'Ernesto Salinas',
-            phone: '+59171234567',
-            email: 'ernesto.salinas@fade.bo',
+            displayName: input.clientName || 'Ernesto Salinas',
+            phone: input.clientPhone || '+591 712 34567',
+            email: `cliente-${cleanPhone || Date.now()}@fade.bo`,
             profiles: {
-              create: [{ name: 'Ernesto Salinas' }],
+              create: [{ name: input.clientName || 'Ernesto Salinas' }],
             },
           },
           include: { profiles: true },
+        });
+      } else if (!client.phone && input.clientPhone) {
+        await this.prisma.client.update({
+          where: { id: client.id },
+          data: { phone: input.clientPhone },
         });
       }
 
@@ -82,7 +109,7 @@ export class CutsService {
         (await this.prisma.clientProfile.create({
           data: {
             clientId: client.id,
-            name: client.displayName || 'Ernesto Salinas',
+            name: client.displayName || 'Perfil Principal',
           },
         }));
     }

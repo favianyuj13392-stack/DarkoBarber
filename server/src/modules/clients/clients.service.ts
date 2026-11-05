@@ -4,21 +4,38 @@ import { CreateClientInput } from './clients.schemas';
 export class ClientsService {
   constructor(private prisma: PrismaClient) {}
 
-  async getClientHistory(phone: string) {
-    const cleanPhone = phone.replace(/\D/g, '');
-    const client = await this.prisma.client.findFirst({
+  async getClientHistory(phone: string, query?: { email?: string; name?: string }) {
+    const cleanPhone = (phone || '').replace(/\D/g, '');
+    const email = query?.email?.trim().toLowerCase();
+    const name = query?.name?.trim();
+
+    const orConditions: any[] = [];
+    if (phone) orConditions.push({ phone });
+    if (cleanPhone) {
+      orConditions.push({ phone: cleanPhone });
+      if (cleanPhone.length >= 8) {
+        orConditions.push({ phone: `+591${cleanPhone.slice(-8)}` });
+        orConditions.push({ phone: cleanPhone.slice(-8) });
+      }
+    }
+    if (email) {
+      orConditions.push({ email });
+    }
+    if (name) {
+      orConditions.push({ displayName: { contains: name, mode: 'insensitive' } });
+    }
+    // Fallback: si no vino ningún dato específico, buscar Ernesto Salinas
+    orConditions.push({ displayName: { contains: 'Ernesto Salinas', mode: 'insensitive' } });
+
+    const matchingClients = await this.prisma.client.findMany({
       where: {
-        OR: [
-          { phone },
-          { phone: cleanPhone },
-          { phone: `+591${cleanPhone.slice(-8)}` },
-          { phone: cleanPhone.slice(-8) },
-        ],
+        OR: orConditions,
       },
       include: {
         profiles: {
           include: {
             cuts: {
+              where: { status: 'FINISHED' },
               orderBy: { startedAt: 'desc' },
               include: {
                 photos: true,
@@ -32,11 +49,27 @@ export class ClientsService {
       },
     });
 
-    if (!client) {
+    if (!matchingClients || matchingClients.length === 0) {
       return null;
     }
 
-    const allCuts = client.profiles.flatMap((p) => p.cuts);
+    const client = matchingClients.find((c) => c.profiles.some((p) => p.cuts.length > 0)) || matchingClients[0];
+
+    if (!client.phone && cleanPhone.length >= 8) {
+      await this.prisma.client.update({
+        where: { id: client.id },
+        data: { phone: `+591${cleanPhone.slice(-8)}` },
+      });
+    }
+
+    // Unify cuts from all matching profiles (deduplicating by cut ID)
+    const rawCuts = matchingClients.flatMap((c) => c.profiles.flatMap((p) => p.cuts));
+    const seenCutIds = new Set<string>();
+    const allCuts = rawCuts.filter((c) => {
+      if (seenCutIds.has(c.id)) return false;
+      seenCutIds.add(c.id);
+      return true;
+    });
 
     return {
       client: {

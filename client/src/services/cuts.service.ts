@@ -57,7 +57,9 @@ export interface ClientHistoryResponse {
  */
 export async function startCut(
   clientProfileId: string,
-  clientRequestId?: string
+  clientRequestId?: string,
+  clientPhone?: string,
+  clientName?: string
 ): Promise<{ cut: CutRecord }> {
   const token = getStoredToken();
   const reqId = clientRequestId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `cut-${Date.now()}`);
@@ -72,6 +74,8 @@ export async function startCut(
       },
       body: JSON.stringify({
         clientProfileId,
+        clientPhone,
+        clientName,
         clientRequestId: reqId,
         startedAt: new Date().toISOString(),
       }),

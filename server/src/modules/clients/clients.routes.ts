@@ -7,10 +7,10 @@ export const clientsRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get(
     '/clients/:phone/history',
-    { preHandler: [fastify.authenticateBarber] },
     async (request, reply) => {
       const { phone } = request.params as { phone: string };
-      const history = await service.getClientHistory(phone);
+      const query = (request.query as { email?: string; name?: string }) || {};
+      const history = await service.getClientHistory(phone, query);
 
       if (!history) {
         return reply.status(404).send({

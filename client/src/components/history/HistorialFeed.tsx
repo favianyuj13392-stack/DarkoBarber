@@ -163,6 +163,7 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
         scannedBarber?.barberName || req.barberName,
         userName
       );
+      loadCutsFromDb();
       setConsentToastMsg(
         isPublic
           ? '¡Corte autorizado con éxito para el portafolio público de tu barbero!'
@@ -182,28 +183,34 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
     }
   });
 
-  useEffect(() => {
-    // Cargar cortes reales desde la base de datos (GET /api/clients/:phone/history)
-    async function loadCutsFromDb() {
-      try {
-        const phone = currentUser?.phone || '+591 712 34567';
-        const cleanPhone = phone.replace(/\D/g, '');
-        const res = await fetch(`/api/clients/${cleanPhone}/history`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.cuts && Array.isArray(data.cuts) && data.cuts.length > 0) {
-            setCutsList((prev) => {
-              const dbIds = new Set(data.cuts.map((c: HaircutItem) => c.id));
-              const remaining = prev.filter((c) => !dbIds.has(c.id));
-              return [...data.cuts, ...remaining];
-            });
-          }
-        }
-      } catch (err) {
-        console.warn('Could not fetch cuts from DB:', err);
-      }
-    }
+  const loadCutsFromDb = async () => {
+    try {
+      const phone = currentUser?.phone || '+591 712 34567';
+      const cleanPhone = phone.replace(/\D/g, '');
+      const email = currentUser?.email || '';
+      const name = currentUser?.displayName || userName || '';
+      const params = new URLSearchParams();
+      if (email) params.set('email', email);
+      if (name) params.set('name', name);
 
+      const url = `/api/clients/${cleanPhone}/history?${params.toString()}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.cuts && Array.isArray(data.cuts) && data.cuts.length > 0) {
+          setCutsList((prev) => {
+            const dbIds = new Set(data.cuts.map((c: HaircutItem) => c.id));
+            const remaining = prev.filter((c) => !dbIds.has(c.id));
+            return [...data.cuts, ...remaining];
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Could not fetch cuts from DB:', err);
+    }
+  };
+
+  useEffect(() => {
     loadCutsFromDb();
 
     // Escuchar cortes finalizados en tiempo real
@@ -220,7 +227,7 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
         bc.close();
       };
     }
-  }, [currentUser]);
+  }, [currentUser, userName]);
 
   // Filtering cuts
   const filteredCuts = cutsList.filter((cut) => {

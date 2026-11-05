@@ -131,7 +131,7 @@ model CutPhoto {
   id          String   @id @default(uuid())
   cutId       String
   cut         Cut      @relation(fields: [cutId], references: [id], onDelete: Cascade)
-  r2Key       String   @unique
+  r2Key       String
   isPublic    Boolean  @default(false)
   createdAt   DateTime @default(now())
 

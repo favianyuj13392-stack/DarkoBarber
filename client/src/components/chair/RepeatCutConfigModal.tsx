@@ -171,7 +171,7 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
   const handleStartCut = async () => {
     setLoading(true);
     try {
-      const res = await startCut('client-active');
+      const res = await startCut('client-active', undefined, clientPhone, clientName);
       setActiveCutId(res.cut.id);
       setIsCutActive(true);
       presenceService.setStatus('RED');
@@ -254,20 +254,28 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
       notasEspeciales: cutNotes ? [cutNotes] : [],
     };
 
-    const validPhotos = newPhotos
+    const uploadedPhotos = newPhotos
       .filter((p) => p.img)
       .map((p) => ({ url: p.img, angle: p.angle }));
+
+    const validPhotos = uploadedPhotos.length > 0
+      ? uploadedPhotos
+      : [{ url: '/assets/images/1.png', angle: 'Frontal' }];
 
     const isPublic = Boolean(consentReceived?.isPublic);
 
     try {
-      if (activeCutId) {
-        await finalizeCut(activeCutId, chips, validPhotos, isPublic);
+      let cutIdToFinalize = activeCutId;
+      if (!cutIdToFinalize) {
+        const startRes = await startCut('client-active', undefined, clientPhone, clientName);
+        cutIdToFinalize = startRes.cut.id;
+        setActiveCutId(cutIdToFinalize);
       }
+      await finalizeCut(cutIdToFinalize, chips, validPhotos, isPublic);
 
       // Sincronizar corte terminado para que el feed del cliente lo muestre de inmediato
       const newCutItem = {
-        id: activeCutId || `cut-${Date.now()}`,
+        id: cutIdToFinalize || `cut-${Date.now()}`,
         date: 'Hoy',
         rawDate: new Date().toISOString(),
         monthGroup: 'Noviembre 2026',
