@@ -405,3 +405,83 @@ export async function updateBarberLocation(payload: {
 
   return updatedUser;
 }
+
+export interface SubscriptionInfo {
+  barberId: string;
+  plan: 'AUTONOMO' | 'BARBERIA_BASE' | 'ALTO_FLUJO';
+  priceBs: number;
+  monthlyCutsCount: number;
+  maxCuts: number;
+  percentage: number;
+  nextBillingDate: string;
+  status: 'ACTIVE' | 'GRACE_PERIOD' | 'EXPIRED';
+  graceDaysRemaining: number;
+}
+
+export async function fetchBarberSubscription(): Promise<SubscriptionInfo | null> {
+  const token = getStoredToken();
+  if (!token) return null;
+
+  try {
+    const res = await fetch('/api/barbers/me/subscription', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('Could not fetch barber subscription:', err);
+  }
+
+  const currentUser = getStoredUser();
+  const plan = (currentUser?.plan as any) || 'AUTONOMO';
+  const priceBs = plan === 'BARBERIA_BASE' ? 110 : plan === 'ALTO_FLUJO' ? 190 : 45;
+  const maxCuts = plan === 'BARBERIA_BASE' ? 200 : plan === 'ALTO_FLUJO' ? 9999 : 60;
+
+  return {
+    barberId: currentUser?.id || 'barber-diego',
+    plan,
+    priceBs,
+    monthlyCutsCount: currentUser?.totalCuts || 1,
+    maxCuts,
+    percentage: Math.min(100, Math.round(((currentUser?.totalCuts || 1) / maxCuts) * 100)),
+    nextBillingDate: new Date(Date.now() + 25 * 86400000).toISOString(),
+    status: 'ACTIVE',
+    graceDaysRemaining: 5,
+  };
+}
+
+export async function updateBarberPlan(
+  plan: 'AUTONOMO' | 'BARBERIA_BASE' | 'ALTO_FLUJO'
+): Promise<SubscriptionInfo | null> {
+  const token = getStoredToken();
+  const currentUser = getStoredUser();
+  if (currentUser) {
+    currentUser.plan = plan;
+    localStorage.setItem(USER_KEY, JSON.stringify(currentUser));
+  }
+
+  if (token) {
+    try {
+      const res = await fetch('/api/barbers/me/subscription/plan', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ plan }),
+      });
+
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (err) {
+      console.warn('Could not update barber plan on server:', err);
+    }
+  }
+
+  return fetchBarberSubscription();
+}

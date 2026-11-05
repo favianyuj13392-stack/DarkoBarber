@@ -555,4 +555,61 @@ export class AuthService {
 
     return updated;
   }
+
+  async getBarberSubscription(barberId: string) {
+    const barber = await this.prisma.barber.findUnique({
+      where: { id: barberId },
+    });
+    if (!barber) return null;
+
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const monthlyCutsCount = await this.prisma.cut.count({
+      where: {
+        barberId: barber.id,
+        startedAt: { gte: startOfMonth },
+      },
+    });
+
+    const limits: Record<string, number> = {
+      AUTONOMO: 60,
+      BARBERIA_BASE: 200,
+      ALTO_FLUJO: 9999,
+    };
+
+    const prices: Record<string, number> = {
+      AUTONOMO: 45,
+      BARBERIA_BASE: 110,
+      ALTO_FLUJO: 190,
+    };
+
+    const maxCuts = limits[barber.plan] || 60;
+    const priceBs = prices[barber.plan] || 45;
+
+    const nextBilling = new Date(startOfMonth);
+    nextBilling.setMonth(nextBilling.getMonth() + 1);
+    nextBilling.setDate(0);
+
+    return {
+      barberId: barber.id,
+      plan: barber.plan,
+      priceBs,
+      monthlyCutsCount,
+      maxCuts,
+      percentage: Math.min(100, Math.round((monthlyCutsCount / maxCuts) * 100)),
+      nextBillingDate: nextBilling.toISOString(),
+      status: 'ACTIVE',
+      graceDaysRemaining: 5,
+    };
+  }
+
+  async updateBarberPlan(barberId: string, plan: 'AUTONOMO' | 'BARBERIA_BASE' | 'ALTO_FLUJO') {
+    const updated = await this.prisma.barber.update({
+      where: { id: barberId },
+      data: { plan },
+    });
+    return this.getBarberSubscription(updated.id);
+  }
 }

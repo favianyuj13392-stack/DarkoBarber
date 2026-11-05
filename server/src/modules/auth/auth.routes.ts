@@ -219,4 +219,46 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.put('/barbers/me/location', { preHandler: [fastify.authenticateBarber] }, updateBarberLocationHandler);
   fastify.put('/auth/barber/location', { preHandler: [fastify.authenticateBarber] }, updateBarberLocationHandler);
+
+  // GET /barbers/me/subscription & GET /auth/barber/subscription
+  const getSubscriptionHandler = async (request: any, reply: any) => {
+    const barberId = request.barber?.id || request.authUser?.id;
+    if (!barberId) {
+      return reply.status(401).send({
+        error: 'UNAUTHORIZED',
+        message: 'Barber token required',
+      });
+    }
+
+    const sub = await service.getBarberSubscription(barberId);
+    return reply.status(200).send(sub);
+  };
+
+  fastify.get('/barbers/me/subscription', { preHandler: [fastify.authenticateBarber] }, getSubscriptionHandler);
+  fastify.get('/auth/barber/subscription', { preHandler: [fastify.authenticateBarber] }, getSubscriptionHandler);
+
+  // POST /barbers/me/subscription/plan & POST /auth/barber/subscription/plan
+  const updatePlanHandler = async (request: any, reply: any) => {
+    const barberId = request.barber?.id || request.authUser?.id;
+    if (!barberId) {
+      return reply.status(401).send({
+        error: 'UNAUTHORIZED',
+        message: 'Barber token required',
+      });
+    }
+
+    const { plan } = (request.body as { plan: 'AUTONOMO' | 'BARBERIA_BASE' | 'ALTO_FLUJO' }) || {};
+    if (!plan || !['AUTONOMO', 'BARBERIA_BASE', 'ALTO_FLUJO'].includes(plan)) {
+      return reply.status(400).send({
+        error: 'INVALID_PLAN',
+        message: 'Plan must be AUTONOMO, BARBERIA_BASE or ALTO_FLUJO',
+      });
+    }
+
+    const updated = await service.updateBarberPlan(barberId, plan);
+    return reply.status(200).send(updated);
+  };
+
+  fastify.post('/barbers/me/subscription/plan', { preHandler: [fastify.authenticateBarber] }, updatePlanHandler);
+  fastify.post('/auth/barber/subscription/plan', { preHandler: [fastify.authenticateBarber] }, updatePlanHandler);
 };
