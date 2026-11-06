@@ -271,6 +271,14 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
         aria-hidden="true"
       />
 
+      {/* Barra de Navegación del Cliente (Top bar en Desktop, Bottom bar en Móvil) */}
+      <ClientNavBar
+        activeTab={activeNavTab}
+        onTabChange={handleTabChange}
+        onLogout={onLogout}
+        userName={userName}
+      />
+
       {/* VISTAS MODULARES SEGÚN TAB ACTIVO */}
       {activeNavTab === 'inicio' && (
         <div className="pt-2 lg:pt-4">
@@ -754,14 +762,6 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Barra de Navegación del Cliente (Top bar en Desktop, Bottom bar en Móvil) */}
-      <ClientNavBar
-        activeTab={activeNavTab}
-        onTabChange={handleTabChange}
-        onLogout={onLogout}
-        userName={userName}
-      />
     </div>
   );
 };

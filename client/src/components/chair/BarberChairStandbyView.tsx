@@ -116,7 +116,7 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
         {/* =========================================================================
             HEADER: BrandLogo + Perfil del Barbero + Salir
             ========================================================================= */}
-        <header className="flex items-center justify-between pt-2">
+        <header className="lg:hidden flex items-center justify-between pt-2">
           <BrandLogo variant="full" size="md" />
 
           {onExit && (

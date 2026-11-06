@@ -48,16 +48,26 @@ export const BarberHubCoordinator: FC<BarberHubCoordinatorProps> = ({
         aria-hidden="true"
       />
 
+      {/* Barra de Navegación del Barbero (Desktop Top Bar / Mobile Bottom Bar) */}
+      <BarberNavBar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onLogout={onLogout}
+        barberName={barberProfile?.displayName || 'Barbero'}
+        avatarUrl={barberProfile?.avatarUrl}
+        presenceStatus={presenceStatus}
+      />
+
       {/* 1. TAB SILLÓN (Estación Operativa de Trabajo - Preservada 100%) */}
       {activeTab === 'sillon' && (
-        <div className="pb-24 lg:pb-0">
+        <div className="pb-24 lg:pb-12">
           <BarberChairWorkflow onExit={onExit} />
         </div>
       )}
 
       {/* 2. TAB MI PERFIL & PORTAFOLIO (Estilo LinkedIn Profesional) */}
       {activeTab === 'perfil' && (
-        <div className="pt-2 lg:pt-4">
+        <div className="pt-2 lg:pt-4 pb-24 lg:pb-12">
           <BarberProfileView
             barber={barberProfile}
             onProfileUpdated={(updated) => setBarberProfile(updated)}
@@ -67,7 +77,7 @@ export const BarberHubCoordinator: FC<BarberHubCoordinatorProps> = ({
 
       {/* 3. TAB MI BARBERÍA & UBICACIÓN EN MAPA */}
       {activeTab === 'barberia' && (
-        <div className="pt-2 lg:pt-4">
+        <div className="pt-2 lg:pt-4 pb-24 lg:pb-12">
           <BarberLocationView
             barber={barberProfile}
             onLocationUpdated={(updated) => setBarberProfile(updated)}
@@ -77,7 +87,7 @@ export const BarberHubCoordinator: FC<BarberHubCoordinatorProps> = ({
 
       {/* 4. TAB SUSCRIPCIÓN & FACTURACIÓN */}
       {activeTab === 'suscripcion' && (
-        <div className="pt-2 lg:pt-4">
+        <div className="pt-2 lg:pt-4 pb-24 lg:pb-12">
           <BarberSubscriptionView
             barber={barberProfile}
             onPlanChanged={(newPlan) => {
@@ -88,16 +98,6 @@ export const BarberHubCoordinator: FC<BarberHubCoordinatorProps> = ({
           />
         </div>
       )}
-
-      {/* Barra de Navegación del Barbero */}
-      <BarberNavBar
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        onLogout={onLogout}
-        barberName={barberProfile?.displayName || 'Barbero'}
-        avatarUrl={barberProfile?.avatarUrl}
-        presenceStatus={presenceStatus}
-      />
     </div>
   );
 };

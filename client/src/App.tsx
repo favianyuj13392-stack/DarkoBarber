@@ -382,11 +382,6 @@ export function App() {
           >
             <HistorialFeed
               initialScannedBarber={pendingChairScan}
-              onNavigateTab={(tab) => {
-                if (tab === 'perfil') {
-                  setCurrentScreen('authenticated');
-                }
-              }}
               onLogout={handleLogout}
             />
           </motion.div>
@@ -424,7 +419,7 @@ export function App() {
                 if (tab === 'historial') setCurrentScreen('historial');
                 if (tab === 'escanear') setCurrentScreen('historial');
                 if (tab === 'perfil') {
-                  if (authData) setCurrentScreen('authenticated');
+                  setCurrentScreen('historial');
                 }
               }}
               onLogout={handleLogout}
