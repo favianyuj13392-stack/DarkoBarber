@@ -105,7 +105,7 @@ export class ClientsService {
             ? Math.round((c.finishedAt.getTime() - c.startedAt.getTime()) / 60000)
             : 35,
           priceBs: 60,
-          barberNotes: chipsObj.notasEspeciales?.[0] || 'Corte finalizado en sillón.',
+          barberNotes: chipsObj.barberNotes || chipsObj.notasEspeciales?.[0] || 'Corte finalizado en sillón.',
           photos: c.photos.map((ph, idx) => ({
             id: ph.id,
             url: ph.r2Key,
