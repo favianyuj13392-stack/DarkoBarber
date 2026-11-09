@@ -21,6 +21,8 @@ import {
   Users,
   Calendar,
   X,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import type { UserProfile, BarberServiceItem } from '../../services/auth.service';
 import {
@@ -30,10 +32,12 @@ import {
   deleteBarberService,
   addBarberPortfolioPhoto,
   deleteBarberPortfolioPhoto,
+  deleteBarberPortfolioPhotos,
   fetchBarberFollowStatus,
   toggleFollowBarber,
 } from '../../services/auth.service';
 import { createClientBooking } from '../../services/booking.service';
+import { FadeConfirmModal } from '../common/FadeConfirmModal';
 
 interface BarberProfileViewProps {
   barber: UserProfile | null;
@@ -92,6 +96,24 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
         ];
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Portfolio Multi-Selection & Custom Delete Modal
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedPhotos, setSelectedPhotos] = useState<string[]>([]);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    confirmText?: string;
+    previewImage?: string;
+    itemCount?: number;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    description: '',
+    onConfirm: () => {},
+  });
 
   // Services State
   const [services, setServices] = useState<BarberServiceItem[]>([]);
@@ -206,18 +228,68 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
     reader.readAsDataURL(file);
   };
 
-  const handleDeletePhoto = async (photoUrl: string) => {
-    if (!confirm('¿Seguro que deseas eliminar esta foto de tu portafolio?')) return;
+  const promptDeleteSinglePhoto = (photoUrl: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Eliminar Foto',
+      description: '¿Seguro que deseas eliminar esta foto de tu portafolio? Esta acción es irreversible.',
+      confirmText: 'Eliminar Foto',
+      previewImage: photoUrl,
+      itemCount: 1,
+      onConfirm: async () => {
+        setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+        setPortfolio((prev) => prev.filter((p) => p !== photoUrl));
+        setSelectedPhotos((prev) => prev.filter((p) => p !== photoUrl));
+        try {
+          const updated = await deleteBarberPortfolioPhoto(photoUrl);
+          if (updated && onProfileUpdated) onProfileUpdated(updated);
+          setToastMsg('Foto eliminada del portafolio');
+        } catch (err) {
+          console.error('Error eliminando foto:', err);
+        }
+        setTimeout(() => setToastMsg(null), 3000);
+      },
+    });
+  };
 
-    setPortfolio((prev) => prev.filter((p) => p !== photoUrl));
-    try {
-      const updated = await deleteBarberPortfolioPhoto(photoUrl);
-      if (updated && onProfileUpdated) onProfileUpdated(updated);
-      setToastMsg('Foto eliminada del portafolio');
-    } catch (err) {
-      console.error('Error eliminando foto:', err);
+  const promptDeleteSelectedPhotos = () => {
+    if (selectedPhotos.length === 0) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Eliminar Fotos Seleccionadas',
+      description: `¿Estás seguro de que deseas eliminar las ${selectedPhotos.length} fotos seleccionadas de tu portafolio?`,
+      confirmText: `Eliminar ${selectedPhotos.length} Foto${selectedPhotos.length > 1 ? 's' : ''}`,
+      itemCount: selectedPhotos.length,
+      onConfirm: async () => {
+        setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+        const targets = [...selectedPhotos];
+        setPortfolio((prev) => prev.filter((p) => !targets.includes(p)));
+        setSelectedPhotos([]);
+        setIsSelectionMode(false);
+        try {
+          const updated = await deleteBarberPortfolioPhotos(targets);
+          if (updated && onProfileUpdated) onProfileUpdated(updated);
+          setToastMsg(`${targets.length} fotos eliminadas del portafolio`);
+        } catch (err) {
+          console.error('Error eliminando fotos:', err);
+        }
+        setTimeout(() => setToastMsg(null), 3000);
+      },
+    });
+  };
+
+  const handleToggleSelectPhoto = (photoUrl: string) => {
+    setSelectedPhotos((prev) =>
+      prev.includes(photoUrl) ? prev.filter((p) => p !== photoUrl) : [...prev, photoUrl]
+    );
+  };
+
+  const handleSelectAllPhotos = () => {
+    if (selectedPhotos.length === portfolio.length) {
+      setSelectedPhotos([]);
+    } else {
+      setSelectedPhotos([...portfolio]);
     }
-    setTimeout(() => setToastMsg(null), 3000);
   };
 
   // Services Handlers
@@ -244,17 +316,24 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
     setTimeout(() => setToastMsg(null), 3000);
   };
 
-  const handleDeleteService = async (serviceId: string) => {
-    if (!confirm('¿Deseas eliminar este servicio de tu lista?')) return;
-
-    setServices((prev) => prev.filter((s) => s.id !== serviceId));
-    try {
-      await deleteBarberService(serviceId);
-      setToastMsg('Servicio eliminado');
-    } catch (err) {
-      console.error('Error borrando servicio:', err);
-    }
-    setTimeout(() => setToastMsg(null), 3000);
+  const promptDeleteService = (serviceId: string, serviceName: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Eliminar Servicio',
+      description: `¿Deseas eliminar "${serviceName}" de tu lista de servicios y tarifas?`,
+      confirmText: 'Eliminar Servicio',
+      onConfirm: async () => {
+        setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+        setServices((prev) => prev.filter((s) => s.id !== serviceId));
+        try {
+          await deleteBarberService(serviceId);
+          setToastMsg('Servicio eliminado');
+        } catch (err) {
+          console.error('Error borrando servicio:', err);
+        }
+        setTimeout(() => setToastMsg(null), 3000);
+      },
+    });
   };
 
   const handleToggleFollow = async () => {
@@ -586,7 +665,7 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
                     <span className="text-sm font-mono font-bold text-[#B68F4E]">Bs {srv.priceBs}</span>
                     <button
                       type="button"
-                      onClick={() => handleDeleteService(srv.id)}
+                      onClick={() => promptDeleteService(srv.id, srv.name)}
                       className="p-1.5 rounded-lg text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
                       title="Eliminar servicio"
                     >
@@ -600,35 +679,133 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
 
           {/* GESTIÓN DE FOTOS DEL PORTAFOLIO EN MODO EDICIÓN */}
           <div className="space-y-3 pt-4 border-t border-white/10">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-bold text-white">Fotos de Portafolio ({portfolio.length})</h3>
-                <p className="text-xs text-[#D9C9B0]/60">Sube fotos de tus mejores trabajos o elimina las que ya no quieras mostrar.</p>
+                <p className="text-xs text-[#D9C9B0]/60">Sube fotos o selecciona cuáles deseas eliminar.</p>
               </div>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 text-xs font-semibold transition-colors cursor-pointer"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span>Subir Foto</span>
-              </button>
-            </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
-              {portfolio.map((imgUrl, i) => (
-                <div key={i} className="relative h-32 rounded-xl overflow-hidden border border-white/15 group">
-                  <img src={imgUrl} alt={`Portafolio ${i + 1}`} className="w-full h-full object-cover" />
+              <div className="flex items-center gap-2">
+                {portfolio.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => handleDeletePhoto(imgUrl)}
-                    className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/80 text-white/80 hover:text-red-400 hover:bg-black transition-colors cursor-pointer shadow-lg"
-                    title="Eliminar foto"
+                    onClick={() => {
+                      setIsSelectionMode(!isSelectionMode);
+                      setSelectedPhotos([]);
+                    }}
+                    className={`flex items-center gap-1 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
+                      isSelectionMode
+                        ? 'bg-[#B68F4E]/20 border-[#B68F4E] text-[#B68F4E]'
+                        : 'bg-white/5 border-white/10 text-white/70 hover:text-white'
+                    }`}
+                  >
+                    <span>{isSelectionMode ? 'Cancelar Selección' : 'Seleccionar Varias'}</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Subir Foto</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Barra de Acciones de Selección Múltiple */}
+            {isSelectionMode && (
+              <div className="p-3 rounded-2xl bg-black/70 border border-[#B68F4E]/30 flex items-center justify-between gap-3 animate-fadeIn">
+                <button
+                  type="button"
+                  onClick={handleSelectAllPhotos}
+                  className="flex items-center gap-2 text-xs text-[#D9C9B0] hover:text-white cursor-pointer font-medium"
+                >
+                  {selectedPhotos.length === portfolio.length ? (
+                    <CheckSquare className="w-4 h-4 text-[#B68F4E]" />
+                  ) : (
+                    <Square className="w-4 h-4 text-white/40" />
+                  )}
+                  <span>
+                    {selectedPhotos.length === portfolio.length
+                      ? 'Desmarcar todas'
+                      : 'Seleccionar todas'}
+                  </span>
+                </button>
+
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-mono text-[#B68F4E]">
+                    {selectedPhotos.length} seleccionada{selectedPhotos.length === 1 ? '' : 's'}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={selectedPhotos.length === 0}
+                    onClick={promptDeleteSelectedPhotos}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shadow-lg"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
+                    <span>Eliminar Seleccionadas</span>
                   </button>
                 </div>
-              ))}
+              </div>
+            )}
+
+            {/* Grilla de Fotos */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+              {portfolio.map((imgUrl, i) => {
+                const isSelected = selectedPhotos.includes(imgUrl);
+
+                return (
+                  <div
+                    key={i}
+                    onClick={() => {
+                      if (isSelectionMode) handleToggleSelectPhoto(imgUrl);
+                    }}
+                    className={`relative h-32 rounded-xl overflow-hidden border transition-all group ${
+                      isSelected
+                        ? 'border-[#B68F4E] ring-2 ring-[#B68F4E] shadow-[0_0_15px_rgba(182,143,78,0.4)]'
+                        : 'border-white/15'
+                    } ${isSelectionMode ? 'cursor-pointer' : ''}`}
+                  >
+                    <img
+                      src={imgUrl}
+                      alt={`Portafolio ${i + 1}`}
+                      className={`w-full h-full object-cover transition-transform duration-300 ${
+                        isSelected ? 'scale-95' : 'group-hover:scale-105'
+                      }`}
+                    />
+
+                    {/* Checkbox de Selección */}
+                    {isSelectionMode && (
+                      <div className="absolute top-2 left-2 z-10">
+                        {isSelected ? (
+                          <div className="w-6 h-6 rounded-lg bg-[#B68F4E] text-black flex items-center justify-center shadow-md">
+                            <Check className="w-4 h-4 stroke-[3]" />
+                          </div>
+                        ) : (
+                          <div className="w-6 h-6 rounded-lg bg-black/60 border border-white/40 flex items-center justify-center" />
+                        )}
+                      </div>
+                    )}
+
+                    {/* Botón individual de eliminar (si no está en modo selección) */}
+                    {!isSelectionMode && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          promptDeleteSinglePhoto(imgUrl);
+                        }}
+                        className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/80 text-white/80 hover:text-red-400 hover:bg-black transition-colors cursor-pointer shadow-lg"
+                        title="Eliminar esta foto"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -824,7 +1001,7 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleDeletePhoto(imgUrl);
+                            promptDeleteSinglePhoto(imgUrl);
                           }}
                           className="p-1.5 rounded-lg bg-red-950/80 text-red-200 border border-red-500/40 hover:bg-red-900 transition-colors cursor-pointer"
                           title="Eliminar de portafolio"
@@ -1104,6 +1281,17 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
           </motion.div>
         )}
       </AnimatePresence>
+      {/* Modal Exclusivo FADE para Confirmación de Borrado */}
+      <FadeConfirmModal
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        confirmText={confirmDialog.confirmText}
+        previewImage={confirmDialog.previewImage}
+        itemCount={confirmDialog.itemCount}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };

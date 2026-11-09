@@ -634,12 +634,13 @@ export async function addBarberPortfolioPhoto(photoUrl: string): Promise<UserPro
   return current;
 }
 
-export async function deleteBarberPortfolioPhoto(photoUrl: string): Promise<UserProfile | null> {
+export async function deleteBarberPortfolioPhotos(photoUrls: string[]): Promise<UserProfile | null> {
   const token = getStoredToken();
   const current = getStoredUser();
 
-  if (current && current.portfolio) {
-    current.portfolio = current.portfolio.filter((p) => p !== photoUrl);
+  const remaining = (current?.portfolio || []).filter((p) => !photoUrls.includes(p));
+  if (current) {
+    current.portfolio = remaining;
     localStorage.setItem(USER_KEY, JSON.stringify(current));
   }
 
@@ -651,19 +652,29 @@ export async function deleteBarberPortfolioPhoto(photoUrl: string): Promise<User
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ photoUrl }),
+        body: JSON.stringify({ photoUrls }),
       });
       if (res.ok) {
-        const updated = await res.json();
-        localStorage.setItem(USER_KEY, JSON.stringify(updated));
-        return updated;
+        const remoteUpdated = await res.json();
+        // Preserve local non-deleted portfolio items
+        const merged: UserProfile = {
+          ...current,
+          ...remoteUpdated,
+          portfolio: remaining,
+        };
+        localStorage.setItem(USER_KEY, JSON.stringify(merged));
+        return merged;
       }
     } catch (err) {
-      console.warn('Could not delete portfolio photo from server:', err);
+      console.warn('Could not delete portfolio photos from server:', err);
     }
   }
 
   return current;
+}
+
+export async function deleteBarberPortfolioPhoto(photoUrl: string): Promise<UserProfile | null> {
+  return deleteBarberPortfolioPhotos([photoUrl]);
 }
 
 export async function fetchBarberFollowStatus(barberId: string): Promise<{ followerCount: number; isFollowing: boolean }> {

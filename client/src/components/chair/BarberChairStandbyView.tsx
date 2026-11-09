@@ -1,16 +1,13 @@
 import { useState, useEffect } from 'react';
-import type { FC, FormEvent } from 'react';
+import type { FC } from 'react';
 import { motion } from 'framer-motion';
 import {
   QrCode,
   Download,
   Copy,
   Check,
-  Phone,
-  Users,
   Sparkles,
   LogOut,
-  ChevronRight,
   Clock,
 } from 'lucide-react';
 import QRCode from 'qrcode';
@@ -31,7 +28,7 @@ interface BarberChairStandbyViewProps {
 
 export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
   barber,
-  onConnectClient,
+  onConnectClient: _onConnectClient,
   onOpenQrModal,
   onExit,
 }) => {
@@ -40,12 +37,10 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
   const shopName = 'Fade Studio — Sopocachi';
 
   const [presenceStatus, setPresenceStatus] = useState<BarberPresenceStatus>('GREEN');
-  const [waitingCount, setWaitingCount] = useState(0);
   const [isPresenceModalOpen, setIsPresenceModalOpen] = useState(false);
+  const [pendingPresenceStatus, setPendingPresenceStatus] = useState<BarberPresenceStatus | undefined>(undefined);
   const [firstScanCelebration, setFirstScanCelebration] = useState<string | null>(null);
   const [upcomingAlert, setUpcomingAlert] = useState<UpcomingBookingAlert | null>(null);
-  const [manualPhone, setManualPhone] = useState('');
-  const [phoneError, setPhoneError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
 
@@ -96,9 +91,19 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
     };
   }, []);
 
-  const handleStatusChange = (newStatus: BarberPresenceStatus) => {
-    setPresenceStatus(newStatus);
-    presenceService.setStatus(newStatus);
+  const handleStatusChipClick = (newStatus: BarberPresenceStatus) => {
+    if (newStatus === 'GREEN') {
+      setPresenceStatus('GREEN');
+      presenceService.setPresence('GREEN', 0);
+    } else {
+      setPendingPresenceStatus(newStatus);
+      setIsPresenceModalOpen(true);
+    }
+  };
+
+  const handleOpenPresenceAdjust = () => {
+    setPendingPresenceStatus(presenceStatus);
+    setIsPresenceModalOpen(true);
   };
 
   const handleCopyLink = async () => {
@@ -110,17 +115,6 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
     }
-  };
-
-  const handleManualSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    setPhoneError(null);
-    const cleaned = manualPhone.replace(/\D/g, '');
-    if (cleaned.length < 7) {
-      setPhoneError('Ingresa un número de celular válido');
-      return;
-    }
-    onConnectClient(`+591 ${cleaned}`);
   };
 
   return (
@@ -172,7 +166,7 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
 
             <button
               type="button"
-              onClick={() => setIsPresenceModalOpen(true)}
+              onClick={handleOpenPresenceAdjust}
               className="flex flex-col items-end gap-1 p-1.5 -mr-1.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer group"
               title="Toca para cambiar estado o fila de espera"
             >
@@ -202,7 +196,7 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
           <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-black/60 border border-white/10">
             <button
               type="button"
-              onClick={() => handleStatusChange('GREEN')}
+              onClick={() => handleStatusChipClick('GREEN')}
               className={`flex-1 py-1.5 px-2 rounded-xl text-[11px] font-semibold tracking-wide transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                 presenceStatus === 'GREEN'
                   ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
@@ -215,7 +209,7 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
 
             <button
               type="button"
-              onClick={() => handleStatusChange('YELLOW')}
+              onClick={() => handleStatusChipClick('YELLOW')}
               className={`flex-1 py-1.5 px-2 rounded-xl text-[11px] font-semibold tracking-wide transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                 presenceStatus === 'YELLOW'
                   ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
@@ -228,7 +222,7 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
 
             <button
               type="button"
-              onClick={() => handleStatusChange('RED')}
+              onClick={() => handleStatusChipClick('RED')}
               className={`flex-1 py-1.5 px-2 rounded-xl text-[11px] font-semibold tracking-wide transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                 presenceStatus === 'RED'
                   ? 'bg-red-500/20 text-red-300 border border-red-500/40 shadow-sm'
@@ -330,91 +324,17 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
             </button>
           </div>
         </div>
-
-        {/* =========================================================================
-            VINCULACIÓN MANUAL POR TELÉFONO
-            ========================================================================= */}
-        <div className="fade-surface rounded-3xl p-5 border border-white/10 space-y-4 text-left">
-          <div className="space-y-1">
-            <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
-              <Phone className="w-4 h-4 text-[#B68F4E]" />
-              <span>¿El cliente no tiene cámara o prefiere por número?</span>
-            </h3>
-            <p className="text-xs text-[#D9C9B0]/70">
-              Búscalo por su teléfono registrado para cargarlo al sillón:
-            </p>
-          </div>
-
-          <form onSubmit={handleManualSubmit} className="flex gap-2">
-            <div className="relative flex-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono text-[#D9C9B0]/50">
-                +591
-              </span>
-              <input
-                type="tel"
-                value={manualPhone}
-                onChange={(e) => setManualPhone(e.target.value)}
-                placeholder="71234567"
-                className="w-full pl-14 pr-3 py-2.5 rounded-xl bg-black/60 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#B68F4E] transition-colors"
-              />
-            </div>
-            <motion.button
-              type="submit"
-              whileTap={{ scale: 0.95 }}
-              transition={SPRING_TOUCH}
-              className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white font-bold text-xs tracking-wide cursor-pointer flex items-center gap-1"
-            >
-              <span>Vincular</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </motion.button>
-          </form>
-
-          {phoneError && (
-            <p className="text-[11px] text-red-400 font-mono">{phoneError}</p>
-          )}
-        </div>
-
-        {/* =========================================================================
-            SALA DE ESPERA RÁPIDA (LOUNGE COUNT)
-            ========================================================================= */}
-        <div className="fade-surface rounded-2xl p-4 border border-white/10 flex items-center justify-between text-left">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-[#B68F4E]">
-              <Users className="w-4 h-4" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-white">Clientes en sala de espera</p>
-              <p className="text-[11px] text-[#D9C9B0]/60">Afecta el tiempo estimado en el mapa</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setWaitingCount((prev) => Math.max(0, prev - 1))}
-              className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white font-mono text-xs flex items-center justify-center cursor-pointer"
-            >
-              -
-            </button>
-            <span className="w-6 text-center text-xs font-mono font-bold text-[#B68F4E]">
-              {waitingCount}
-            </span>
-            <button
-              type="button"
-              onClick={() => setWaitingCount((prev) => prev + 1)}
-              className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white font-mono text-xs flex items-center justify-center cursor-pointer"
-            >
-              +
-            </button>
-          </div>
-        </div>
       </div>
 
       <BarberPresenceModal
         isOpen={isPresenceModalOpen}
-        onClose={() => setIsPresenceModalOpen(false)}
+        onClose={() => {
+          setIsPresenceModalOpen(false);
+          setPendingPresenceStatus(undefined);
+        }}
         barberName={barberName}
         shopName={shopName}
+        initialStatus={pendingPresenceStatus}
       />
     </div>
   );

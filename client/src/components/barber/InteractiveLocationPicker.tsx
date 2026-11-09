@@ -78,10 +78,11 @@ export const InteractiveLocationPicker: FC<InteractiveLocationPickerProps> = ({
       attributionControl: false,
     });
 
-    // Dark Matter tile layer (CartoDB)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    // High-Resolution Dark Tiles (OpenStreetMap with OLED Invert filter - No API key/watermarks)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      subdomains: 'abcd',
+      subdomains: ['a', 'b', 'c'],
+      className: 'leaflet-dark-tiles',
     }).addTo(map);
 
     // Draggable Marker

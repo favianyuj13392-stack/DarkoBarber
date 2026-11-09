@@ -558,18 +558,18 @@ export class AuthService {
   }
 
   async deletePortfolioPhoto(barberId: string, photoUrl: string) {
-    if (!photoUrl) throw new Error('photoUrl is required');
+    return this.deletePortfolioPhotos(barberId, [photoUrl]);
+  }
 
-    const photos = await this.prisma.cutPhoto.findMany({
+  async deletePortfolioPhotos(barberId: string, photoUrls: string[]) {
+    if (!photoUrls || photoUrls.length === 0) throw new Error('photoUrls is required');
+
+    await this.prisma.cutPhoto.deleteMany({
       where: {
-        r2Key: photoUrl,
+        r2Key: { in: photoUrls },
         cut: { barberId },
       },
     });
-
-    for (const ph of photos) {
-      await this.prisma.cutPhoto.delete({ where: { id: ph.id } });
-    }
 
     return this.getBarberFullProfile(barberId);
   }

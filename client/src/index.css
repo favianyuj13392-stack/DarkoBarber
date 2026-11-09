@@ -135,3 +135,14 @@
   animation: spiderPop 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* ==========================================================================
+   Leaflet OLED Dark Matter Tiles (Zero API Key / Zero Watermark)
+   ========================================================================== */
+.leaflet-dark-tiles {
+  filter: invert(100%) hue-rotate(180deg) brightness(85%) contrast(115%) !important;
+}
+
+.leaflet-container {
+  background: #0d0d0d !important;
+}
+

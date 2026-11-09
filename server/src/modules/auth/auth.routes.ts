@@ -336,9 +336,10 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     async (request: any, reply: any) => {
       const barberId = request.barber?.id || request.authUser?.id;
       if (!barberId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
-      const { photoUrl } = (request.body as { photoUrl: string }) || {};
-      if (!photoUrl) return reply.status(400).send({ error: 'PHOTO_URL_REQUIRED' });
-      const profile = await service.deletePortfolioPhoto(barberId, photoUrl);
+      const { photoUrl, photoUrls } = (request.body as { photoUrl?: string; photoUrls?: string[] }) || {};
+      const targets = photoUrls && photoUrls.length > 0 ? photoUrls : photoUrl ? [photoUrl] : [];
+      if (targets.length === 0) return reply.status(400).send({ error: 'PHOTO_URL_REQUIRED' });
+      const profile = await service.deletePortfolioPhotos(barberId, targets);
       return reply.status(200).send(profile);
     }
   );
