@@ -146,3 +146,8 @@
   background: #0d0d0d !important;
 }
 
+.leaflet-div-icon {
+  background: transparent !important;
+  border: none !important;
+}
+

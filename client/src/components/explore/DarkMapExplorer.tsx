@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useMemo, type FC } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import {
   List,
   Navigation,
@@ -31,112 +32,18 @@ interface ShopCluster {
   bestStatus: 'GREEN' | 'YELLOW' | 'RED' | 'GRAY';
 }
 
-// Google Maps Ultra-Luxury OLED Dark Theme
-const DARK_MAP_STYLE: google.maps.MapTypeStyle[] = [
-  { elementType: 'geometry', stylers: [{ color: '#0d0d10' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#0d0d10' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#8e8e93' }] },
-  {
-    featureType: 'administrative.locality',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#d9c9b0' }],
-  },
-  {
-    featureType: 'administrative.neighborhood',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#b68f4e' }],
-  },
-  {
-    featureType: 'poi',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#686870' }],
-  },
-  {
-    featureType: 'poi.park',
-    elementType: 'geometry',
-    stylers: [{ color: '#111713' }],
-  },
-  {
-    featureType: 'poi.park',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#4a6250' }],
-  },
-  {
-    featureType: 'road',
-    elementType: 'geometry',
-    stylers: [{ color: '#1c1c22' }],
-  },
-  {
-    featureType: 'road',
-    elementType: 'geometry.stroke',
-    stylers: [{ color: '#131316' }],
-  },
-  {
-    featureType: 'road',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#9e9ea6' }],
-  },
-  {
-    featureType: 'road.highway',
-    elementType: 'geometry',
-    stylers: [{ color: '#272730' }],
-  },
-  {
-    featureType: 'road.highway',
-    elementType: 'geometry.stroke',
-    stylers: [{ color: '#16161b' }],
-  },
-  {
-    featureType: 'road.highway',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#d9c9b0' }],
-  },
-  {
-    featureType: 'transit',
-    elementType: 'geometry',
-    stylers: [{ color: '#1a1a22' }],
-  },
-  {
-    featureType: 'transit.line',
-    elementType: 'geometry',
-    stylers: [{ color: '#b68f4e' }, { lightness: -40 }],
-  },
-  {
-    featureType: 'transit.station',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#b68f4e' }],
-  },
-  {
-    featureType: 'water',
-    elementType: 'geometry',
-    stylers: [{ color: '#070a0e' }],
-  },
-  {
-    featureType: 'water',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#384656' }],
-  },
-  {
-    featureType: 'water',
-    elementType: 'labels.text.stroke',
-    stylers: [{ color: '#070a0e' }],
-  },
-];
-
-let isGoogleMapsConfigured = false;
-
 export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
   barbers,
   onSelectBarber,
   onBackToList,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<google.maps.Map | null>(null);
-  const overlaysRef = useRef<google.maps.OverlayView[]>([]);
+  const mapInstanceRef = useRef<L.Map | null>(null);
+  const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const [selectedBarber, setSelectedBarber] = useState<ExploreBarber | null>(null);
   const [filterOnlyGreen, setFilterOnlyGreen] = useState(false);
   const [spiderfiedShopId, setSpiderfiedShopId] = useState<string | null>(null);
-  const [isMapLoaded, setIsMapLoaded] = useState(false);
+  const hasAutoSelectedRef = useRef(false);
 
   // Group barbers into studio clusters (Silos)
   const clusters = useMemo<ShopCluster[]>(() => {
@@ -188,99 +95,124 @@ export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
     );
   }, [clusters, selectedBarber]);
 
-  // 1. Initialize Google Maps instance
+  // Auto-select first barber ONLY once on initial data load
+  useEffect(() => {
+    if (!hasAutoSelectedRef.current && clusters.length > 0 && clusters[0].barbers.length > 0) {
+      setSelectedBarber(clusters[0].barbers[0]);
+      hasAutoSelectedRef.current = true;
+    }
+  }, [clusters]);
+
+  // 1. Initialize Leaflet Map Instance with OLED Dark Matter tiles
   useEffect(() => {
     if (!mapContainerRef.current) return;
     if (mapInstanceRef.current) return;
 
-    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+    // Center on Sopocachi / Centro La Paz
+    const map = L.map(mapContainerRef.current, {
+      center: [-16.5113, -68.1287],
+      zoom: 14.5,
+      zoomControl: false,
+      attributionControl: false,
+    });
 
-    if (!isGoogleMapsConfigured) {
-      setOptions({
-        key: apiKey,
-        v: 'weekly',
-      });
-      isGoogleMapsConfigured = true;
-    }
+    // High-Resolution Dark Tiles (OpenStreetMap with OLED Invert filter - No API key / No watermarks)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      subdomains: ['a', 'b', 'c'],
+      className: 'leaflet-dark-tiles',
+    }).addTo(map);
 
-    let isCancelled = false;
+    const layerGroup = L.layerGroup().addTo(map);
+    markersLayerRef.current = layerGroup;
+    mapInstanceRef.current = map;
 
-    importLibrary('maps')
-      .then((mapsLib) => {
-        if (isCancelled || !mapContainerRef.current) return;
+    // Click outside on map collapses spiderfy
+    map.on('click', () => {
+      setSpiderfiedShopId(null);
+    });
 
-        // Center on Sopocachi / Centro La Paz
-        const map = new mapsLib.Map(mapContainerRef.current, {
-          center: { lat: -16.5113, lng: -68.1287 },
-          zoom: 14.5,
-          disableDefaultUI: true,
-          zoomControl: false,
-          gestureHandling: 'greedy',
-          styles: DARK_MAP_STYLE,
-          backgroundColor: '#0d0d10',
-        });
-
-        // Click outside on map collapses spiderfy
-        map.addListener('click', () => {
-          setSpiderfiedShopId(null);
-        });
-
-        mapInstanceRef.current = map;
-        setIsMapLoaded(true);
-      })
-      .catch((err: unknown) => {
-        console.error('Error loading Google Maps API:', err);
-      });
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 250);
 
     return () => {
-      isCancelled = true;
+      clearTimeout(timer);
+      map.remove();
+      mapInstanceRef.current = null;
+      markersLayerRef.current = null;
     };
   }, []);
 
-  // 2. Render Markers, Silos & Spiderfy Overlays
+  // Event delegation on map container for Spiderfy clicks (avoids Leaflet event swallowing)
+  useEffect(() => {
+    const container = mapContainerRef.current;
+    if (!container) return;
+
+    const handleContainerClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      const hub = target.closest('#spider-center-hub');
+      if (hub) {
+        e.stopPropagation();
+        setSpiderfiedShopId(null);
+        return;
+      }
+
+      const pin = target.closest('.fade-spider-pin');
+      if (pin) {
+        e.stopPropagation();
+        const barberId = pin.getAttribute('data-barber-id');
+        if (barberId) {
+          const found = barbers.find((b) => b.id === barberId);
+          if (found) {
+            setSelectedBarber(found);
+          }
+        }
+        return;
+      }
+    };
+
+    container.addEventListener('click', handleContainerClick, true);
+    return () => {
+      container.removeEventListener('click', handleContainerClick, true);
+    };
+  }, [barbers]);
+
+  // 2. Render Markers, Silos & Spiderfy Overlays with Leaflet
   useEffect(() => {
     const map = mapInstanceRef.current;
-    if (!map || !isMapLoaded) return;
+    const layerGroup = markersLayerRef.current;
+    if (!map || !layerGroup) return;
 
-    // Clear old overlays
-    overlaysRef.current.forEach((overlay) => overlay.setMap(null));
-    overlaysRef.current = [];
+    layerGroup.clearLayers();
+
+    // Color helper
+    const getStatusHex = (status: string) => {
+      switch (status) {
+        case 'GREEN':
+          return '#34d399';
+        case 'YELLOW':
+          return '#fbbf24';
+        case 'RED':
+          return '#ef4444';
+        default:
+          return '#71717a';
+      }
+    };
 
     clusters.forEach((cluster) => {
-      const markerPos = new google.maps.LatLng(cluster.lat, cluster.lng);
       const isSpiderfied = spiderfiedShopId === cluster.id;
       const isSingleBarber = cluster.barbers.length === 1;
-
-      // Color helper
-      const getStatusHex = (status: string) => {
-        switch (status) {
-          case 'GREEN':
-            return '#34d399';
-          case 'YELLOW':
-            return '#fbbf24';
-          case 'RED':
-            return '#ef4444';
-          default:
-            return '#71717a';
-        }
-      };
-
-      const container = document.createElement('div');
-      container.style.position = 'absolute';
-      container.style.cursor = 'pointer';
 
       // =======================================================================
       // CASE A: SPIDERFY ACTIVE (Expanded radial fan with connecting lines)
       // =======================================================================
       if (isSpiderfied && !isSingleBarber) {
-        container.style.transform = 'translate(-50%, -50%)';
-        container.style.zIndex = '50';
-
         const barberCount = cluster.barbers.length;
         const radius = 76; // Distance in px from center anchor
 
-        // Calculate radial positions fanning upward
-        // For N=2: -135deg, -45deg. For N=3: -150deg, -90deg, -30deg.
         const angles: number[] = [];
         if (barberCount === 2) {
           angles.push(-135, -45);
@@ -293,7 +225,6 @@ export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
           }
         }
 
-        // SVG connecting lines
         let svgLines = '';
         const pinsHtml = cluster.barbers
           .map((barber, i) => {
@@ -320,6 +251,7 @@ export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
                 animation-delay: ${i * 45}ms;
                 z-index: 30;
                 filter: drop-shadow(0 6px 14px rgba(0,0,0,0.95));
+                cursor: pointer;
               ">
                 <div style="
                   width: 44px;
@@ -332,7 +264,7 @@ export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
                   box-shadow: ${isSelected ? '0 0 18px #B68F4E' : '0 0 12px rgba(182, 143, 78, 0.4)'};
                   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
                 ">
-                  <img src="${barber.avatar}" style="width: 100%; height: 100%; object-fit: cover;" alt="${barber.name}" />
+                  <img src="${barber.avatar}" style="width: 100%; height: 100%; object-fit: cover; pointer-events: none;" alt="${barber.name}" />
                 </div>
                 <!-- Diamond Status Indicator -->
                 <div style="
@@ -345,6 +277,7 @@ export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
                   background: ${sColor};
                   border: 2px solid #000;
                   box-shadow: 0 0 8px ${sColor};
+                  pointer-events: none;
                 "></div>
                 <!-- First Name Badge -->
                 <div style="
@@ -358,6 +291,7 @@ export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
                   color: #F5EBDD;
                   white-space: nowrap;
                   letter-spacing: 0.02em;
+                  pointer-events: none;
                 ">
                   ${barber.name.split(' ')[0]}
                 </div>
@@ -366,7 +300,7 @@ export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
           })
           .join('');
 
-        container.innerHTML = `
+        const spiderHtml = `
           <div style="position: relative; width: 0; height: 0;">
             <!-- Connector Lines SVG -->
             <svg width="240" height="240" viewBox="-120 -120 240 240" style="position: absolute; left: -120px; top: -120px; pointer-events: none; z-index: 10;">
@@ -390,7 +324,7 @@ export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
               font-weight: bold;
               box-shadow: 0 0 16px rgba(182, 143, 78, 0.6);
               z-index: 40;
-              transition: transform 0.2s;
+              cursor: pointer;
             ">
               ✕
             </div>
@@ -400,40 +334,29 @@ export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
           </div>
         `;
 
-        // Event delegation for center close and barber pins
-        const hub = container.querySelector('#spider-center-hub');
-        hub?.addEventListener('click', (e) => {
-          e.stopPropagation();
-          setSpiderfiedShopId(null);
+        const spiderIcon = L.divIcon({
+          className: 'fade-spider-cluster',
+          html: spiderHtml,
+          iconSize: [0, 0],
+          iconAnchor: [0, 0],
         });
 
-        const pinElements = container.querySelectorAll('.fade-spider-pin');
-        pinElements.forEach((el) => {
-          el.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const bId = el.getAttribute('data-barber-id');
-            const found = cluster.barbers.find((b) => b.id === bId);
-            if (found) {
-              setSelectedBarber(found);
-            }
-          });
-        });
+        L.marker([cluster.lat, cluster.lng], {
+          icon: spiderIcon,
+          zIndexOffset: 1000,
+        }).addTo(layerGroup);
       }
 
       // =======================================================================
       // CASE B: STUDIO CLUSTER (Silo con múltiples barberos colapsados)
       // =======================================================================
       else if (!isSingleBarber) {
-        container.style.transform = 'translate(-50%, -100%)';
-        container.style.zIndex = '20';
-        container.style.filter = 'drop-shadow(0 8px 18px rgba(0,0,0,0.95))';
-
         const sColor = getStatusHex(cluster.bestStatus);
         const topBarber = cluster.barbers[0];
         const secondBarber = cluster.barbers[1];
 
-        container.innerHTML = `
-          <div style="position: relative; width: 54px; height: 60px; display: flex; flex-direction: column; align-items: center; transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);">
+        const siloHtml = `
+          <div style="position: relative; width: 54px; height: 60px; display: flex; flex-direction: column; align-items: center; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.95)); cursor: pointer;">
             <!-- Secondary Stacked Avatar behind -->
             <div style="
               position: absolute;
@@ -532,21 +455,23 @@ export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
           </div>
         `;
 
-        container.addEventListener('mouseenter', () => {
-          container.style.transform = 'translate(-50%, -105%) scale(1.08)';
-          container.style.zIndex = '35';
-        });
-        container.addEventListener('mouseleave', () => {
-          container.style.transform = 'translate(-50%, -100%) scale(1)';
-          container.style.zIndex = '20';
+        const clusterIcon = L.divIcon({
+          className: 'fade-cluster-marker',
+          html: siloHtml,
+          iconSize: [54, 70],
+          iconAnchor: [27, 70],
         });
 
-        // Click on Silo opens Spiderfy and selects first barber
-        container.addEventListener('click', (e) => {
-          e.stopPropagation();
+        const marker = L.marker([cluster.lat, cluster.lng], {
+          icon: clusterIcon,
+          zIndexOffset: 200,
+        }).addTo(layerGroup);
+
+        marker.on('click', (e) => {
+          L.DomEvent.stopPropagation(e);
           setSpiderfiedShopId(cluster.id);
           setSelectedBarber(cluster.barbers[0]);
-          map.panTo(markerPos);
+          map.panTo([cluster.lat, cluster.lng], { animate: true });
         });
       }
 
@@ -554,16 +479,12 @@ export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
       // CASE C: SINGLE BARBER PIN
       // =======================================================================
       else {
-        container.style.transform = 'translate(-50%, -100%)';
-        container.style.zIndex = '15';
-        container.style.filter = 'drop-shadow(0 8px 16px rgba(0,0,0,0.9))';
-
         const barber = cluster.barbers[0];
         const sColor = getStatusHex(barber.status);
         const isSelected = selectedBarber?.id === barber.id;
 
-        container.innerHTML = `
-          <div style="position: relative; width: 48px; height: 56px; display: flex; flex-direction: column; align-items: center; transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);">
+        const singleHtml = `
+          <div style="position: relative; width: 48px; height: 56px; display: flex; flex-direction: column; align-items: center; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.9)); cursor: pointer;">
             <div style="
               width: 44px;
               height: 44px;
@@ -600,52 +521,27 @@ export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
           </div>
         `;
 
-        container.addEventListener('mouseenter', () => {
-          container.style.transform = 'translate(-50%, -106%) scale(1.1)';
-          container.style.zIndex = '35';
-        });
-        container.addEventListener('mouseleave', () => {
-          container.style.transform = 'translate(-50%, -100%) scale(1)';
-          container.style.zIndex = '15';
+        const singleIcon = L.divIcon({
+          className: 'fade-single-marker',
+          html: singleHtml,
+          iconSize: [48, 64],
+          iconAnchor: [24, 64],
         });
 
-        container.addEventListener('click', (e) => {
-          e.stopPropagation();
+        const marker = L.marker([cluster.lat, cluster.lng], {
+          icon: singleIcon,
+          zIndexOffset: isSelected ? 500 : 100,
+        }).addTo(layerGroup);
+
+        marker.on('click', (e) => {
+          L.DomEvent.stopPropagation(e);
           setSpiderfiedShopId(null);
           setSelectedBarber(barber);
-          map.panTo(markerPos);
+          map.panTo([cluster.lat, cluster.lng], { animate: true });
         });
       }
-
-      // Mount via Google Maps OverlayView
-      const overlay = new google.maps.OverlayView();
-      overlay.onAdd = function () {
-        this.getPanes()?.overlayMouseTarget.appendChild(container);
-      };
-      overlay.draw = function () {
-        const projection = this.getProjection();
-        if (!projection) return;
-        const pixel = projection.fromLatLngToDivPixel(markerPos);
-        if (pixel) {
-          container.style.left = `${pixel.x}px`;
-          container.style.top = `${pixel.y}px`;
-        }
-      };
-      overlay.onRemove = function () {
-        if (container.parentNode) {
-          container.parentNode.removeChild(container);
-        }
-      };
-
-      overlay.setMap(map);
-      overlaysRef.current.push(overlay);
     });
-
-    // Auto-select first barber if none selected
-    if (!selectedBarber && clusters.length > 0 && clusters[0].barbers.length > 0) {
-      setSelectedBarber(clusters[0].barbers[0]);
-    }
-  }, [clusters, spiderfiedShopId, selectedBarber, isMapLoaded]);
+  }, [clusters, spiderfiedShopId, selectedBarber]);
 
   const handleOpenGoogleMaps = (barber: ExploreBarber) => {
     window.open(
@@ -656,7 +552,7 @@ export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
 
   return (
     <div className="relative w-full h-[calc(100vh-5rem)] min-h-[500px] bg-[#0d0d10] overflow-hidden select-none">
-      {/* 1. Google Maps Canvas Container */}
+      {/* 1. Leaflet Canvas Container */}
       <div ref={mapContainerRef} className="w-full h-full z-0" />
 
       {/* 2. Floating Top Header Controls */}
@@ -706,7 +602,7 @@ export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
             className="absolute bottom-20 lg:bottom-6 left-4 right-4 max-w-lg mx-auto z-20"
           >
             <div className="relative p-4 rounded-3xl bg-gradient-to-b from-[#1C1C1C] via-[#141414] to-[#0A0A0A] border border-white/15 shadow-[0_18px_45px_rgba(0,0,0,0.98),inset_0_1px_0_rgba(255,255,255,0.18)]">
-              {/* Close Button */}
+              {/* Close Button: closes card cleanly without automatic re-opening */}
               <button
                 type="button"
                 onClick={() => {
@@ -714,6 +610,7 @@ export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
                   setSpiderfiedShopId(null);
                 }}
                 className="absolute top-3 right-3 p-1.5 rounded-full text-white/40 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                title="Cerrar panel"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -768,7 +665,7 @@ export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
                 </div>
               </div>
 
-              {/* Multi-Barber Studio Switcher Bar (Capa 3: Sincronización de Salón) */}
+              {/* Multi-Barber Studio Switcher Bar */}
               {activeCluster && activeCluster.barbers.length > 1 && (
                 <div className="mt-3 pt-2.5 border-t border-white/10">
                   <div className="flex items-center justify-between mb-2">
@@ -861,8 +758,9 @@ export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
         type="button"
         onClick={() => {
           if (mapInstanceRef.current) {
-            mapInstanceRef.current.panTo({ lat: -16.5113, lng: -68.1287 });
-            mapInstanceRef.current.setZoom(14.5);
+            mapInstanceRef.current.flyTo([-16.5113, -68.1287], 14.5, {
+              duration: 1,
+            });
           }
         }}
         className="absolute bottom-44 lg:bottom-28 right-4 z-10 p-3 rounded-2xl bg-black/85 backdrop-blur-xl border border-white/15 text-[#B68F4E] hover:text-white shadow-lg cursor-pointer"

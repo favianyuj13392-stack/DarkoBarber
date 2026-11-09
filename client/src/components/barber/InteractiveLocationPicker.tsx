@@ -110,7 +110,12 @@ export const InteractiveLocationPicker: FC<InteractiveLocationPickerProps> = ({
     mapInstanceRef.current = map;
     markerRef.current = marker;
 
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 250);
+
     return () => {
+      clearTimeout(timer);
       map.remove();
       mapInstanceRef.current = null;
       markerRef.current = null;
