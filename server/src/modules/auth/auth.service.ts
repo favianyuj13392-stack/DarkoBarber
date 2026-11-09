@@ -1,7 +1,9 @@
 import { PrismaClient, Barber, Client } from '@prisma/client';
 import { OAuth2Client } from 'google-auth-library';
+import crypto from 'node:crypto';
 import { LoginInput, RegisterInput, GoogleAuthInput } from './auth.schemas';
 import { hashSecret, verifySecret } from '../../utils/crypto';
+import { emailService } from '../../services/email/email.service';
 
 export type AuthResult = {
   role: 'barbero' | 'cliente';
@@ -879,6 +881,93 @@ export class AuthService {
       success: true,
       freeMonthsEarned: updated.freeMonthsEarned,
       message: '¡Felicidades! Se ha aplicado 1 mes gratis de Plan Barbería Base a tu cuenta.',
+    };
+  }
+
+  async requestPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const [barber, client] = await Promise.all([
+      this.prisma.barber.findFirst({ where: { email: normalizedEmail } }),
+      this.prisma.client.findFirst({ where: { email: normalizedEmail } }),
+    ]);
+
+    const targetUser = barber || client;
+    const role = barber ? 'barbero' : 'cliente';
+    const name = targetUser?.displayName || 'Usuario';
+
+    if (targetUser) {
+      await (this.prisma as any).passwordResetToken.updateMany({
+        where: { email: normalizedEmail, usedAt: null },
+        data: { usedAt: new Date() },
+      }).catch(() => {});
+
+      const token = crypto.randomBytes(16).toString('hex');
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+      await (this.prisma as any).passwordResetToken.create({
+        data: {
+          email: normalizedEmail,
+          token,
+          role,
+          expiresAt,
+        },
+      });
+
+      const baseUrl = process.env.APP_PUBLIC_URL || 'https://fade.darkosync.com';
+      const resetUrl = `${baseUrl}/?reset_token=${token}`;
+
+      await emailService.sendPasswordResetEmail(normalizedEmail, {
+        name,
+        resetUrl,
+        token,
+        expiresInMinutes: 30,
+      });
+    }
+
+    return {
+      success: true,
+      message: 'Si el correo electrónico está registrado, recibirás un mensaje con las instrucciones para restablecer tu contraseña.',
+    };
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    const cleanToken = token.trim();
+
+    const record = await (this.prisma as any).passwordResetToken.findFirst({
+      where: {
+        token: cleanToken,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+    });
+
+    if (!record) {
+      throw new Error('El código o enlace de recuperación es inválido o ha expirado.');
+    }
+
+    const newPasswordHash = hashSecret(newPassword);
+
+    if (record.role === 'barbero') {
+      await this.prisma.barber.updateMany({
+        where: { email: record.email },
+        data: { passwordHash: newPasswordHash },
+      });
+    } else {
+      await this.prisma.client.updateMany({
+        where: { email: record.email },
+        data: { passwordHash: newPasswordHash },
+      });
+    }
+
+    await (this.prisma as any).passwordResetToken.update({
+      where: { id: record.id },
+      data: { usedAt: new Date() },
+    });
+
+    return {
+      success: true,
+      message: 'Tu contraseña ha sido actualizada con éxito. Ya puedes iniciar sesión.',
     };
   }
 }

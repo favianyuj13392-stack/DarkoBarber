@@ -762,3 +762,31 @@ export async function claimFreeMonthReward(): Promise<{ success: boolean; freeMo
 
   return await res.json();
 }
+
+export async function requestPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetch('/api/auth/forgot-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email.trim() }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.message || 'Error al solicitar recuperación de contraseña');
+  }
+  return data;
+}
+
+export async function resetPassword(token: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetch('/api/auth/reset-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: token.trim(), newPassword }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.message || 'Error al restablecer la contraseña');
+  }
+  return data;
+}

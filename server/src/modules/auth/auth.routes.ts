@@ -1,6 +1,13 @@
 import { FastifyPluginAsync } from 'fastify';
 import { AuthService } from './auth.service';
-import { loginSchema, registerSchema, googleAuthSchema } from './auth.schemas';
+import {
+  loginSchema,
+  registerSchema,
+  googleAuthSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+} from './auth.schemas';
+import { emailService } from '../../services/email/email.service';
 
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new AuthService(fastify.prisma);
@@ -378,4 +385,52 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(200).send(result);
     }
   );
+
+  // --- RECUPERACIÓN DE CONTRASEÑA (PASSWORD RESET) ---
+  fastify.post('/auth/forgot-password', async (request, reply) => {
+    const parseResult = forgotPasswordSchema.safeParse(request.body);
+    if (!parseResult.success) {
+      return reply.status(400).send({
+        error: 'VALIDATION_ERROR',
+        issues: parseResult.error.format(),
+      });
+    }
+
+    const result = await service.requestPasswordReset(parseResult.data.email);
+    return reply.status(200).send(result);
+  });
+
+  fastify.post('/auth/reset-password', async (request, reply) => {
+    const parseResult = resetPasswordSchema.safeParse(request.body);
+    if (!parseResult.success) {
+      return reply.status(400).send({
+        error: 'VALIDATION_ERROR',
+        issues: parseResult.error.format(),
+      });
+    }
+
+    try {
+      const result = await service.resetPassword(
+        parseResult.data.token,
+        parseResult.data.newPassword
+      );
+      return reply.status(200).send(result);
+    } catch (err: any) {
+      return reply.status(400).send({
+        error: 'INVALID_TOKEN',
+        message: err.message || 'No se pudo restablecer la contraseña',
+      });
+    }
+  });
+
+  // --- PRUEBA TRANSACCIONAL DE CORREO (PROTEGIDA / INTERNA) ---
+  fastify.post('/auth/email/test', async (request, reply) => {
+    const { to } = (request.body as { to?: string }) || {};
+    if (!to || !to.includes('@')) {
+      return reply.status(400).send({ error: 'EMAIL_REQUIRED', message: 'Se requiere un correo de destino válido.' });
+    }
+
+    const result = await emailService.sendTestEmail(to);
+    return reply.status(result.success ? 200 : 500).send(result);
+  });
 };

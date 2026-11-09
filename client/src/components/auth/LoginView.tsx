@@ -5,6 +5,7 @@ import { AlertCircle, Loader2, ArrowRight, Smartphone, ShieldCheck } from 'lucid
 import { BrandLogo } from '../common/BrandLogo';
 import { RoleSelector, type UserRole } from './RoleSelector';
 import { EmailPasswordInput } from './EmailPasswordInput';
+import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { loginWithEmailPassword, type LoginResponse } from '../../services/auth.service';
 import { SPRING_TOUCH } from '../../constants/springs';
 
@@ -12,18 +13,21 @@ interface LoginViewProps {
   onLoginSuccess: (data: LoginResponse) => void;
   onShowOnboarding: () => void;
   onShowRegister?: () => void;
+  initialResetToken?: string;
 }
 
 export const LoginView: FC<LoginViewProps> = ({
   onLoginSuccess,
   onShowOnboarding,
   onShowRegister,
+  initialResetToken,
 }) => {
   const [role, setRole] = useState<UserRole>('barbero');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(Boolean(initialResetToken));
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -178,6 +182,7 @@ export const LoginView: FC<LoginViewProps> = ({
               password={password}
               onEmailChange={setEmail}
               onPasswordChange={setPassword}
+              onForgotPassword={() => setIsForgotPasswordOpen(true)}
               disabled={loading}
             />
 
@@ -264,6 +269,13 @@ export const LoginView: FC<LoginViewProps> = ({
           </div>
         </motion.div>
       </div>
+
+      <ForgotPasswordModal
+        isOpen={isForgotPasswordOpen}
+        onClose={() => setIsForgotPasswordOpen(false)}
+        initialEmail={email}
+        initialToken={initialResetToken}
+      />
     </div>
   );
 };

@@ -7,6 +7,7 @@ interface EmailPasswordInputProps {
   password: string;
   onEmailChange: (val: string) => void;
   onPasswordChange: (val: string) => void;
+  onForgotPassword?: () => void;
   disabled?: boolean;
 }
 
@@ -15,6 +16,7 @@ export const EmailPasswordInput: FC<EmailPasswordInputProps> = ({
   password,
   onEmailChange,
   onPasswordChange,
+  onForgotPassword,
   disabled = false,
 }) => {
   const [showPassword, setShowPassword] = useState(false);
@@ -56,9 +58,15 @@ export const EmailPasswordInput: FC<EmailPasswordInputProps> = ({
           >
             Contraseña
           </label>
-          <span className="text-[10px] text-[#B68F4E]/70 hover:underline cursor-pointer">
-            ¿Olvidaste tu contraseña?
-          </span>
+          {onForgotPassword && (
+            <button
+              type="button"
+              onClick={onForgotPassword}
+              className="text-[10px] text-[#B68F4E]/80 hover:text-[#B68F4E] hover:underline cursor-pointer bg-transparent border-none p-0 transition-colors"
+            >
+              ¿Olvidaste tu contraseña?
+            </button>
+          )}
         </div>
 
         <div className="flex items-center rounded-2xl bg-black/60 border border-white/10 px-3.5 py-1.5 transition-all duration-200 focus-within:border-[#B68F4E]/60 focus-within:shadow-[0_0_20px_rgba(182,143,78,0.18)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">

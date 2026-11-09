@@ -28,3 +28,16 @@ export const googleAuthSchema = z.object({
 });
 
 export type GoogleAuthInput = z.infer<typeof googleAuthSchema>;
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().email('Email inválido'),
+});
+
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1, 'El código o token es requerido'),
+  newPassword: z.string().min(6, 'La nueva contraseña debe tener al menos 6 caracteres'),
+});
+
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;

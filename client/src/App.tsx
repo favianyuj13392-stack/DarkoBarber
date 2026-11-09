@@ -48,10 +48,19 @@ export function App() {
   const [clientRegisterStep, setClientRegisterStep] = useState(1);
   const [barberRegisterStep, setBarberRegisterStep] = useState(1);
   const [pendingChairScan, setPendingChairScan] = useState<ScannedBarberInfo | null>(null);
+  const [resetToken, setResetToken] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    // Si la URL contiene ?chair= o ?scan=, se enlaza directamente la sesión del sillón
+    // Si la URL contiene ?reset_token=, abre directamente el flujo de recuperación
     const params = new URLSearchParams(window.location.search);
+    const tokenFromUrl = params.get('reset_token') || params.get('token');
+    if (tokenFromUrl) {
+      setResetToken(tokenFromUrl);
+      setCurrentScreen('login');
+      return;
+    }
+
+    // Si la URL contiene ?chair= o ?scan=, se enlaza directamente la sesión del sillón
     const chairBarberId = params.get('chair') || params.get('scan');
     if (chairBarberId) {
       const barberName = params.get('name') || 'Diego Armando';
@@ -321,6 +330,7 @@ export function App() {
             <LoginView
               onLoginSuccess={handleLoginSuccess}
               onShowOnboarding={() => setCurrentScreen('onboarding')}
+              initialResetToken={resetToken}
               onShowRegister={() => {
                 setClientRegisterStep(1);
                 setCurrentScreen('register');

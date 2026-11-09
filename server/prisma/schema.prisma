@@ -218,3 +218,16 @@ model Booking {
   @@index([barberId, status])
   @@index([barberId, date])
 }
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  email     String
+  token     String    @unique
+  role      String    @default("barbero")
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+  @@index([token])
+}
