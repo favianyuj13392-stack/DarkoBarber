@@ -443,6 +443,7 @@ export class AuthService {
       specialties: barber.specialties?.length > 0 ? barber.specialties : ['Fade', 'Barba', 'Tijera'],
       instagram: barber.instagram || null,
       linkedin: barber.linkedin || null,
+      tiktok: (barber as any).tiktok || null,
       plan: barber.plan,
       shopId: barber.shopId,
       shopName: barber.shop?.name || 'Fade Studio — Sopocachi',
@@ -463,6 +464,7 @@ export class AuthService {
       specialties?: string[];
       instagram?: string;
       linkedin?: string;
+      tiktok?: string;
       avatarUrl?: string;
       phone?: string;
     }
@@ -475,6 +477,7 @@ export class AuthService {
         ...(data.specialties ? { specialties: data.specialties } : {}),
         ...(data.instagram !== undefined ? { instagram: data.instagram } : {}),
         ...(data.linkedin !== undefined ? { linkedin: data.linkedin } : {}),
+        ...(data.tiktok !== undefined ? { tiktok: data.tiktok } : {}),
         ...(data.avatarUrl !== undefined ? { avatarUrl: data.avatarUrl } : {}),
         ...(data.phone !== undefined ? { phone: data.phone } : {}),
       },
@@ -485,6 +488,147 @@ export class AuthService {
     });
 
     return updated;
+  }
+
+  async addPortfolioPhoto(barberId: string, photoUrl: string) {
+    if (!photoUrl) throw new Error('photoUrl is required');
+
+    let portfolioCut = await this.prisma.cut.findFirst({
+      where: {
+        barberId,
+        clientRequestId: `portfolio-${barberId}`,
+      },
+    });
+
+    if (!portfolioCut) {
+      let dummyClient = await this.prisma.client.findFirst({
+        where: { email: 'portfolio@fade.bo' },
+        include: { profiles: true },
+      });
+      if (!dummyClient) {
+        dummyClient = await this.prisma.client.create({
+          data: {
+            email: 'portfolio@fade.bo',
+            displayName: 'Portafolio FADE',
+            profiles: {
+              create: [{ name: 'Portafolio' }],
+            },
+          },
+          include: { profiles: true },
+        });
+      }
+
+      portfolioCut = await this.prisma.cut.create({
+        data: {
+          clientRequestId: `portfolio-${barberId}`,
+          barberId,
+          clientProfileId: dummyClient.profiles[0].id,
+          status: 'FINISHED',
+        },
+      });
+    }
+
+    await this.prisma.cutPhoto.create({
+      data: {
+        cutId: portfolioCut.id,
+        r2Key: photoUrl,
+        isPublic: true,
+      },
+    });
+
+    return this.getBarberFullProfile(barberId);
+  }
+
+  async deletePortfolioPhoto(barberId: string, photoUrl: string) {
+    if (!photoUrl) throw new Error('photoUrl is required');
+
+    const photos = await this.prisma.cutPhoto.findMany({
+      where: {
+        r2Key: photoUrl,
+        cut: { barberId },
+      },
+    });
+
+    for (const ph of photos) {
+      await this.prisma.cutPhoto.delete({ where: { id: ph.id } });
+    }
+
+    return this.getBarberFullProfile(barberId);
+  }
+
+  async getBarberServices(barberId: string) {
+    const services = await (this.prisma as any).barberService.findMany({
+      where: { barberId, isActive: true },
+      orderBy: { priceBs: 'asc' },
+    });
+
+    if (services.length === 0) {
+      const defaults = [
+        { name: 'Corte Clásico', priceBs: 45, durationMin: 30, category: 'corte' },
+        { name: 'Mid / Low Fade', priceBs: 55, durationMin: 40, category: 'corte' },
+        { name: 'Perfilado de Barba', priceBs: 30, durationMin: 20, category: 'barba' },
+        { name: 'Combo Fade + Barba Navaja', priceBs: 75, durationMin: 50, category: 'combo' },
+      ];
+
+      for (const def of defaults) {
+        await (this.prisma as any).barberService.create({
+          data: {
+            barberId,
+            ...def,
+          },
+        });
+      }
+
+      return (this.prisma as any).barberService.findMany({
+        where: { barberId, isActive: true },
+        orderBy: { priceBs: 'asc' },
+      });
+    }
+
+    return services;
+  }
+
+  async createBarberService(barberId: string, data: { name: string; priceBs: number; durationMin?: number; category?: string }) {
+    return (this.prisma as any).barberService.create({
+      data: {
+        barberId,
+        name: data.name,
+        priceBs: Number(data.priceBs),
+        durationMin: Number(data.durationMin) || 30,
+        category: data.category || 'corte',
+        isActive: true,
+      },
+    });
+  }
+
+  async updateBarberService(barberId: string, serviceId: string, data: { name?: string; priceBs?: number; durationMin?: number; category?: string; isActive?: boolean }) {
+    const existing = await (this.prisma as any).barberService.findFirst({
+      where: { id: serviceId, barberId },
+    });
+    if (!existing) throw new Error('Service not found or unauthorized');
+
+    return (this.prisma as any).barberService.update({
+      where: { id: serviceId },
+      data: {
+        ...(data.name ? { name: data.name } : {}),
+        ...(data.priceBs !== undefined ? { priceBs: Number(data.priceBs) } : {}),
+        ...(data.durationMin !== undefined ? { durationMin: Number(data.durationMin) } : {}),
+        ...(data.category !== undefined ? { category: data.category } : {}),
+        ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+      },
+    });
+  }
+
+  async deleteBarberService(barberId: string, serviceId: string) {
+    const existing = await (this.prisma as any).barberService.findFirst({
+      where: { id: serviceId, barberId },
+    });
+    if (!existing) throw new Error('Service not found or unauthorized');
+
+    return (this.prisma as any).barberService.update({
+      where: { id: serviceId },
+      data: { isActive: false },
+    });
   }
 
   async getAllShops() {

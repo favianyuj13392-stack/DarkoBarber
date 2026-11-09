@@ -10,6 +10,7 @@ export interface UserProfile {
   bio?: string;
   instagram?: string;
   linkedin?: string;
+  tiktok?: string;
   specialties?: string[];
   shopName?: string;
   shopAddress?: string;
@@ -484,4 +485,181 @@ export async function updateBarberPlan(
   }
 
   return fetchBarberSubscription();
+}
+
+export interface BarberServiceItem {
+  id: string;
+  barberId?: string;
+  name: string;
+  priceBs: number;
+  durationMin: number;
+  category?: string;
+  isActive?: boolean;
+}
+
+export async function fetchBarberServices(): Promise<BarberServiceItem[]> {
+  const token = getStoredToken();
+  const defaultServices: BarberServiceItem[] = [
+    { id: 'srv-1', name: 'Corte Clásico', priceBs: 45, durationMin: 30, category: 'corte', isActive: true },
+    { id: 'srv-2', name: 'Mid / Low Fade', priceBs: 55, durationMin: 40, category: 'corte', isActive: true },
+    { id: 'srv-3', name: 'Perfilado de Barba', priceBs: 30, durationMin: 20, category: 'barba', isActive: true },
+    { id: 'srv-4', name: 'Combo Fade + Barba', priceBs: 75, durationMin: 50, category: 'combo', isActive: true },
+  ];
+
+  if (!token) return defaultServices;
+
+  try {
+    const res = await fetch('/api/barbers/me/services', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) return data;
+    }
+  } catch (err) {
+    console.warn('Could not fetch barber services:', err);
+  }
+
+  return defaultServices;
+}
+
+export async function createBarberService(service: {
+  name: string;
+  priceBs: number;
+  durationMin?: number;
+  category?: string;
+}): Promise<BarberServiceItem> {
+  const token = getStoredToken();
+  if (token) {
+    try {
+      const res = await fetch('/api/barbers/me/services', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(service),
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (err) {
+      console.warn('Could not create service on server:', err);
+    }
+  }
+
+  return {
+    id: `local-srv-${Date.now()}`,
+    name: service.name,
+    priceBs: service.priceBs,
+    durationMin: service.durationMin || 30,
+    category: service.category || 'corte',
+    isActive: true,
+  };
+}
+
+export async function updateBarberService(
+  serviceId: string,
+  updates: Partial<BarberServiceItem>
+): Promise<BarberServiceItem | null> {
+  const token = getStoredToken();
+  if (token) {
+    try {
+      const res = await fetch(`/api/barbers/me/services/${serviceId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(updates),
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (err) {
+      console.warn('Could not update service on server:', err);
+    }
+  }
+  return null;
+}
+
+export async function deleteBarberService(serviceId: string): Promise<boolean> {
+  const token = getStoredToken();
+  if (token) {
+    try {
+      const res = await fetch(`/api/barbers/me/services/${serviceId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return res.ok;
+    } catch (err) {
+      console.warn('Could not delete service on server:', err);
+    }
+  }
+  return true;
+}
+
+export async function addBarberPortfolioPhoto(photoUrl: string): Promise<UserProfile | null> {
+  const token = getStoredToken();
+  const current = getStoredUser();
+
+  if (current) {
+    const updatedPortfolio = [photoUrl, ...(current.portfolio || [])];
+    current.portfolio = updatedPortfolio;
+    localStorage.setItem(USER_KEY, JSON.stringify(current));
+  }
+
+  if (token) {
+    try {
+      const res = await fetch('/api/barbers/me/portfolio', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ photoUrl }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        localStorage.setItem(USER_KEY, JSON.stringify(updated));
+        return updated;
+      }
+    } catch (err) {
+      console.warn('Could not add portfolio photo to server:', err);
+    }
+  }
+
+  return current;
+}
+
+export async function deleteBarberPortfolioPhoto(photoUrl: string): Promise<UserProfile | null> {
+  const token = getStoredToken();
+  const current = getStoredUser();
+
+  if (current && current.portfolio) {
+    current.portfolio = current.portfolio.filter((p) => p !== photoUrl);
+    localStorage.setItem(USER_KEY, JSON.stringify(current));
+  }
+
+  if (token) {
+    try {
+      const res = await fetch('/api/barbers/me/portfolio', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ photoUrl }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        localStorage.setItem(USER_KEY, JSON.stringify(updated));
+        return updated;
+      }
+    } catch (err) {
+      console.warn('Could not delete portfolio photo from server:', err);
+    }
+  }
+
+  return current;
 }

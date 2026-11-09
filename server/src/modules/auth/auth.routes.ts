@@ -261,4 +261,78 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/barbers/me/subscription/plan', { preHandler: [fastify.authenticateBarber] }, updatePlanHandler);
   fastify.post('/auth/barber/subscription/plan', { preHandler: [fastify.authenticateBarber] }, updatePlanHandler);
+
+  // --- SERVICIOS & TARIFAS DEL BARBERO ---
+  fastify.get(
+    '/barbers/me/services',
+    { preHandler: [fastify.authenticateBarber] },
+    async (request: any, reply: any) => {
+      const barberId = request.barber?.id || request.authUser?.id;
+      if (!barberId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
+      const services = await service.getBarberServices(barberId);
+      return reply.status(200).send(services);
+    }
+  );
+
+  fastify.post(
+    '/barbers/me/services',
+    { preHandler: [fastify.authenticateBarber] },
+    async (request: any, reply: any) => {
+      const barberId = request.barber?.id || request.authUser?.id;
+      if (!barberId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
+      const created = await service.createBarberService(barberId, request.body as any);
+      return reply.status(201).send(created);
+    }
+  );
+
+  fastify.put(
+    '/barbers/me/services/:serviceId',
+    { preHandler: [fastify.authenticateBarber] },
+    async (request: any, reply: any) => {
+      const barberId = request.barber?.id || request.authUser?.id;
+      if (!barberId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
+      const { serviceId } = request.params as { serviceId: string };
+      const updated = await service.updateBarberService(barberId, serviceId, request.body as any);
+      return reply.status(200).send(updated);
+    }
+  );
+
+  fastify.delete(
+    '/barbers/me/services/:serviceId',
+    { preHandler: [fastify.authenticateBarber] },
+    async (request: any, reply: any) => {
+      const barberId = request.barber?.id || request.authUser?.id;
+      if (!barberId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
+      const { serviceId } = request.params as { serviceId: string };
+      await service.deleteBarberService(barberId, serviceId);
+      return reply.status(200).send({ success: true });
+    }
+  );
+
+  // --- GESTIÓN DE PORTAFOLIO (AÑADIR / ELIMINAR FOTOS) ---
+  fastify.post(
+    '/barbers/me/portfolio',
+    { preHandler: [fastify.authenticateBarber] },
+    async (request: any, reply: any) => {
+      const barberId = request.barber?.id || request.authUser?.id;
+      if (!barberId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
+      const { photoUrl } = (request.body as { photoUrl: string }) || {};
+      if (!photoUrl) return reply.status(400).send({ error: 'PHOTO_URL_REQUIRED' });
+      const profile = await service.addPortfolioPhoto(barberId, photoUrl);
+      return reply.status(201).send(profile);
+    }
+  );
+
+  fastify.delete(
+    '/barbers/me/portfolio',
+    { preHandler: [fastify.authenticateBarber] },
+    async (request: any, reply: any) => {
+      const barberId = request.barber?.id || request.authUser?.id;
+      if (!barberId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
+      const { photoUrl } = (request.body as { photoUrl: string }) || {};
+      if (!photoUrl) return reply.status(400).send({ error: 'PHOTO_URL_REQUIRED' });
+      const profile = await service.deletePortfolioPhoto(barberId, photoUrl);
+      return reply.status(200).send(profile);
+    }
+  );
 };

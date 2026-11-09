@@ -255,7 +255,7 @@ export const ClientProfileView: FC<ClientProfileViewProps> = ({
               </div>
 
               <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-white/70">Número de Teléfono</label>
+                <label className="text-[11px] font-semibold text-white/70">Número de Teléfono (opcional)</label>
                 <input
                   type="text"
                   value={phone}

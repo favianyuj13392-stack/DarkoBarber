@@ -54,16 +54,18 @@ model Barber {
   bio           String?
   linkedin      String?
   instagram     String?
-  specialties   String[]  @default([])
-  plan          Plan      @default(AUTONOMO)
+  tiktok        String?
+  specialties   String[]        @default([])
+  plan          Plan            @default(AUTONOMO)
   shopId        String?
-  shop          Shop?     @relation(fields: [shopId], references: [id], onDelete: SetNull)
+  shop          Shop?           @relation(fields: [shopId], references: [id], onDelete: SetNull)
   deviceId      String?
-  isActive      Boolean   @default(true)
+  isActive      Boolean         @default(true)
   cuts          Cut[]
+  services      BarberService[]
   presence      Presence?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 
   @@index([email])
   @@index([phone])
@@ -143,4 +145,20 @@ model CutPhoto {
 
   @@index([cutId])
   @@index([isPublic])
+}
+
+model BarberService {
+  id          String   @id @default(uuid())
+  barberId    String
+  barber      Barber   @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  name        String
+  priceBs     Float
+  durationMin Int      @default(30)
+  category    String?  @default("corte")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([barberId])
+  @@index([isActive])
 }
