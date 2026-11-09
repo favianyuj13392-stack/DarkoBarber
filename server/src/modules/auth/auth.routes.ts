@@ -355,4 +355,27 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(200).send(status);
     }
   );
+
+  // --- PROGRAMA DE CRECIMIENTO: GAMIFICACIÓN & ADQUISICIÓN ---
+  fastify.get(
+    '/barbers/me/acquisitions',
+    { preHandler: [fastify.authenticateBarber] },
+    async (request: any, reply: any) => {
+      const barberId = request.barber?.id || request.authUser?.id;
+      if (!barberId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
+      const data = await service.getBarberAcquisitions(barberId);
+      return reply.status(200).send(data);
+    }
+  );
+
+  fastify.post(
+    '/barbers/me/acquisitions/claim',
+    { preHandler: [fastify.authenticateBarber] },
+    async (request: any, reply: any) => {
+      const barberId = request.barber?.id || request.authUser?.id;
+      if (!barberId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
+      const result = await service.claimFreeMonthReward(barberId);
+      return reply.status(200).send(result);
+    }
+  );
 };

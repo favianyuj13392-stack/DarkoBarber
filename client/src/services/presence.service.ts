@@ -7,6 +7,8 @@ export interface IncomingClientHandshake {
   phone: string;
   avatarUrl?: string;
   notes?: string;
+  isFirstScan?: boolean;
+  acquiredCount?: number;
 }
 
 export interface IncomingConsentResponse {

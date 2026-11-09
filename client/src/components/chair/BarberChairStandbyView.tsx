@@ -18,6 +18,7 @@ import { SPRING_TOUCH } from '../../constants/springs';
 import { presenceService, type BarberPresenceStatus } from '../../services/presence.service';
 import type { UserProfile } from '../../services/auth.service';
 import { BarberPresenceModal } from './BarberPresenceModal';
+import { BarberGrowthCard } from '../barber/BarberGrowthCard';
 
 interface BarberChairStandbyViewProps {
   barber: UserProfile | null;
@@ -39,6 +40,7 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
   const [presenceStatus, setPresenceStatus] = useState<BarberPresenceStatus>('GREEN');
   const [waitingCount, setWaitingCount] = useState(0);
   const [isPresenceModalOpen, setIsPresenceModalOpen] = useState(false);
+  const [firstScanCelebration, setFirstScanCelebration] = useState<string | null>(null);
   const [manualPhone, setManualPhone] = useState('');
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -70,9 +72,23 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
   }, [qrLink]);
 
   useEffect(() => {
-    return presenceService.subscribe((status) => {
+    const unsubPresence = presenceService.subscribe((status) => {
       setPresenceStatus(status);
     });
+
+    const unsubHandshake = presenceService.onClientHandshake((client) => {
+      if (client.isFirstScan) {
+        setFirstScanCelebration(
+          `🎉 ¡Nuevo cliente incorporado (${client.displayName || client.phone})! +1 para tu meta de mes gratis.`
+        );
+        setTimeout(() => setFirstScanCelebration(null), 6000);
+      }
+    });
+
+    return () => {
+      unsubPresence();
+      unsubHandshake();
+    };
   }, []);
 
   const handleStatusChange = (newStatus: BarberPresenceStatus) => {
@@ -219,6 +235,16 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Banner de Celebración de Primer Escaneo */}
+        {firstScanCelebration && (
+          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/80 via-black to-emerald-950/80 border border-emerald-500/50 text-emerald-200 text-xs font-bold text-center shadow-[0_0_20px_rgba(52,211,153,0.3)] animate-pulse">
+            {firstScanCelebration}
+          </div>
+        )}
+
+        {/* Termómetro de Metas: Programa de Crecimiento FADE */}
+        <BarberGrowthCard compact />
 
         {/* =========================================================================
             TARJETA CENTRAL: QR DEL ESPEJO ACTIVO

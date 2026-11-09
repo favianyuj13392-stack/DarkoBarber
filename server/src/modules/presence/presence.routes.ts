@@ -19,6 +19,8 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
       notes?: string;
     };
     timestamp: number;
+    isFirstScan?: boolean;
+    acquiredCount?: number;
   }
 
   const pendingChairBindings = new Map<string, ChairBindingPayload>();
@@ -239,11 +241,59 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
       });
     }
 
+    let isFirstScan = false;
+    let acquiredCount = 0;
+
+    // Check acquisition / first scan logic in DB
+    if (body.client.phone && body.barberId) {
+      try {
+        const cleanedPhone = body.client.phone.trim();
+        const existingClient = await fastify.prisma.client.findFirst({
+          where: {
+            OR: [
+              { phone: cleanedPhone },
+              { phone: cleanedPhone.replace(/\D/g, '') },
+            ],
+          },
+        });
+
+        if (!existingClient) {
+          await fastify.prisma.client.create({
+            data: {
+              phone: cleanedPhone,
+              displayName: body.client.displayName || 'Cliente FADE',
+              avatarUrl: body.client.avatarUrl || null,
+              firstScanBarberId: body.barberId,
+              firstScanAt: new Date(),
+            },
+          });
+          isFirstScan = true;
+        } else if (!existingClient.firstScanBarberId) {
+          await fastify.prisma.client.update({
+            where: { id: existingClient.id },
+            data: {
+              firstScanBarberId: body.barberId,
+              firstScanAt: new Date(),
+            },
+          });
+          isFirstScan = true;
+        }
+
+        acquiredCount = await fastify.prisma.client.count({
+          where: { firstScanBarberId: body.barberId },
+        });
+      } catch (err) {
+        console.warn('Error recording first scan acquisition:', err);
+      }
+    }
+
     const payload: ChairBindingPayload = {
       barberId: body.barberId,
       barberName: body.barberName,
       client: body.client,
       timestamp: Date.now(),
+      isFirstScan,
+      acquiredCount,
     };
 
     // Store under various lookup keys for fuzzy matching
@@ -264,6 +314,8 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
             client: body.client,
             barberId: body.barberId,
             timestamp: payload.timestamp,
+            isFirstScan,
+            acquiredCount,
           })
         );
       }
@@ -273,6 +325,8 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
       success: true,
       message: 'Chair handshake recorded and broadcasted',
       client: body.client,
+      isFirstScan,
+      acquiredCount,
     });
   });
 
@@ -302,6 +356,8 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
         hasPending: true,
         client: binding.client,
         timestamp: binding.timestamp,
+        isFirstScan: binding.isFirstScan || false,
+        acquiredCount: binding.acquiredCount || 0,
       });
     }
 

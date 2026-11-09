@@ -19,6 +19,7 @@ import {
   fetchBarberSubscription,
   updateBarberPlan,
 } from '../../services/auth.service';
+import { BarberGrowthCard } from './BarberGrowthCard';
 
 interface BarberSubscriptionViewProps {
   barber: UserProfile | null;
@@ -246,6 +247,9 @@ export const BarberSubscriptionView: FC<BarberSubscriptionViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* 2.5 Programa de Crecimiento FADE & Metas de Adquisición */}
+      <BarberGrowthCard />
 
       {/* 3. Comparativa y Selector de Planes (Upgrade / Downgrade) */}
       <div className="space-y-4 pt-2">

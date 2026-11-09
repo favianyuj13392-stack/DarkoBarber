@@ -64,6 +64,8 @@ model Barber {
   cuts          Cut[]
   services      BarberService[]
   followers     BarberFollower[]
+  freeMonthsEarned Int             @default(0)
+  acquiredClients Client[]        @relation("BarberAcquisitions")
   presence      Presence?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
@@ -95,6 +97,9 @@ model Client {
   displayName  String?
   avatarUrl    String?
   phone        String?         @unique
+  firstScanBarberId String?
+  firstScanBarber   Barber?         @relation("BarberAcquisitions", fields: [firstScanBarberId], references: [id], onDelete: SetNull)
+  firstScanAt       DateTime?
   profiles     ClientProfile[]
   following    BarberFollower[]
   createdAt    DateTime        @default(now())
@@ -102,6 +107,7 @@ model Client {
 
   @@index([email])
   @@index([phone])
+  @@index([firstScanBarberId])
 }
 
 model ClientProfile {

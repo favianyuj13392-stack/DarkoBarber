@@ -703,3 +703,62 @@ export async function toggleFollowBarber(barberId: string): Promise<{ followerCo
 
   return await res.json();
 }
+
+// --- PROGRAMA DE CRECIMIENTO: GAMIFICACIÓN & ADQUISICIÓN ---
+export interface BarberAcquisitionProgress {
+  barberId: string;
+  acquiredCount: number;
+  goal: number;
+  remaining: number;
+  percentage: number;
+  freeMonthsEarned: number;
+  rewardUnlocked: boolean;
+  rewardTitle: string;
+}
+
+export async function fetchBarberAcquisitions(): Promise<BarberAcquisitionProgress> {
+  const token = getStoredToken();
+  if (token) {
+    try {
+      const res = await fetch('/api/barbers/me/acquisitions', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (err) {
+      console.warn('Could not fetch barber acquisitions:', err);
+    }
+  }
+  return {
+    barberId: 'barber-brian',
+    acquiredCount: 8,
+    goal: 15,
+    remaining: 7,
+    percentage: 53,
+    freeMonthsEarned: 0,
+    rewardUnlocked: false,
+    rewardTitle: '1 Mes Gratis — Plan Barbería Base (Bs 110)',
+  };
+}
+
+export async function claimFreeMonthReward(): Promise<{ success: boolean; freeMonthsEarned: number; message: string }> {
+  const token = getStoredToken();
+  if (!token) {
+    throw new Error('Debes iniciar sesión para reclamar tu recompensa');
+  }
+
+  const res = await fetch('/api/barbers/me/acquisitions/claim', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error('No se pudo reclamar el mes gratis');
+  }
+
+  return await res.json();
+}
