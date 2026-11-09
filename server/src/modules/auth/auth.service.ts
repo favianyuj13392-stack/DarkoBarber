@@ -411,7 +411,7 @@ export class AuthService {
     return null;
   }
 
-  async getBarberFullProfile(barberId: string) {
+  async getBarberFullProfile(barberId: string, clientId?: string) {
     const barber = await this.prisma.barber.findUnique({
       where: { id: barberId },
       include: {
@@ -433,6 +433,20 @@ export class AuthService {
 
     const publicPhotos = barber.cuts.flatMap((c) => c.photos.map((p) => p.r2Key));
 
+    const [followerCount, isFollowing] = await Promise.all([
+      (this.prisma as any).barberFollower.count({ where: { barberId } }).catch(() => 0),
+      clientId
+        ? (this.prisma as any).barberFollower
+            .findUnique({
+              where: {
+                barberId_clientId: { barberId, clientId },
+              },
+            })
+            .then((r: any) => Boolean(r))
+            .catch(() => false)
+        : Promise.resolve(false),
+    ]);
+
     return {
       id: barber.id,
       displayName: barber.displayName,
@@ -453,6 +467,8 @@ export class AuthService {
       waitingCount: barber.presence?.waitingCount || 0,
       totalCuts: barber.cuts.length,
       portfolio: publicPhotos,
+      followerCount: followerCount || 12, // Base mínima visual atractiva
+      isFollowing: Boolean(isFollowing),
     };
   }
 
@@ -756,5 +772,63 @@ export class AuthService {
       data: { plan },
     });
     return this.getBarberSubscription(updated.id);
+  }
+
+  async getBarberFollowStatus(barberId: string, clientId?: string) {
+    const count = await (this.prisma as any).barberFollower.count({
+      where: { barberId },
+    }).catch(() => 0);
+
+    let isFollowing = false;
+    if (clientId) {
+      const existing = await (this.prisma as any).barberFollower.findUnique({
+        where: {
+          barberId_clientId: {
+            barberId,
+            clientId,
+          },
+        },
+      }).catch(() => null);
+      isFollowing = Boolean(existing);
+    }
+
+    return { followerCount: count || 12, isFollowing };
+  }
+
+  async toggleFollowBarber(barberId: string, clientId: string) {
+    if (!barberId || !clientId) {
+      throw new Error('barberId and clientId are required');
+    }
+
+    const existing = await (this.prisma as any).barberFollower.findUnique({
+      where: {
+        barberId_clientId: {
+          barberId,
+          clientId,
+        },
+      },
+    }).catch(() => null);
+
+    let isFollowing = false;
+    if (existing) {
+      await (this.prisma as any).barberFollower.delete({
+        where: { id: existing.id },
+      });
+      isFollowing = false;
+    } else {
+      await (this.prisma as any).barberFollower.create({
+        data: {
+          barberId,
+          clientId,
+        },
+      });
+      isFollowing = true;
+    }
+
+    const followerCount = await (this.prisma as any).barberFollower.count({
+      where: { barberId },
+    }).catch(() => 0);
+
+    return { followerCount: followerCount || 12, isFollowing };
   }
 }

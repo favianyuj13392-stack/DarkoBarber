@@ -132,6 +132,30 @@ class PresenceClient {
     }
   }
 
+  /**
+   * Actualizar estado y cola de espera de forma unificada
+   */
+  setPresence(status: BarberPresenceStatus, waitingCount: number): void {
+    this.currentStatus = status;
+    this.waitingCount = waitingCount;
+    this.notify();
+
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(
+        JSON.stringify({
+          type: 'SET_STATUS',
+          status,
+        })
+      );
+      this.ws.send(
+        JSON.stringify({
+          type: 'UPDATE_WAITING_COUNT',
+          waitingCount,
+        })
+      );
+    }
+  }
+
   getStatus(): BarberPresenceStatus {
     return this.currentStatus;
   }

@@ -335,4 +335,24 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(200).send(profile);
     }
   );
+
+  // --- SISTEMA DE SEGUIDORES (FOLLOWERS) ---
+  fastify.get('/barbers/:barberId/follow', async (request: any, reply: any) => {
+    const { barberId } = request.params as { barberId: string };
+    const clientId = (request as any).authUser?.id;
+    const status = await service.getBarberFollowStatus(barberId, clientId);
+    return reply.status(200).send(status);
+  });
+
+  fastify.post(
+    '/barbers/:barberId/follow',
+    { preHandler: [fastify.authenticateUser] },
+    async (request: any, reply: any) => {
+      const { barberId } = request.params as { barberId: string };
+      const clientId = request.authUser?.id || request.barber?.id;
+      if (!clientId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
+      const status = await service.toggleFollowBarber(barberId, clientId);
+      return reply.status(200).send(status);
+    }
+  );
 };

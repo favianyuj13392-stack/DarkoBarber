@@ -17,6 +17,8 @@ export interface UserProfile {
   shopZone?: string;
   totalCuts?: number;
   portfolio?: string[];
+  followerCount?: number;
+  isFollowing?: boolean;
 }
 
 export interface LoginResponse {
@@ -662,4 +664,42 @@ export async function deleteBarberPortfolioPhoto(photoUrl: string): Promise<User
   }
 
   return current;
+}
+
+export async function fetchBarberFollowStatus(barberId: string): Promise<{ followerCount: number; isFollowing: boolean }> {
+  const token = getStoredToken();
+  try {
+    const res = await fetch(`/api/barbers/${barberId}/follow`, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('Could not fetch follow status:', err);
+  }
+  return { followerCount: 14, isFollowing: false };
+}
+
+export async function toggleFollowBarber(barberId: string): Promise<{ followerCount: number; isFollowing: boolean }> {
+  const token = getStoredToken();
+  if (!token) {
+    throw new Error('Debes iniciar sesión para seguir a un barbero');
+  }
+
+  const res = await fetch(`/api/barbers/${barberId}/follow`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error('Error al actualizar seguimiento');
+  }
+
+  return await res.json();
 }

@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import type { FC } from 'react';
 import { motion } from 'framer-motion';
 import { Scissors, User, Store, Award, LogOut } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 import { SPRING_TOUCH } from '../../constants/springs';
 import type { BarberPresenceStatus } from '../../services/presence.service';
+import { BarberPresenceModal } from '../chair/BarberPresenceModal';
 
 export type BarberNavTab = 'sillon' | 'perfil' | 'barberia' | 'suscripcion';
 
@@ -24,6 +26,7 @@ export const BarberNavBar: FC<BarberNavBarProps> = ({
   avatarUrl,
   presenceStatus = 'GREEN',
 }) => {
+  const [isPresenceModalOpen, setIsPresenceModalOpen] = useState(false);
   const tabs = [
     { id: 'sillon' as BarberNavTab, label: 'Sillón', icon: Scissors },
     { id: 'perfil' as BarberNavTab, label: 'Mi Perfil', icon: User },
@@ -82,7 +85,12 @@ export const BarberNavBar: FC<BarberNavBarProps> = ({
 
           {/* Indicador de Presencia & Perfil */}
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10">
+            <button
+              type="button"
+              onClick={() => setIsPresenceModalOpen(true)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 hover:border-[#B68F4E]/40 transition-all cursor-pointer group"
+              title="Cambiar estado de presencia y cola"
+            >
               <span
                 className={`w-2 h-2 rounded-full ${
                   presenceStatus === 'GREEN'
@@ -92,14 +100,14 @@ export const BarberNavBar: FC<BarberNavBarProps> = ({
                     : 'bg-amber-400 shadow-[0_0_8px_#fbbf24]'
                 }`}
               />
-              <span className="text-[10px] font-mono tracking-wider text-[#D9C9B0] uppercase">
+              <span className="text-[10px] font-mono tracking-wider text-[#D9C9B0] uppercase group-hover:text-white">
                 {presenceStatus === 'GREEN'
                   ? 'Libre'
                   : presenceStatus === 'RED'
                   ? 'Cortando'
                   : 'En Espera'}
               </span>
-            </div>
+            </button>
 
             <div className="flex items-center gap-3 pl-2 border-l border-white/10">
               <div className="w-9 h-9 rounded-full overflow-hidden border border-[#B68F4E]/40 p-0.5">
@@ -182,6 +190,12 @@ export const BarberNavBar: FC<BarberNavBarProps> = ({
           })}
         </div>
       </nav>
+
+      <BarberPresenceModal
+        isOpen={isPresenceModalOpen}
+        onClose={() => setIsPresenceModalOpen(false)}
+        barberName={barberName}
+      />
     </>
   );
 };

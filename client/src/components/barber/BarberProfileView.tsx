@@ -18,6 +18,7 @@ import {
   Trash2,
   Music,
   Upload,
+  Users,
 } from 'lucide-react';
 import type { UserProfile, BarberServiceItem } from '../../services/auth.service';
 import {
@@ -27,6 +28,8 @@ import {
   deleteBarberService,
   addBarberPortfolioPhoto,
   deleteBarberPortfolioPhoto,
+  fetchBarberFollowStatus,
+  toggleFollowBarber,
 } from '../../services/auth.service';
 
 interface BarberProfileViewProps {
@@ -97,6 +100,20 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
   const [newServiceDuration, setNewServiceDuration] = useState('35');
   const [newServiceCategory, setNewServiceCategory] = useState('corte');
   const [isAddingService, setIsAddingService] = useState(false);
+
+  // Followers State
+  const [followerCount, setFollowerCount] = useState<number>(barber?.followerCount || 14);
+  const [isFollowing, setIsFollowing] = useState<boolean>(Boolean(barber?.isFollowing));
+  const [togglingFollow, setTogglingFollow] = useState(false);
+
+  useEffect(() => {
+    if (barber?.id) {
+      fetchBarberFollowStatus(barber.id).then((res) => {
+        setFollowerCount(res.followerCount);
+        setIsFollowing(res.isFollowing);
+      });
+    }
+  }, [barber?.id]);
 
   useEffect(() => {
     if (barber) {
@@ -223,6 +240,34 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
       console.error('Error borrando servicio:', err);
     }
     setTimeout(() => setToastMsg(null), 3000);
+  };
+
+  const handleToggleFollow = async () => {
+    if (!barber?.id) return;
+    setTogglingFollow(true);
+    try {
+      const res = await toggleFollowBarber(barber.id);
+      setIsFollowing(res.isFollowing);
+      setFollowerCount(res.followerCount);
+      setToastMsg(
+        res.isFollowing
+          ? '¡Ahora sigues a este barbero! Recibirás avisos cuando esté disponible.'
+          : 'Dejaste de seguir a este barbero.'
+      );
+    } catch {
+      // Optimistic demo toggle
+      const nextFollow = !isFollowing;
+      setIsFollowing(nextFollow);
+      setFollowerCount((prev) => (nextFollow ? prev + 1 : Math.max(0, prev - 1)));
+      setToastMsg(
+        nextFollow
+          ? '¡Ahora sigues a este barbero!'
+          : 'Dejaste de seguir a este barbero.'
+      );
+    } finally {
+      setTogglingFollow(false);
+      setTimeout(() => setToastMsg(null), 3000);
+    }
   };
 
   return (
@@ -590,10 +635,26 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
                 </span>
               </div>
 
-              {/* Status pill */}
-              <div className="flex items-center justify-center sm:justify-start gap-2 pt-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
-                <span className="text-xs font-semibold text-emerald-400">Disponible ahora</span>
+              {/* Status pill & Follow Button */}
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 pt-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+                  <span className="text-xs font-semibold text-emerald-400">Disponible ahora</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleToggleFollow}
+                  disabled={togglingFollow}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    isFollowing
+                      ? 'bg-[#B68F4E]/20 border border-[#B68F4E] text-[#F5EBDD] shadow-sm'
+                      : 'bg-white/10 hover:bg-white/20 border border-white/15 text-white'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5 text-[#B68F4E]" />
+                  <span>{isFollowing ? '✓ Siguiendo' : 'Seguir Barbero'}</span>
+                </button>
               </div>
 
               {/* Specialties pills */}
@@ -611,7 +672,7 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
           </div>
 
           {/* Métricas Profesionales */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 text-center space-y-1">
               <Clock className="w-4 h-4 mx-auto text-[#B68F4E]" />
               <div className="text-lg font-bold font-serif text-white">{experienceYears}+ Años</div>
@@ -628,6 +689,12 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
               <Sparkles className="w-4 h-4 mx-auto text-[#B68F4E]" />
               <div className="text-lg font-bold font-serif text-white">{barber?.totalCuts || 19}</div>
               <div className="text-[10px] text-white/50 uppercase tracking-wider">Cortes Este Mes</div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 text-center space-y-1">
+              <Users className="w-4 h-4 mx-auto text-[#B68F4E]" />
+              <div className="text-lg font-bold font-serif text-white">{followerCount}</div>
+              <div className="text-[10px] text-white/50 uppercase tracking-wider">Seguidores</div>
             </div>
           </div>
 

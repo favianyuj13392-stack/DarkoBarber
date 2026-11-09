@@ -63,6 +63,7 @@ model Barber {
   isActive      Boolean         @default(true)
   cuts          Cut[]
   services      BarberService[]
+  followers     BarberFollower[]
   presence      Presence?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
@@ -95,6 +96,7 @@ model Client {
   avatarUrl    String?
   phone        String?         @unique
   profiles     ClientProfile[]
+  following    BarberFollower[]
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
@@ -161,4 +163,17 @@ model BarberService {
 
   @@index([barberId])
   @@index([isActive])
+}
+
+model BarberFollower {
+  id        String   @id @default(uuid())
+  barberId  String
+  barber    Barber   @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([barberId, clientId])
+  @@index([barberId])
+  @@index([clientId])
 }

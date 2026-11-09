@@ -13,20 +13,14 @@ import {
 } from 'lucide-react';
 import type { UserProfile, ShopInfo } from '../../services/auth.service';
 import { fetchShops, updateBarberLocation } from '../../services/auth.service';
+import { InteractiveLocationPicker } from './InteractiveLocationPicker';
 
 interface BarberLocationViewProps {
   barber: UserProfile | null;
   onLocationUpdated?: (updated: UserProfile) => void;
 }
 
-const LA_PAZ_ZONES = [
-  { name: 'Sopocachi', lat: -16.5113, lng: -68.1287 },
-  { name: 'San Miguel', lat: -16.5412, lng: -68.0821 },
-  { name: 'Miraflores', lat: -16.4998, lng: -68.1205 },
-  { name: 'Centro', lat: -16.4981, lng: -68.1345 },
-  { name: 'Calacoto', lat: -16.5385, lng: -68.0862 },
-  { name: 'Obrajes', lat: -16.5255, lng: -68.1065 },
-];
+
 
 export const BarberLocationView: FC<BarberLocationViewProps> = ({
   barber,
@@ -69,12 +63,6 @@ export const BarberLocationView: FC<BarberLocationViewProps> = ({
     setSelectedShopId(shop.id);
     if (shop.latitude) setLatitude(shop.latitude);
     if (shop.longitude) setLongitude(shop.longitude);
-  };
-
-  const handleSelectZonePreset = (zone: typeof LA_PAZ_ZONES[0]) => {
-    setCustomZone(zone.name);
-    setLatitude(zone.lat);
-    setLongitude(zone.lng);
   };
 
   const handleSave = async () => {
@@ -248,55 +236,21 @@ export const BarberLocationView: FC<BarberLocationViewProps> = ({
                 />
               </div>
 
-              {/* Selector Rápido de Zona */}
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-white/80 block">
-                  Zona en La Paz (Preset de Ubicación)
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {LA_PAZ_ZONES.map((z) => {
-                    const isSelected = customZone.toLowerCase() === z.name.toLowerCase();
-                    return (
-                      <button
-                        key={z.name}
-                        type="button"
-                        onClick={() => handleSelectZonePreset(z)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-[#B68F4E]/20 border-[#B68F4E] text-[#F5EBDD] font-bold'
-                            : 'bg-white/5 border-white/10 text-white/60 hover:text-white'
-                        }`}
-                      >
-                        {isSelected ? `📍 ${z.name}` : z.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Coordenadas GPS */}
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-white/80">Latitud GPS</label>
-                  <input
-                    type="number"
-                    step="0.0001"
-                    value={latitude}
-                    onChange={(e) => setLatitude(parseFloat(e.target.value) || -16.5113)}
-                    className="w-full px-3.5 py-2 rounded-xl bg-white/5 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#B68F4E]"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-white/80">Longitud GPS</label>
-                  <input
-                    type="number"
-                    step="0.0001"
-                    value={longitude}
-                    onChange={(e) => setLongitude(parseFloat(e.target.value) || -68.1287)}
-                    className="w-full px-3.5 py-2 rounded-xl bg-white/5 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#B68F4E]"
-                  />
-                </div>
-              </div>
+              {/* Selector Interactivo con Mapa Leaflet */}
+              <InteractiveLocationPicker
+                latitude={latitude}
+                longitude={longitude}
+                onChange={(lat, lng) => {
+                  setLatitude(lat);
+                  setLongitude(lng);
+                }}
+                zone={customZone}
+                onZoneSelect={(zoneName, lat, lng) => {
+                  setCustomZone(zoneName);
+                  setLatitude(lat);
+                  setLongitude(lng);
+                }}
+              />
             </motion.div>
           )}
 

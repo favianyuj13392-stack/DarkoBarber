@@ -17,6 +17,7 @@ import { BrandLogo } from '../common/BrandLogo';
 import { SPRING_TOUCH } from '../../constants/springs';
 import { presenceService, type BarberPresenceStatus } from '../../services/presence.service';
 import type { UserProfile } from '../../services/auth.service';
+import { BarberPresenceModal } from './BarberPresenceModal';
 
 interface BarberChairStandbyViewProps {
   barber: UserProfile | null;
@@ -37,6 +38,7 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
 
   const [presenceStatus, setPresenceStatus] = useState<BarberPresenceStatus>('GREEN');
   const [waitingCount, setWaitingCount] = useState(0);
+  const [isPresenceModalOpen, setIsPresenceModalOpen] = useState(false);
   const [manualPhone, setManualPhone] = useState('');
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -147,24 +149,32 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
               <p className="text-xs text-[#D9C9B0]/70 font-mono">{shopName}</p>
             </div>
 
-            <div className="flex flex-col items-end gap-1">
-              <span
-                className={`w-3 h-3 rounded-full ${
-                  presenceStatus === 'GREEN'
-                    ? 'bg-emerald-400 shadow-[0_0_12px_#34d399]'
+            <button
+              type="button"
+              onClick={() => setIsPresenceModalOpen(true)}
+              className="flex flex-col items-end gap-1 p-1.5 -mr-1.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer group"
+              title="Toca para cambiar estado o fila de espera"
+            >
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`w-3 h-3 rounded-full ${
+                    presenceStatus === 'GREEN'
+                      ? 'bg-emerald-400 shadow-[0_0_12px_#34d399]'
+                      : presenceStatus === 'RED'
+                      ? 'bg-red-500 shadow-[0_0_12px_#ef4444]'
+                      : 'bg-amber-400 shadow-[0_0_12px_#fbbf24]'
+                  }`}
+                />
+                <span className="text-[10px] font-mono uppercase tracking-wider text-[#D9C9B0]/80 group-hover:text-white">
+                  {presenceStatus === 'GREEN'
+                    ? 'Libre'
                     : presenceStatus === 'RED'
-                    ? 'bg-red-500 shadow-[0_0_12px_#ef4444]'
-                    : 'bg-amber-400 shadow-[0_0_12px_#fbbf24]'
-                }`}
-              />
-              <span className="text-[10px] font-mono uppercase tracking-wider text-[#D9C9B0]/80">
-                {presenceStatus === 'GREEN'
-                  ? 'Libre'
-                  : presenceStatus === 'RED'
-                  ? 'En Sillón'
-                  : 'En Espera'}
-              </span>
-            </div>
+                    ? 'Cortando'
+                    : 'En Espera'}
+                </span>
+              </div>
+              <span className="text-[9px] text-[#B68F4E] underline">Ajustar cola</span>
+            </button>
           </div>
 
           {/* Chips de Selección Rápida de Presencia */}
@@ -351,6 +361,13 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
           </div>
         </div>
       </div>
+
+      <BarberPresenceModal
+        isOpen={isPresenceModalOpen}
+        onClose={() => setIsPresenceModalOpen(false)}
+        barberName={barberName}
+        shopName={shopName}
+      />
     </div>
   );
 };
