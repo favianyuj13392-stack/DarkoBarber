@@ -11,6 +11,7 @@ import {
   Sparkles,
   LogOut,
   ChevronRight,
+  Clock,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { BrandLogo } from '../common/BrandLogo';
@@ -19,6 +20,7 @@ import { presenceService, type BarberPresenceStatus } from '../../services/prese
 import type { UserProfile } from '../../services/auth.service';
 import { BarberPresenceModal } from './BarberPresenceModal';
 import { BarberGrowthCard } from '../barber/BarberGrowthCard';
+import { fetchUpcomingBookingAlert, type UpcomingBookingAlert } from '../../services/booking.service';
 
 interface BarberChairStandbyViewProps {
   barber: UserProfile | null;
@@ -41,6 +43,7 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
   const [waitingCount, setWaitingCount] = useState(0);
   const [isPresenceModalOpen, setIsPresenceModalOpen] = useState(false);
   const [firstScanCelebration, setFirstScanCelebration] = useState<string | null>(null);
+  const [upcomingAlert, setUpcomingAlert] = useState<UpcomingBookingAlert | null>(null);
   const [manualPhone, setManualPhone] = useState('');
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -84,6 +87,8 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
         setTimeout(() => setFirstScanCelebration(null), 6000);
       }
     });
+
+    fetchUpcomingBookingAlert().then((res) => setUpcomingAlert(res));
 
     return () => {
       unsubPresence();
@@ -240,6 +245,23 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
         {firstScanCelebration && (
           <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/80 via-black to-emerald-950/80 border border-emerald-500/50 text-emerald-200 text-xs font-bold text-center shadow-[0_0_20px_rgba(52,211,153,0.3)] animate-pulse">
             {firstScanCelebration}
+          </div>
+        )}
+
+        {/* Alerta de Sinergia Walk-In: Cita Próxima */}
+        {upcomingAlert?.hasUpcoming && upcomingAlert.booking && (
+          <div className="p-3.5 rounded-2xl bg-amber-950/60 border border-amber-500/50 text-amber-200 text-xs shadow-lg flex items-start gap-2.5 text-left">
+            <Clock className="w-4 h-4 text-[#B68F4E] shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <span className="font-bold text-white block">
+                ⏰ Cita Programada en {upcomingAlert.minutesLeft} min (a las {upcomingAlert.booking.time})
+              </span>
+              <p className="text-[11px] text-[#D9C9B0]/80 leading-snug">
+                Cliente: <strong className="text-white">{upcomingAlert.booking.clientName}</strong> · Servicio:{' '}
+                <strong className="text-[#B68F4E]">{upcomingAlert.booking.serviceName}</strong>.
+                Tu puesto se reservará preventivamente para no colisionar con clientes espontáneos.
+              </p>
+            </div>
           </div>
         )}
 

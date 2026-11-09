@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import type { FC } from 'react';
 import { motion } from 'framer-motion';
-import { Scissors, User, Store, Award, LogOut } from 'lucide-react';
+import { Scissors, User, Store, Award, LogOut, Calendar } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 import { SPRING_TOUCH } from '../../constants/springs';
 import type { BarberPresenceStatus } from '../../services/presence.service';
 import { BarberPresenceModal } from '../chair/BarberPresenceModal';
 
-export type BarberNavTab = 'sillon' | 'perfil' | 'barberia' | 'suscripcion';
+export type BarberNavTab = 'sillon' | 'citas' | 'perfil' | 'barberia' | 'suscripcion';
 
 interface BarberNavBarProps {
   activeTab: BarberNavTab;
@@ -29,6 +29,7 @@ export const BarberNavBar: FC<BarberNavBarProps> = ({
   const [isPresenceModalOpen, setIsPresenceModalOpen] = useState(false);
   const tabs = [
     { id: 'sillon' as BarberNavTab, label: 'Sillón', icon: Scissors },
+    { id: 'citas' as BarberNavTab, label: 'Citas', icon: Calendar },
     { id: 'perfil' as BarberNavTab, label: 'Mi Perfil', icon: User },
     { id: 'barberia' as BarberNavTab, label: 'Mi Barbería', icon: Store },
     { id: 'suscripcion' as BarberNavTab, label: 'Suscripción', icon: Award },

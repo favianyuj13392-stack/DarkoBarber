@@ -27,6 +27,13 @@ enum PresenceStatus {
   GRAY
 }
 
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
 model Shop {
   id          String   @id @default(uuid())
   name        String
@@ -66,6 +73,9 @@ model Barber {
   followers     BarberFollower[]
   freeMonthsEarned Int             @default(0)
   acquiredClients Client[]        @relation("BarberAcquisitions")
+  acceptsBookings Boolean         @default(true)
+  bookingNoticeMin Int            @default(15)
+  bookings      Booking[]
   presence      Presence?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
@@ -102,6 +112,7 @@ model Client {
   firstScanAt       DateTime?
   profiles     ClientProfile[]
   following    BarberFollower[]
+  bookings     Booking[]
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
@@ -182,4 +193,28 @@ model BarberFollower {
   @@unique([barberId, clientId])
   @@index([barberId])
   @@index([clientId])
+}
+
+model Booking {
+  id             String        @id @default(uuid())
+  barberId       String
+  barber         Barber        @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  clientId       String?
+  client         Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  clientName     String
+  clientPhone    String
+  serviceName    String
+  servicePriceBs Float
+  durationMin    Int           @default(30)
+  date           String
+  time           String
+  scheduledAt    DateTime?
+  status         BookingStatus @default(PENDING)
+  notes          String?
+  cancelReason   String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([barberId, status])
+  @@index([barberId, date])
 }

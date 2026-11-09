@@ -10,6 +10,7 @@ import { authRoutes } from './modules/auth/auth.routes';
 import { clientsRoutes } from './modules/clients/clients.routes';
 import { cutsRoutes } from './modules/cuts/cuts.routes';
 import { photosRoutes } from './modules/photos/photos.routes';
+import bookingsRoutes from './modules/bookings/bookings.routes';
 import { startWatchdogs, stopWatchdogs } from './modules/presence/presence.watchdog';
 
 dotenv.config();
@@ -51,6 +52,7 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
   await app.register(clientsRoutes);
   await app.register(cutsRoutes);
   await app.register(photosRoutes);
+  await app.register(bookingsRoutes);
 
   // Register API routes with /api prefix for full client compatibility
   await app.register(async (api) => {
@@ -59,6 +61,7 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
     await api.register(cutsRoutes);
     await api.register(photosRoutes);
     await api.register(presenceRoutes);
+    await api.register(bookingsRoutes);
   }, { prefix: '/api' });
 
   app.addHook('onReady', async () => {

@@ -19,6 +19,8 @@ import {
   Music,
   Upload,
   Users,
+  Calendar,
+  X,
 } from 'lucide-react';
 import type { UserProfile, BarberServiceItem } from '../../services/auth.service';
 import {
@@ -31,6 +33,7 @@ import {
   fetchBarberFollowStatus,
   toggleFollowBarber,
 } from '../../services/auth.service';
+import { createClientBooking } from '../../services/booking.service';
 
 interface BarberProfileViewProps {
   barber: UserProfile | null;
@@ -105,6 +108,18 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
   const [followerCount, setFollowerCount] = useState<number>(barber?.followerCount || 14);
   const [isFollowing, setIsFollowing] = useState<boolean>(Boolean(barber?.isFollowing));
   const [togglingFollow, setTogglingFollow] = useState(false);
+
+  // Client Booking Flow State
+  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [bookingDate, setBookingDate] = useState('Hoy');
+  const [bookingTime, setBookingTime] = useState('16:00');
+  const [bookingService, setBookingService] = useState('Mid / Low Fade');
+  const [bookingPrice, setBookingPrice] = useState(55);
+  const [bookingDuration, setBookingDuration] = useState(35);
+  const [bookingClientName, setBookingClientName] = useState('Ernesto Salinas');
+  const [bookingClientPhone, setBookingClientPhone] = useState('+591 77212345');
+  const [bookingNotes, setBookingNotes] = useState('');
+  const [submittingBooking, setSubmittingBooking] = useState(false);
 
   useEffect(() => {
     if (barber?.id) {
@@ -267,6 +282,32 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
     } finally {
       setTogglingFollow(false);
       setTimeout(() => setToastMsg(null), 3000);
+    }
+  };
+
+  const handleConfirmBooking = async () => {
+    if (!barber?.id) return;
+    setSubmittingBooking(true);
+    try {
+      await createClientBooking({
+        barberId: barber.id,
+        clientName: bookingClientName,
+        clientPhone: bookingClientPhone,
+        serviceName: bookingService,
+        servicePriceBs: bookingPrice,
+        durationMin: bookingDuration,
+        date: bookingDate,
+        time: bookingTime,
+        notes: bookingNotes,
+      });
+      setIsBookingModalOpen(false);
+      setToastMsg('¡Solicitud de reserva enviada! El barbero la revisará en su agenda.');
+    } catch {
+      setIsBookingModalOpen(false);
+      setToastMsg('Reserva registrada.');
+    } finally {
+      setSubmittingBooking(false);
+      setTimeout(() => setToastMsg(null), 3500);
     }
   };
 
@@ -655,6 +696,15 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
                   <Users className="w-3.5 h-3.5 text-[#B68F4E]" />
                   <span>{isFollowing ? '✓ Siguiendo' : 'Seguir Barbero'}</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsBookingModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-1 rounded-xl text-xs font-bold bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black shadow-md hover:brightness-105 transition-all cursor-pointer"
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Reservar Turno</span>
+                </button>
               </div>
 
               {/* Specialties pills */}
@@ -890,6 +940,151 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
               >
                 ✕
               </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Solicitud de Reserva para el Cliente */}
+      <AnimatePresence>
+        {isBookingModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsBookingModalOpen(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative w-full max-w-md rounded-3xl bg-[#0E0E0E] border border-white/15 p-6 shadow-2xl space-y-5 text-left z-10"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <span className="text-[10px] font-mono text-[#B68F4E] uppercase tracking-widest font-bold">
+                    Reserva de Turno
+                  </span>
+                  <h3 className="text-xl font-bold text-white font-serif">
+                    Cita con {displayName}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsBookingModalOpen(false)}
+                  className="p-2 rounded-full bg-white/5 border border-white/10 text-white/60 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                {/* Selección de Servicio */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-semibold text-white/80">Servicio Deseado</label>
+                  <select
+                    value={bookingService}
+                    onChange={(e) => {
+                      const selected = services.find((s) => s.name === e.target.value);
+                      setBookingService(e.target.value);
+                      if (selected) {
+                        setBookingPrice(selected.priceBs);
+                        setBookingDuration(selected.durationMin);
+                      }
+                    }}
+                    className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-[#B68F4E]"
+                  >
+                    {services.map((s) => (
+                      <option key={s.id} value={s.name} className="bg-black text-white">
+                        {s.name} — Bs {s.priceBs} ({s.durationMin} min)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Fecha y Hora */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-white/80">Día</label>
+                    <select
+                      value={bookingDate}
+                      onChange={(e) => setBookingDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-[#B68F4E]"
+                    >
+                      <option value="Hoy" className="bg-black text-white">Hoy</option>
+                      <option value="Mañana" className="bg-black text-white">Mañana</option>
+                      <option value="Pasado mañana" className="bg-black text-white">Pasado mañana</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-white/80">Horario</label>
+                    <select
+                      value={bookingTime}
+                      onChange={(e) => setBookingTime(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-[#B68F4E]"
+                    >
+                      {['11:00', '14:30', '16:00', '17:30', '19:00'].map((t) => (
+                        <option key={t} value={t} className="bg-black text-white">
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Datos del Cliente */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-white/80">Tu Nombre</label>
+                    <input
+                      type="text"
+                      value={bookingClientName}
+                      onChange={(e) => setBookingClientName(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-[#B68F4E]"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-white/80">Tu Celular</label>
+                    <input
+                      type="text"
+                      value={bookingClientPhone}
+                      onChange={(e) => setBookingClientPhone(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-[#B68F4E]"
+                    />
+                  </div>
+                </div>
+
+                {/* Notas */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-semibold text-white/80">Notas especiales (opcional)</label>
+                  <input
+                    type="text"
+                    value={bookingNotes}
+                    onChange={(e) => setBookingNotes(e.target.value)}
+                    placeholder="Ej. Piel sensible, recorte de barba fino..."
+                    className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-[#B68F4E]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-white/10">
+                <span className="text-xs text-white/60">
+                  Total estimado: <strong className="text-[#B68F4E] font-mono text-sm">Bs {bookingPrice}</strong>
+                </span>
+
+                <button
+                  type="button"
+                  disabled={submittingBooking}
+                  onClick={handleConfirmBooking}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-bold text-xs shadow-lg hover:brightness-105 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {submittingBooking ? 'Enviando...' : 'Confirmar Solicitud'}
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

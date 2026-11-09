@@ -5,6 +5,7 @@ import { BarberChairWorkflow } from '../chair/BarberChairWorkflow';
 import { BarberProfileView } from './BarberProfileView';
 import { BarberLocationView } from './BarberLocationView';
 import { BarberSubscriptionView } from './BarberSubscriptionView';
+import { BarberBookingsView } from './BarberBookingsView';
 import {
   presenceService,
   type BarberPresenceStatus,
@@ -62,6 +63,13 @@ export const BarberHubCoordinator: FC<BarberHubCoordinatorProps> = ({
       {activeTab === 'sillon' && (
         <div className="pb-24 lg:pb-12">
           <BarberChairWorkflow onExit={onExit} />
+        </div>
+      )}
+
+      {/* 1.5 TAB CITAS & AGENDA PROGRAMADA */}
+      {activeTab === 'citas' && (
+        <div className="pt-2 lg:pt-4 pb-24 lg:pb-12">
+          <BarberBookingsView />
         </div>
       )}
 
