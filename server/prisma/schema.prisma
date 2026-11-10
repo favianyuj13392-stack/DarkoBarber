@@ -75,6 +75,7 @@ model Barber {
   acquiredClients Client[]        @relation("BarberAcquisitions")
   acceptsBookings Boolean         @default(true)
   bookingNoticeMin Int            @default(15)
+  workingHours  Json?
   bookings      Booking[]
   presence      Presence?
   createdAt     DateTime        @default(now())

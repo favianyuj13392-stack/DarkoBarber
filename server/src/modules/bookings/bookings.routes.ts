@@ -80,17 +80,22 @@ const bookingsRoutesPlugin: FastifyPluginAsync = async (fastify) => {
       const barberId = request.barber?.id || request.authUser?.id;
       if (!barberId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
 
-      const body = request.body as { acceptsBookings?: boolean; bookingNoticeMin?: number };
+      const body = request.body as {
+        acceptsBookings?: boolean;
+        bookingNoticeMin?: number;
+        workingHours?: any;
+      };
       const settings = await service.updateBarberBookingSettings(barberId, body);
       return reply.status(200).send(settings);
     }
   );
 
-  // PUBLIC / CLIENT: GET /api/barbers/:barberId/bookings/availability
+  // PUBLIC / CLIENT: GET /api/barbers/:barberId/bookings/availability?date=YYYY-MM-DD
   fastify.get('/barbers/:barberId/bookings/availability', async (request: any, reply) => {
     const { barberId } = request.params as { barberId: string };
-    const settings = await service.getBarberBookingSettings(barberId);
-    return reply.status(200).send(settings);
+    const { date } = (request.query || {}) as { date?: string };
+    const availability = await service.getBarberAvailability(barberId, date);
+    return reply.status(200).send(availability);
   });
 
   // PUBLIC / CLIENT: POST /api/barbers/:barberId/bookings

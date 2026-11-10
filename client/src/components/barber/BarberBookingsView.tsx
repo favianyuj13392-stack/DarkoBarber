@@ -21,6 +21,7 @@ import {
   fetchBookingSettings,
   updateBookingSettings,
 } from '../../services/booking.service';
+import { BarberScheduleEditor } from './BarberScheduleEditor';
 
 export const BarberBookingsView: FC = () => {
   const [bookings, setBookings] = useState<BarberBooking[]>([]);
@@ -152,6 +153,17 @@ export const BarberBookingsView: FC = () => {
           </p>
         </div>
       </div>
+
+      {/* 2.5. Configurador de Horarios Semanales */}
+      <BarberScheduleEditor
+        initialConfig={settings.workingHours}
+        onSave={async (newConfig) => {
+          setSettings((prev) => ({ ...prev, workingHours: newConfig }));
+          await updateBookingSettings({ workingHours: newConfig });
+          setToastMsg('Horarios semanales guardados y sincronizados.');
+          setTimeout(() => setToastMsg(null), 3000);
+        }}
+      />
 
       {/* 3. Filtros de Estado */}
       <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1">

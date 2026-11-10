@@ -2,6 +2,22 @@ import { getStoredToken } from './auth.service';
 
 export type BookingStatus = 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
 
+export interface DaySchedule {
+  dayOfWeek: number; // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
+  dayName: string;
+  enabled: boolean;
+  openTime: string;
+  closeTime: string;
+  hasBreak: boolean;
+  breakStart?: string;
+  breakEnd?: string;
+}
+
+export interface BarberWorkingHoursConfig {
+  days: DaySchedule[];
+  slotIntervalMin: number;
+}
+
 export interface BarberBooking {
   id: string;
   barberId: string;
@@ -28,6 +44,53 @@ export interface UpcomingBookingAlert {
 export interface BarberBookingSettings {
   acceptsBookings: boolean;
   bookingNoticeMin: number;
+  workingHours?: BarberWorkingHoursConfig;
+}
+
+export interface SlotInfo {
+  time: string;
+  period: 'manana' | 'tarde' | 'noche';
+  available: boolean;
+}
+
+export interface BarberAvailabilityResponse {
+  acceptsBookings: boolean;
+  isWorkingDay: boolean;
+  dayName?: string;
+  availableSlots: string[];
+  allSlots: SlotInfo[];
+  workingHoursSummary: string;
+  workingHours?: BarberWorkingHoursConfig;
+}
+
+export function getDefaultWorkingHours(): BarberWorkingHoursConfig {
+  const dayNames = [
+    'Domingo',
+    'Lunes',
+    'Martes',
+    'Miércoles',
+    'Jueves',
+    'Viernes',
+    'Sábado',
+  ];
+  const days: DaySchedule[] = [];
+  for (let i = 0; i <= 6; i++) {
+    const isSunday = i === 0;
+    days.push({
+      dayOfWeek: i,
+      dayName: dayNames[i],
+      enabled: !isSunday,
+      openTime: '09:00',
+      closeTime: '20:00',
+      hasBreak: true,
+      breakStart: '13:00',
+      breakEnd: '14:00',
+    });
+  }
+  return {
+    days,
+    slotIntervalMin: 30,
+  };
 }
 
 const DEMO_BOOKINGS: BarberBooking[] = [
@@ -86,23 +149,19 @@ export async function fetchBarberBookings(statusFilter?: BookingStatus): Promise
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) return data;
+        return await res.json();
       }
     } catch (err) {
       console.warn('Could not fetch bookings from server:', err);
     }
   }
 
-  // Fallback to local demo list
+  // Fallback demo data
   const stored = localStorage.getItem('fade_barber_bookings');
   if (stored) {
     try {
       const parsed: BarberBooking[] = JSON.parse(stored);
-      if (statusFilter) {
-        return parsed.filter((b) => b.status === statusFilter);
-      }
-      return parsed;
+      return statusFilter ? parsed.filter((b) => b.status === statusFilter) : parsed;
     } catch {
       // ignore
     }
@@ -136,7 +195,7 @@ export async function updateBookingStatus(
     }
   }
 
-  // Local storage update fallback
+  // Local optimistic update
   const list = await fetchBarberBookings();
   const index = list.findIndex((b) => b.id === bookingId);
   if (index !== -1) {
@@ -145,7 +204,6 @@ export async function updateBookingStatus(
     localStorage.setItem('fade_barber_bookings', JSON.stringify(list));
     return list[index];
   }
-
   throw new Error('Reserva no encontrada');
 }
 
@@ -164,7 +222,6 @@ export async function fetchUpcomingBookingAlert(): Promise<UpcomingBookingAlert>
     }
   }
 
-  // Local demo simulation: if there's a confirmed booking scheduled at 17:30
   return {
     hasUpcoming: true,
     minutesLeft: 14,
@@ -188,7 +245,11 @@ export async function fetchBookingSettings(barberId?: string): Promise<BarberBoo
     console.warn('Could not fetch booking settings:', err);
   }
 
-  return { acceptsBookings: true, bookingNoticeMin: 15 };
+  return {
+    acceptsBookings: true,
+    bookingNoticeMin: 15,
+    workingHours: getDefaultWorkingHours(),
+  };
 }
 
 export async function updateBookingSettings(
@@ -213,7 +274,49 @@ export async function updateBookingSettings(
     }
   }
 
-  return { acceptsBookings: settings.acceptsBookings ?? true, bookingNoticeMin: settings.bookingNoticeMin ?? 15 };
+  return {
+    acceptsBookings: settings.acceptsBookings ?? true,
+    bookingNoticeMin: settings.bookingNoticeMin ?? 15,
+    workingHours: settings.workingHours ?? getDefaultWorkingHours(),
+  };
+}
+
+export async function fetchBarberAvailability(
+  barberId: string,
+  date?: string
+): Promise<BarberAvailabilityResponse> {
+  try {
+    const url = date
+      ? `/api/barbers/${barberId}/bookings/availability?date=${encodeURIComponent(date)}`
+      : `/api/barbers/${barberId}/bookings/availability`;
+    const res = await fetch(url);
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('Could not fetch barber availability from server:', err);
+  }
+
+  return {
+    acceptsBookings: true,
+    isWorkingDay: true,
+    dayName: 'Hoy',
+    availableSlots: ['09:30', '11:30', '14:00', '16:00', '17:00', '18:30', '19:30'],
+    allSlots: [
+      { time: '09:30', period: 'manana', available: true },
+      { time: '10:30', period: 'manana', available: false },
+      { time: '11:30', period: 'manana', available: true },
+      { time: '14:00', period: 'tarde', available: true },
+      { time: '15:00', period: 'tarde', available: false },
+      { time: '16:00', period: 'tarde', available: true },
+      { time: '17:00', period: 'tarde', available: true },
+      { time: '17:45', period: 'tarde', available: false },
+      { time: '18:30', period: 'noche', available: true },
+      { time: '19:30', period: 'noche', available: true },
+    ],
+    workingHoursSummary: '09:00 - 20:00 (Descanso: 13:00 - 14:00)',
+    workingHours: getDefaultWorkingHours(),
+  };
 }
 
 export async function createClientBooking(data: {

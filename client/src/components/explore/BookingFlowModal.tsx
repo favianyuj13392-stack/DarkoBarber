@@ -1,4 +1,4 @@
-import { useState, type FC } from 'react';
+import { useState, useEffect, useMemo, type FC } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -6,46 +6,35 @@ import {
   Check,
   CheckCircle2,
   Sparkles,
+  AlertCircle,
+  Phone,
+  User as UserIcon,
 } from 'lucide-react';
 import type { ExploreBarber, BookingDay, BookingSlot } from '../../types/explore';
+import {
+  fetchBarberAvailability,
+  type BarberAvailabilityResponse,
+} from '../../services/booking.service';
+import { getStoredUser } from '../../services/auth.service';
+
+export interface BookingConfirmData {
+  barberId: string;
+  clientName: string;
+  clientPhone: string;
+  date: string;
+  dateBadge: string;
+  time: string;
+  totalBs: number;
+  serviceNames: string[];
+  durationMin: number;
+}
 
 interface BookingFlowModalProps {
   isOpen: boolean;
   barber: ExploreBarber | null;
   onClose: () => void;
-  onConfirmBooking: (bookingData: {
-    barberId: string;
-    date: string;
-    time: string;
-    totalBs: number;
-    serviceNames: string[];
-  }) => void;
+  onConfirmBooking: (bookingData: BookingConfirmData) => void;
 }
-
-const MOCK_DAYS: BookingDay[] = [
-  { id: 'd-1', dayName: 'VIE', dayNumber: 16, monthName: 'OCT', fullDate: '2026-10-16', isToday: true },
-  { id: 'd-2', dayName: 'SÁB', dayNumber: 17, monthName: 'OCT', fullDate: '2026-10-17' },
-  { id: 'd-3', dayName: 'LUN', dayNumber: 19, monthName: 'OCT', fullDate: '2026-10-19' },
-  { id: 'd-4', dayName: 'MAR', dayNumber: 20, monthName: 'OCT', fullDate: '2026-10-20' },
-  { id: 'd-5', dayName: 'MIÉ', dayNumber: 21, monthName: 'OCT', fullDate: '2026-10-21' },
-  { id: 'd-6', dayName: 'JUE', dayNumber: 22, monthName: 'OCT', fullDate: '2026-10-22' },
-];
-
-const MOCK_SLOTS: BookingSlot[] = [
-  // Mañana
-  { time: '09:30', period: 'manana', available: true },
-  { time: '10:30', period: 'manana', available: false },
-  { time: '11:30', period: 'manana', available: true },
-  // Tarde
-  { time: '14:00', period: 'tarde', available: true },
-  { time: '15:00', period: 'tarde', available: false },
-  { time: '16:00', period: 'tarde', available: true },
-  { time: '17:00', period: 'tarde', available: true },
-  { time: '17:45', period: 'tarde', available: false },
-  // Noche
-  { time: '18:30', period: 'noche', available: true },
-  { time: '19:30', period: 'noche', available: true },
-];
 
 export const BookingFlowModal: FC<BookingFlowModalProps> = ({
   isOpen,
@@ -53,13 +42,110 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
   onClose,
   onConfirmBooking,
 }) => {
-  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>(['srv-fade-pro']);
-  const [selectedDay, setSelectedDay] = useState<BookingDay>(MOCK_DAYS[0]);
-  const [selectedTime, setSelectedTime] = useState<string>('16:00');
+  const currentUser = getStoredUser();
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+  const [selectedDay, setSelectedDay] = useState<BookingDay | null>(null);
+  const [selectedTime, setSelectedTime] = useState<string>('');
   const [onlyAvailableSlots, setOnlyAvailableSlots] = useState(false);
   const [isConfirmed, setIsConfirmed] = useState(false);
 
-  if (!isOpen || !barber) return null;
+  // Client info state
+  const [clientName, setClientName] = useState(currentUser?.displayName || '');
+  const [clientPhone, setClientPhone] = useState(currentUser?.phone || '');
+
+  // Dynamic availability state
+  const [availability, setAvailability] = useState<BarberAvailabilityResponse | null>(null);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+
+  // Real 7 days window starting from today
+  const realDays = useMemo<BookingDay[]>(() => {
+    const list: BookingDay[] = [];
+    const dayNames = ['DOM', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB'];
+    const monthNames = [
+      'ENE',
+      'FEB',
+      'MAR',
+      'ABR',
+      'MAY',
+      'JUN',
+      'JUL',
+      'AGO',
+      'SEP',
+      'OCT',
+      'NOV',
+      'DIC',
+    ];
+    const now = new Date();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(now);
+      d.setDate(now.getDate() + i);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const fullDate = `${yyyy}-${mm}-${dd}`;
+      list.push({
+        id: `day-${i}`,
+        dayName: dayNames[d.getDay()],
+        dayNumber: d.getDate(),
+        monthName: monthNames[d.getMonth()],
+        fullDate,
+        isToday: i === 0,
+      });
+    }
+    return list;
+  }, []);
+
+  // Initialize day & services
+  useEffect(() => {
+    if (barber && isOpen) {
+      if (barber.services && barber.services.length > 0) {
+        setSelectedServiceIds([barber.services[0].id]);
+      }
+      const initialDay = realDays[0];
+      setSelectedDay(initialDay);
+    }
+  }, [barber, isOpen, realDays]);
+
+  // Fetch real availability whenever selectedDay or barber changes
+  useEffect(() => {
+    if (!barber || !selectedDay || !isOpen) return;
+
+    let isMounted = true;
+    setLoadingSlots(true);
+
+    fetchBarberAvailability(barber.id, selectedDay.fullDate)
+      .then((res) => {
+        if (!isMounted) return;
+        setAvailability(res);
+        // Auto-select first available slot if current selected is invalid
+        if (res.availableSlots.length > 0) {
+          if (!res.availableSlots.includes(selectedTime)) {
+            setSelectedTime(res.availableSlots[0]);
+          }
+        } else {
+          setSelectedTime('');
+        }
+      })
+      .finally(() => {
+        if (isMounted) setLoadingSlots(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [barber, selectedDay, isOpen]);
+
+  const displayedSlots: BookingSlot[] = useMemo(() => {
+    if (!availability || !availability.allSlots) return [];
+    const mapped: BookingSlot[] = availability.allSlots.map((s) => ({
+      time: s.time,
+      period: s.period,
+      available: s.available,
+    }));
+    return onlyAvailableSlots ? mapped.filter((s) => s.available) : mapped;
+  }, [availability, onlyAvailableSlots]);
+
+  if (!isOpen || !barber || !selectedDay) return null;
 
   const toggleService = (id: string) => {
     if (selectedServiceIds.includes(id)) {
@@ -71,27 +157,33 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
     }
   };
 
-  const selectedServices = barber.services.filter((s) => selectedServiceIds.includes(s.id));
+  const selectedServices = barber.services.filter((s) =>
+    selectedServiceIds.includes(s.id)
+  );
   const totalBs = selectedServices.reduce((acc, curr) => acc + curr.priceBs, 0);
-  const totalDurationMin = selectedServices.reduce((acc, curr) => acc + curr.durationMin, 0);
-
-  const displayedSlots = onlyAvailableSlots
-    ? MOCK_SLOTS.filter((s) => s.available)
-    : MOCK_SLOTS;
+  const totalDurationMin = selectedServices.reduce(
+    (acc, curr) => acc + curr.durationMin,
+    0
+  );
 
   const morningSlots = displayedSlots.filter((s) => s.period === 'manana');
   const afternoonSlots = displayedSlots.filter((s) => s.period === 'tarde');
   const eveningSlots = displayedSlots.filter((s) => s.period === 'noche');
 
   const handleConfirm = () => {
+    if (!selectedTime) return;
     setIsConfirmed(true);
     setTimeout(() => {
       onConfirmBooking({
         barberId: barber.id,
-        date: `${selectedDay.dayName} ${selectedDay.dayNumber} ${selectedDay.monthName}`,
+        clientName: clientName.trim() || currentUser?.displayName || 'Cliente FADE',
+        clientPhone: clientPhone.trim() || currentUser?.phone || '+591 70000000',
+        date: selectedDay.fullDate,
+        dateBadge: `${selectedDay.dayName} ${selectedDay.dayNumber} ${selectedDay.monthName}`,
         time: selectedTime,
         totalBs,
         serviceNames: selectedServices.map((s) => s.name),
+        durationMin: totalDurationMin,
       });
       setIsConfirmed(false);
       onClose();
@@ -228,7 +320,7 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                   </div>
 
                   <div className="flex gap-2.5 overflow-x-auto no-scrollbar py-1">
-                    {MOCK_DAYS.map((day) => {
+                    {realDays.map((day) => {
                       const isSelected = selectedDay.id === day.id;
                       return (
                         <button
@@ -252,111 +344,177 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                   </div>
                 </div>
 
-                {/* 3. Bloques de Horarios por Turnos */}
+                {/* 3. Bloques de Horarios Dinámicos */}
                 <div className="space-y-3.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono uppercase tracking-wider text-[#B68F4E] font-semibold">
+                      3. Turno & Hora
+                    </span>
+                    {availability?.workingHoursSummary && (
+                      <span className="text-[11px] text-white/40 font-mono">
+                        {availability.workingHoursSummary}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Validaciones de barbero que no atiende citas o día libre */}
+                  {loadingSlots ? (
+                    <div className="py-8 text-center text-xs text-white/40 font-mono animate-pulse">
+                      Consultando disponibilidad del barbero...
+                    </div>
+                  ) : availability && !availability.acceptsBookings ? (
+                    <div className="p-4 rounded-2xl bg-amber-950/20 border border-amber-500/30 flex items-start gap-3 text-xs text-[#D9C9B0]/80">
+                      <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="text-white block">Atención Solo Walk-In:</strong>
+                        <p className="text-[11px] text-white/60 mt-0.5">
+                          Este barbero no está aceptando reservas programadas en este momento. Te espera directamente en su sillón por orden de llegada.
+                        </p>
+                      </div>
+                    </div>
+                  ) : availability && !availability.isWorkingDay ? (
+                    <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/10 text-center space-y-1">
+                      <p className="text-xs font-bold text-white">Día de descanso</p>
+                      <p className="text-[11px] text-white/40">
+                        {barber.name} no atiende los {selectedDay.dayName}. Elige otro día de la semana.
+                      </p>
+                    </div>
+                  ) : displayedSlots.length === 0 ? (
+                    <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/10 text-center text-xs text-white/40">
+                      No quedan turnos disponibles para este día.
+                    </div>
+                  ) : (
+                    <>
+                      {/* Mañana */}
+                      {morningSlots.length > 0 && (
+                        <div className="space-y-1.5">
+                          <span className="text-[11px] text-white/50 font-medium">Mañana</span>
+                          <div className="grid grid-cols-4 gap-2">
+                            {morningSlots.map((slot) => {
+                              const isSelected = selectedTime === slot.time;
+                              return (
+                                <button
+                                  key={slot.time}
+                                  type="button"
+                                  disabled={!slot.available}
+                                  onClick={() => setSelectedTime(slot.time)}
+                                  className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all cursor-pointer ${
+                                    !slot.available
+                                      ? 'opacity-30 border-white/5 bg-white/[0.02] cursor-not-allowed line-through'
+                                      : isSelected
+                                      ? 'bg-[#B68F4E] text-black border-[#B68F4E] shadow-[0_0_12px_rgba(182,143,78,0.4)]'
+                                      : 'bg-white/5 text-white/80 border-white/10 hover:border-white/20'
+                                  }`}
+                                >
+                                  {slot.time}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Tarde */}
+                      {afternoonSlots.length > 0 && (
+                        <div className="space-y-1.5">
+                          <span className="text-[11px] text-white/50 font-medium">Tarde</span>
+                          <div className="grid grid-cols-4 gap-2">
+                            {afternoonSlots.map((slot) => {
+                              const isSelected = selectedTime === slot.time;
+                              return (
+                                <button
+                                  key={slot.time}
+                                  type="button"
+                                  disabled={!slot.available}
+                                  onClick={() => setSelectedTime(slot.time)}
+                                  className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all cursor-pointer ${
+                                    !slot.available
+                                      ? 'opacity-30 border-white/5 bg-white/[0.02] cursor-not-allowed line-through'
+                                      : isSelected
+                                      ? 'bg-[#B68F4E] text-black border-[#B68F4E] shadow-[0_0_12px_rgba(182,143,78,0.4)]'
+                                      : 'bg-white/5 text-white/80 border-white/10 hover:border-white/20'
+                                  }`}
+                                >
+                                  {slot.time}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Noche */}
+                      {eveningSlots.length > 0 && (
+                        <div className="space-y-1.5">
+                          <span className="text-[11px] text-white/50 font-medium">Noche</span>
+                          <div className="grid grid-cols-4 gap-2">
+                            {eveningSlots.map((slot) => {
+                              const isSelected = selectedTime === slot.time;
+                              return (
+                                <button
+                                  key={slot.time}
+                                  type="button"
+                                  disabled={!slot.available}
+                                  onClick={() => setSelectedTime(slot.time)}
+                                  className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all cursor-pointer ${
+                                    !slot.available
+                                      ? 'opacity-30 border-white/5 bg-white/[0.02] cursor-not-allowed line-through'
+                                      : isSelected
+                                      ? 'bg-[#B68F4E] text-black border-[#B68F4E] shadow-[0_0_12px_rgba(182,143,78,0.4)]'
+                                      : 'bg-white/5 text-white/80 border-white/10 hover:border-white/20'
+                                  }`}
+                                >
+                                  {slot.time}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* 4. Datos del Cliente (Pre-cargados o editables) */}
+                <div className="space-y-2.5 pt-2 border-t border-white/10">
                   <span className="text-xs font-mono uppercase tracking-wider text-[#B68F4E] font-semibold">
-                    3. Turno & Hora
+                    4. Tus datos para la cita
                   </span>
-
-                  {/* Mañana */}
-                  {morningSlots.length > 0 && (
-                    <div className="space-y-1.5">
-                      <span className="text-[11px] text-white/50 font-medium">Mañana</span>
-                      <div className="grid grid-cols-4 gap-2">
-                        {morningSlots.map((slot) => {
-                          const isSelected = selectedTime === slot.time;
-                          return (
-                            <button
-                              key={slot.time}
-                              type="button"
-                              disabled={!slot.available}
-                              onClick={() => setSelectedTime(slot.time)}
-                              className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all cursor-pointer ${
-                                !slot.available
-                                  ? 'opacity-30 border-white/5 bg-white/[0.02] cursor-not-allowed line-through'
-                                  : isSelected
-                                  ? 'bg-[#B68F4E] text-black border-[#B68F4E] shadow-[0_0_12px_rgba(182,143,78,0.4)]'
-                                  : 'bg-white/5 text-white/80 border-white/10 hover:border-white/20'
-                              }`}
-                            >
-                              {slot.time}
-                            </button>
-                          );
-                        })}
-                      </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div className="relative">
+                      <UserIcon className="w-4 h-4 text-white/40 absolute left-3 top-3" />
+                      <input
+                        type="text"
+                        placeholder="Tu nombre"
+                        value={clientName}
+                        onChange={(e) => setClientName(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder-white/35 focus:outline-none focus:border-[#B68F4E]"
+                      />
                     </div>
-                  )}
-
-                  {/* Tarde */}
-                  {afternoonSlots.length > 0 && (
-                    <div className="space-y-1.5">
-                      <span className="text-[11px] text-white/50 font-medium">Tarde</span>
-                      <div className="grid grid-cols-4 gap-2">
-                        {afternoonSlots.map((slot) => {
-                          const isSelected = selectedTime === slot.time;
-                          return (
-                            <button
-                              key={slot.time}
-                              type="button"
-                              disabled={!slot.available}
-                              onClick={() => setSelectedTime(slot.time)}
-                              className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all cursor-pointer ${
-                                !slot.available
-                                  ? 'opacity-30 border-white/5 bg-white/[0.02] cursor-not-allowed line-through'
-                                  : isSelected
-                                  ? 'bg-[#B68F4E] text-black border-[#B68F4E] shadow-[0_0_12px_rgba(182,143,78,0.4)]'
-                                  : 'bg-white/5 text-white/80 border-white/10 hover:border-white/20'
-                              }`}
-                            >
-                              {slot.time}
-                            </button>
-                          );
-                        })}
-                      </div>
+                    <div className="relative">
+                      <Phone className="w-4 h-4 text-white/40 absolute left-3 top-3" />
+                      <input
+                        type="tel"
+                        placeholder="WhatsApp / Teléfono"
+                        value={clientPhone}
+                        onChange={(e) => setClientPhone(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder-white/35 focus:outline-none focus:border-[#B68F4E]"
+                      />
                     </div>
-                  )}
-
-                  {/* Noche */}
-                  {eveningSlots.length > 0 && (
-                    <div className="space-y-1.5">
-                      <span className="text-[11px] text-white/50 font-medium">Noche</span>
-                      <div className="grid grid-cols-4 gap-2">
-                        {eveningSlots.map((slot) => {
-                          const isSelected = selectedTime === slot.time;
-                          return (
-                            <button
-                              key={slot.time}
-                              type="button"
-                              disabled={!slot.available}
-                              onClick={() => setSelectedTime(slot.time)}
-                              className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all cursor-pointer ${
-                                !slot.available
-                                  ? 'opacity-30 border-white/5 bg-white/[0.02] cursor-not-allowed line-through'
-                                  : isSelected
-                                  ? 'bg-[#B68F4E] text-black border-[#B68F4E] shadow-[0_0_12px_rgba(182,143,78,0.4)]'
-                                  : 'bg-white/5 text-white/80 border-white/10 hover:border-white/20'
-                              }`}
-                            >
-                              {slot.time}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
+                  </div>
                 </div>
 
                 {/* Resumen */}
                 <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between text-xs">
                   <div>
-                    <span className="text-white/50 block">Fecha y duración</span>
+                    <span className="text-white/50 block">Fecha y turno</span>
                     <strong className="text-white">
                       {selectedDay.dayName} {selectedDay.dayNumber} {selectedDay.monthName} ·{' '}
-                      {selectedTime} (~{totalDurationMin} min)
+                      {selectedTime || 'Selecciona horario'} (~{totalDurationMin} min)
                     </strong>
                   </div>
                   <div className="text-right">
-                    <span className="text-white/50 block">Total a pagar</span>
+                    <span className="text-white/50 block">Total estimado</span>
                     <strong className="text-[#B68F4E] font-mono text-sm">{totalBs} Bs</strong>
                   </div>
                 </div>
@@ -366,11 +524,19 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
               <div className="p-4 bg-black/80 border-t border-white/10 backdrop-blur-xl">
                 <button
                   type="button"
+                  disabled={
+                    !selectedTime ||
+                    Boolean(availability && (!availability.acceptsBookings || !availability.isWorkingDay))
+                  }
                   onClick={handleConfirm}
-                  className="w-full py-3.5 rounded-2xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-extrabold text-xs uppercase tracking-wider shadow-[0_8px_24px_rgba(217,201,176,0.35),inset_0_1px_0_rgba(255,255,255,0.8)] hover:brightness-105 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2"
+                  className="w-full py-3.5 rounded-2xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-extrabold text-xs uppercase tracking-wider shadow-[0_8px_24px_rgba(217,201,176,0.35),inset_0_1px_0_rgba(255,255,255,0.8)] hover:brightness-105 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Sparkles className="w-4 h-4" />
-                  <span>Confirmar reserva ({totalBs} Bs)</span>
+                  <span>
+                    {!selectedTime
+                      ? 'Elige un horario'
+                      : `Confirmar reserva (${totalBs} Bs)`}
+                  </span>
                 </button>
               </div>
             </>
