@@ -207,9 +207,9 @@ export class AuthService {
 
     const googleClientId = process.env.GOOGLE_CLIENT_ID;
 
-    // In local non-production environment, permit explicit test tokens for CI
+    // Mock tokens are accepted ONLY under NODE_ENV === 'test' (never in dev/staging/production)
     if (
-      process.env.NODE_ENV !== 'production' &&
+      process.env.NODE_ENV === 'test' &&
       (input.idToken.startsWith('mock-') || input.idToken.startsWith('test-') || input.idToken.startsWith('header.'))
     ) {
       try {
@@ -251,6 +251,9 @@ export class AuthService {
         const ticketPayload = ticket.getPayload();
         if (!ticketPayload || !ticketPayload.sub || !ticketPayload.email) {
           throw new Error('Invalid token payload from Google');
+        }
+        if (ticketPayload.email_verified !== true) {
+          throw new Error('Google account email is not verified');
         }
         payload = {
           sub: ticketPayload.sub,

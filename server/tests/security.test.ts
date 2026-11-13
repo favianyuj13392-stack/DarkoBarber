@@ -5,6 +5,7 @@ import { seed } from '../prisma/seed';
 import { hashSecret } from '../src/utils/crypto';
 import { cleanDatabase } from './helpers';
 import { resolveJwtSecret, TEST_JWT_SECRET } from '../src/utils/jwt-secret';
+import { AuthService } from '../src/modules/auth/auth.service';
 
 const chips = {
   baseLateral: 'Fade',
@@ -141,6 +142,27 @@ describe('Security fixes', () => {
         payload: { to: 'victim@example.com' },
       });
       expect(res.statusCode).toBe(404);
+    });
+  });
+
+  describe('Google mock tokens', () => {
+    const originalEnv = process.env.NODE_ENV;
+    const restore = () => {
+      process.env.NODE_ENV = originalEnv;
+    };
+
+    it('are rejected when NODE_ENV is not "test"', async () => {
+      const service = new AuthService(app.prisma);
+      for (const env of ['development', 'production', 'staging']) {
+        process.env.NODE_ENV = env;
+        try {
+          await expect(
+            service.googleAuth({ idToken: 'mock-anything', role: 'cliente' })
+          ).rejects.toThrow();
+        } finally {
+          restore();
+        }
+      }
     });
   });
 
