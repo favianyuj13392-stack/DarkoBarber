@@ -24,9 +24,10 @@ export interface CutRecord {
 
 export interface ClientHistoryResponse {
   client: {
-    id: string;
+    /** null when the barber has no history with this phone (empty response). */
+    id: string | null;
     phone: string;
-    displayName: string;
+    displayName: string | null;
     avatarUrl?: string;
     isVerified?: boolean;
     notes?: string;
@@ -156,8 +157,11 @@ export async function finalizeCut(
   };
 }
 
+
 /**
- * Obtener historial de cliente por teléfono (GET /api/clients/:phone/history)
+ * Fetches a client's history by phone (GET /api/clients/:phone/history).
+ * Barbers get a 200 with empty cuts when the client is new to them or unknown.
+ * Throws on network/HTTP failures so callers can show an error state instead of fake data.
  */
 export async function getClientHistory(
   phone: string,
@@ -166,144 +170,19 @@ export async function getClientHistory(
   const token = getStoredToken();
   const cleanPhone = phone.replace(/\D/g, '');
 
-  try {
-    const response = await fetch(`/api/clients/${cleanPhone}/history`, {
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    });
+  const response = await fetch(`/api/clients/${cleanPhone}/history`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
 
-    if (response.ok) {
-      const data = await response.json();
-      if (clientName && data?.client) {
-        data.client.displayName = clientName;
-      }
-      return data;
-    }
-  } catch (error) {
-    console.warn('Could not fetch client history from backend, using canonical fallback:', error);
+  if (!response.ok) {
+    throw new Error(`Could not load client history (HTTP ${response.status})`);
   }
 
-  // Fallback con fidelidad exacta a los mockups
-  return {
-    client: {
-      id: 'client-active',
-      phone: phone || '+591 712 34567',
-      displayName: clientName || 'Ernesto Salinas',
-      avatarUrl: '/assets/images/1.png',
-      isVerified: true,
-      notes: 'Prefiere corte con tijera en parte superior sin vaciar demasiado. Cuidado con remolino en la coronilla.',
-      preferences: {
-        neckline: 'Cuadrada natural',
-        topTexture: 'Texturizado mate',
-        product: 'Polvo voluminizador mate',
-        razorShave: true,
-      },
-    },
-    cuts: [
-      {
-        id: 'cut-1',
-        date: '12 sep 2025',
-        styleName: 'Mid Fade',
-        fadeType: 'Mid Fade · Texturizado',
-        shopName: 'Estudio 16',
-        location: 'Sopocachi',
-        barberName: 'Juan Perez',
-        isVerified: true,
-        coverPhoto: '/assets/images/1.png',
-        photos: [
-          { id: 'p1', url: '/assets/images/1.png', angle: 'Frontal', isPublic: true },
-          { id: 'p2', url: '/assets/images/2.png', angle: 'Lado izquierdo', isPublic: true },
-          { id: 'p3', url: '/assets/images/3.png', angle: 'Lado derecho', isPublic: true },
-          { id: 'p4', url: '/assets/images/4.png', angle: 'Lado trasero', isPublic: true },
-        ],
-        chips: {
-          baseLateral: '#0.5',
-          tipoDegradado: 'Mid Fade',
-          parteSuperior: 'Texturizado',
-          barba: { included: false },
-        },
-      },
-      {
-        id: 'cut-2',
-        date: '18 ago 2025',
-        styleName: 'Low Fade',
-        fadeType: 'Low Fade · Crop',
-        shopName: 'Estudio 16',
-        location: 'Sopocachi',
-        barberName: 'Juan Perez',
-        isVerified: true,
-        coverPhoto: '/assets/images/2.png',
-        photos: [
-          { id: 'p2-1', url: '/assets/images/2.png', angle: 'Frontal' },
-        ],
-        chips: {
-          baseLateral: '#0',
-          tipoDegradado: 'Low Fade',
-          parteSuperior: 'Recto',
-          barba: { included: false },
-        },
-      },
-      {
-        id: 'cut-3',
-        date: '15 jul 2025',
-        styleName: 'Fade clásico',
-        fadeType: 'Fade clásico · Barba',
-        shopName: 'Estudio 16',
-        location: 'Sopocachi',
-        barberName: 'Diego Miranda',
-        isVerified: true,
-        coverPhoto: '/assets/images/3.png',
-        photos: [
-          { id: 'p3-1', url: '/assets/images/3.png', angle: 'Frontal' },
-        ],
-        chips: {
-          baseLateral: '#1',
-          tipoDegradado: 'Mid Fade',
-          parteSuperior: 'Degradado',
-          barba: { included: true, alturaMejilla: 'Media' },
-        },
-      },
-      {
-        id: 'cut-4',
-        date: '02 jun 2025',
-        styleName: 'Mid Fade',
-        fadeType: 'Mid Fade · Texturizado',
-        shopName: 'Estudio 16',
-        location: 'Sopocachi',
-        barberName: 'Juan Perez',
-        isVerified: true,
-        coverPhoto: '/assets/images/4.png',
-        photos: [
-          { id: 'p4-1', url: '/assets/images/4.png', angle: 'Frontal' },
-        ],
-        chips: {
-          baseLateral: '#0.5',
-          tipoDegradado: 'Mid Fade',
-          parteSuperior: 'Texturizado',
-          barba: { included: false },
-        },
-      },
-      {
-        id: 'cut-5',
-        date: '14 may 2025',
-        styleName: 'Low Fade',
-        fadeType: 'Low Fade · Ondulado',
-        shopName: 'Estudio 16',
-        location: 'Sopocachi',
-        barberName: 'Brian López',
-        isVerified: true,
-        coverPhoto: '/assets/images/1.png',
-        photos: [
-          { id: 'p5-1', url: '/assets/images/1.png', angle: 'Frontal' },
-        ],
-        chips: {
-          baseLateral: '#1.5',
-          tipoDegradado: 'Low Fade',
-          parteSuperior: 'Degradado',
-          barba: { included: false },
-        },
-      },
-    ],
-  };
+  const data = (await response.json()) as ClientHistoryResponse;
+  if (clientName && data?.client) {
+    data.client.displayName = clientName;
+  }
+  return { ...data, cuts: data?.cuts ?? [] };
 }
