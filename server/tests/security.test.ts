@@ -133,6 +133,17 @@ describe('Security fixes', () => {
     });
   });
 
+  describe('POST /auth/email/test', () => {
+    it('no longer exists (404)', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/email/test',
+        payload: { to: 'victim@example.com' },
+      });
+      expect(res.statusCode).toBe(404);
+    });
+  });
+
   describe('resolveJwtSecret', () => {
     it('throws outside test env when the secret is missing or too short', () => {
       expect(() => resolveJwtSecret({ NODE_ENV: 'production' } as NodeJS.ProcessEnv)).toThrow(/JWT_SECRET/);

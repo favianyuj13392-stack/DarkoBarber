@@ -7,7 +7,6 @@ import {
   forgotPasswordSchema,
   resetPasswordSchema,
 } from './auth.schemas';
-import { emailService } from '../../services/email/email.service';
 
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new AuthService(fastify.prisma);
@@ -422,16 +421,5 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         message: err.message || 'No se pudo restablecer la contraseña',
       });
     }
-  });
-
-  // --- PRUEBA TRANSACCIONAL DE CORREO (PROTEGIDA / INTERNA) ---
-  fastify.post('/auth/email/test', async (request, reply) => {
-    const { to } = (request.body as { to?: string }) || {};
-    if (!to || !to.includes('@')) {
-      return reply.status(400).send({ error: 'EMAIL_REQUIRED', message: 'Se requiere un correo de destino válido.' });
-    }
-
-    const result = await emailService.sendTestEmail(to);
-    return reply.status(result.success ? 200 : 500).send(result);
   });
 };
