@@ -138,4 +138,133 @@ describe('Clients Module Integration Tests', () => {
     expect(sonData.cuts.length).toBe(1);
     expect(sonData.cuts[0].chips.baseLateral).toBe('#2');
   });
+
+  describe('authorization', () => {
+    let ownerId: string;
+    let otherId: string;
+    let ownerToken: string;
+    let otherToken: string;
+
+    beforeAll(async () => {
+      const owner = await app.prisma.client.create({
+        data: {
+          phone: '+59170011122',
+          email: 'owner-client@darkobarber.com',
+          displayName: 'Owner Client',
+          profiles: { create: [{ name: 'Owner' }] },
+        },
+        include: { profiles: true },
+      });
+      const other = await app.prisma.client.create({
+        data: {
+          phone: '+59170033344',
+          email: 'other-client@darkobarber.com',
+          displayName: 'Other Client',
+        },
+      });
+      ownerId = owner.id;
+      otherId = other.id;
+      ownerToken = app.jwt.sign({ userId: owner.id, role: 'cliente' });
+      otherToken = app.jwt.sign({ userId: other.id, role: 'cliente' });
+    });
+
+    it('rejects unauthenticated access with 401', async () => {
+      const calls = [
+        { method: 'GET', url: '/clients/me' },
+        { method: 'PUT', url: '/clients/me', payload: { displayName: 'Hacked' } },
+      ] as const;
+      for (const c of calls) {
+        const res = await app.inject({ ...c } as any);
+        expect(res.statusCode).toBe(401);
+      }
+    });
+
+    it('GET /clients/me resolves only from token and rejects barbers', async () => {
+      const ok = await app.inject({
+        method: 'GET',
+        url: '/clients/me?email=other-client@darkobarber.com&name=Other&phone=70033344',
+        headers: { authorization: `Bearer ${ownerToken}` },
+      });
+      expect(ok.statusCode).toBe(200);
+      expect(JSON.parse(ok.body).client.id).toBe(ownerId);
+
+      const barber = await app.inject({
+        method: 'GET',
+        url: '/clients/me',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(barber.statusCode).toBe(403);
+    });
+
+    it('PUT /clients/me updates only the authenticated client and ignores id/email from body', async () => {
+      const res = await app.inject({
+        method: 'PUT',
+        url: '/clients/me',
+        headers: { authorization: `Bearer ${otherToken}` },
+        payload: {
+          id: ownerId,
+          email: 'owner-client@darkobarber.com',
+          displayName: 'Other Renamed',
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.body).id).toBe(otherId);
+
+      const owner = await app.prisma.client.findUnique({ where: { id: ownerId } });
+      const other = await app.prisma.client.findUnique({ where: { id: otherId } });
+      expect(owner?.displayName).toBe('Owner Client');
+      expect(other?.displayName).toBe('Other Renamed');
+      expect(other?.email).toBe('other-client@darkobarber.com');
+    });
+
+    it('PUT /clients/me returns 400 on invalid body and 409 on duplicate phone', async () => {
+      const bad = await app.inject({
+        method: 'PUT',
+        url: '/clients/me',
+        headers: { authorization: `Bearer ${otherToken}` },
+        payload: { displayName: 12345, phone: { x: 1 } },
+      });
+      expect(bad.statusCode).toBe(400);
+      expect(JSON.parse(bad.body).error).toBe('VALIDATION_ERROR');
+
+      const dup = await app.inject({
+        method: 'PUT',
+        url: '/clients/me',
+        headers: { authorization: `Bearer ${otherToken}` },
+        payload: { phone: '+59170011122' },
+      });
+      expect(dup.statusCode).toBe(409);
+      expect(JSON.parse(dup.body).error).toBe('PHONE_ALREADY_EXISTS');
+    });
+
+    it('never falls back to the Ernesto Salinas client', async () => {
+      const ernesto = await app.prisma.client.create({
+        data: { phone: '+59170099999', displayName: 'Ernesto Salinas' },
+      });
+      const stranger = await app.prisma.client.create({
+        data: { phone: '+59170055566', displayName: 'No Cuts Client' },
+      });
+      const strangerToken = app.jwt.sign({ userId: stranger.id, role: 'cliente' });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/clients/me',
+        headers: { authorization: `Bearer ${strangerToken}` },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.client.id).toBe(stranger.id);
+      expect(body.client.displayName).toBe('No Cuts Client');
+
+      const put = await app.inject({
+        method: 'PUT',
+        url: '/clients/me',
+        headers: { authorization: `Bearer ${strangerToken}` },
+        payload: { displayName: 'Renamed' },
+      });
+      expect(put.statusCode).toBe(200);
+      const e = await app.prisma.client.findUnique({ where: { id: ernesto.id } });
+      expect(e?.displayName).toBe('Ernesto Salinas');
+    });
+  });
 });

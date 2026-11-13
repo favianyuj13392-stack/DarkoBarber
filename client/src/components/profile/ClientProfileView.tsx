@@ -143,15 +143,29 @@ export const ClientProfileView: FC<ClientProfileViewProps> = ({
   const handleSaveProfile = async () => {
     setSaving(true);
     try {
-      await fetch('/api/clients/me', {
+      const token = getStoredToken();
+      const res = await fetch('/api/clients/me', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           displayName,
           phone,
-          email,
         }),
       });
+
+      if (!res.ok) {
+        if (res.status === 409) {
+          showToast('Ese número de teléfono ya está en uso por otra cuenta.', true);
+        } else if (res.status === 400) {
+          showToast('Revisa los datos ingresados: nombre o teléfono no válidos.', true);
+        } else {
+          showToast('No se pudo actualizar el perfil. Inténtalo de nuevo.', true);
+        }
+        return;
+      }
 
       const updated = {
         ...user,
@@ -163,13 +177,10 @@ export const ClientProfileView: FC<ClientProfileViewProps> = ({
       localStorage.setItem('fade_user_profile', JSON.stringify(updated));
       if (onProfileUpdated) onProfileUpdated(updated);
       setIsEditing(false);
-      setToastMsg('¡Datos de perfil actualizados con éxito!');
-      setTimeout(() => setToastMsg(null), 3000);
+      showToast('¡Datos de perfil actualizados con éxito!');
     } catch (err) {
       console.error('Error actualizando perfil:', err);
-      setToastMsg('Perfil guardado en este dispositivo.');
-      setTimeout(() => setToastMsg(null), 3000);
-      setIsEditing(false);
+      showToast('No se pudo conectar con el servidor. Tus cambios no se guardaron.', true);
     } finally {
       setSaving(false);
     }

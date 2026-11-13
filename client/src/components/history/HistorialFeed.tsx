@@ -33,7 +33,7 @@ import {
 import { MOCK_HAIRCUTS, INITIAL_PREFERENCES } from '../../data/mockHistory';
 import type { HaircutItem, ClientPreferences } from '../../types/history';
 import { SPRING_TOUCH } from '../../constants/springs';
-import { getStoredUser, type UserProfile } from '../../services/auth.service';
+import { getStoredUser, getStoredToken, type UserProfile } from '../../services/auth.service';
 import { ExploreCoordinator } from '../explore/ExploreCoordinator';
 import { ClientProfileView } from '../profile/ClientProfileView';
 
@@ -186,16 +186,12 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
 
   const loadCutsFromDb = async () => {
     try {
-      const phone = currentUser?.phone || '+591 712 34567';
-      const cleanPhone = phone.replace(/\D/g, '');
-      const email = currentUser?.email || '';
-      const name = currentUser?.displayName || userName || '';
-      const params = new URLSearchParams();
-      if (email) params.set('email', email);
-      if (name) params.set('name', name);
-
-      const url = `/api/clients/${cleanPhone}/history?${params.toString()}`;
-      const res = await fetch(url);
+      // Identity comes from the auth token; the server resolves the client itself.
+      const token = getStoredToken();
+      if (!token) return;
+      const res = await fetch('/api/clients/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.cuts && Array.isArray(data.cuts) && data.cuts.length > 0) {
