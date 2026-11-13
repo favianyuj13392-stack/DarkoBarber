@@ -2,6 +2,9 @@ import { FastifyPluginAsync } from 'fastify';
 import { PhotosService } from './photos.service';
 import { presignPhotoSchema, confirmPhotoSchema } from './photos.schemas';
 import { AppError } from '../../utils/errors';
+import { z } from 'zod';
+
+const consentSchema = z.object({ isPublic: z.boolean() });
 
 export const photosRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new PhotosService(fastify.prisma);
@@ -166,16 +169,51 @@ export const photosRoutes: FastifyPluginAsync = async (fastify) => {
     }
   );
 
-  // PATCH /photos/:photoId/consent (Conceder o revocar autorización de portafolio público)
-  fastify.patch('/photos/:photoId/consent', async (request, reply) => {
-    const { photoId } = request.params as { photoId: string };
-    const { isPublic } = (request.body as { isPublic: boolean }) || {};
+  // PATCH /photos/:photoId/consent: grant or revoke public portfolio consent.
+  // Only the authenticated CLIENT who owns the photo (photo -> cut -> profile -> client) may change it.
+  // The barber-side in-chair consent flow is separate: it goes through /presence/chair/consent-*
+  // and the barber's isPublic flag on photo confirm.
+  fastify.patch(
+    '/photos/:photoId/consent',
+    { preHandler: [fastify.authenticateUser] },
+    async (request, reply) => {
+      const { photoId } = request.params as { photoId: string };
+      const parseResult = consentSchema.safeParse(request.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          error: 'VALIDATION_ERROR',
+          issues: parseResult.error.format(),
+        });
+      }
 
-    const updated = await fastify.prisma.cutPhoto.update({
-      where: { id: photoId },
-      data: { isPublic: Boolean(isPublic) },
-    });
+      const user = request.authUser!;
+      if (user.role !== 'cliente') {
+        return reply.status(403).send({
+          error: 'FORBIDDEN',
+          message: 'Only the client who owns the photo can change its consent',
+        });
+      }
 
-    return reply.status(200).send(updated);
-  });
+      const photo = await fastify.prisma.cutPhoto.findUnique({
+        where: { id: photoId },
+        include: { cut: { include: { clientProfile: true } } },
+      });
+      if (!photo) {
+        return reply.status(404).send({ error: 'NOT_FOUND', message: 'Photo not found' });
+      }
+      if (photo.cut.clientProfile.clientId !== user.id) {
+        return reply.status(403).send({
+          error: 'FORBIDDEN',
+          message: 'You do not own this photo',
+        });
+      }
+
+      const updated = await fastify.prisma.cutPhoto.update({
+        where: { id: photoId },
+        data: { isPublic: parseResult.data.isPublic },
+      });
+
+      return reply.status(200).send(updated);
+    }
+  );
 };

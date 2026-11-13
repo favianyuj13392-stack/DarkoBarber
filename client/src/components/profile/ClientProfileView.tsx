@@ -12,9 +12,10 @@ import {
   Edit2,
   Lock,
   Globe,
+  AlertCircle,
 } from 'lucide-react';
 import type { UserProfile } from '../../services/auth.service';
-import { getStoredUser } from '../../services/auth.service';
+import { getStoredUser, getStoredToken } from '../../services/auth.service';
 import type { HaircutItem } from '../../types/history';
 
 interface ClientProfileViewProps {
@@ -53,6 +54,13 @@ export const ClientProfileView: FC<ClientProfileViewProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [toastIsError, setToastIsError] = useState(false);
+
+  const showToast = (msg: string, isError = false) => {
+    setToastMsg(msg);
+    setToastIsError(isError);
+    setTimeout(() => setToastMsg(null), 3000);
+  };
 
   // Ficha Biocutánea State (stored in localStorage)
   const [selectedMorphology, setSelectedMorphology] = useState<string[]>(() => {
@@ -107,21 +115,28 @@ export const ClientProfileView: FC<ClientProfileViewProps> = ({
     setPhotosConsent((prev) => ({ ...prev, [photoId]: newPublic }));
 
     try {
-      await fetch(`/api/photos/${photoId}/consent`, {
+      const token = getStoredToken();
+      const res = await fetch(`/api/photos/${photoId}/consent`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ isPublic: newPublic }),
       });
-      setToastMsg(
+      if (!res.ok) {
+        throw new Error(`Consent update failed (HTTP ${res.status})`);
+      }
+      showToast(
         newPublic
           ? 'Foto autorizada para el portafolio público de tu barbero.'
           : 'Foto marcada como privada. Ya no se mostrará públicamente.'
       );
-      setTimeout(() => setToastMsg(null), 3000);
     } catch (err) {
       console.warn('Could not sync consent to server:', err);
-      setToastMsg(newPublic ? 'Permiso público guardado.' : 'Permiso privado guardado.');
-      setTimeout(() => setToastMsg(null), 3000);
+      // Revert the optimistic state: the server did not accept the change.
+      setPhotosConsent((prev) => ({ ...prev, [photoId]: currentPublic }));
+      showToast('No se pudo guardar el permiso de la foto. Inténtalo de nuevo.', true);
     }
   };
 
@@ -443,9 +458,17 @@ export const ClientProfileView: FC<ClientProfileViewProps> = ({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
-            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl bg-amber-950/90 border border-amber-500/40 text-amber-200 text-xs font-semibold backdrop-blur-xl shadow-2xl flex items-center gap-2 text-center"
+            className={`fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl border text-xs font-semibold backdrop-blur-xl shadow-2xl flex items-center gap-2 text-center ${
+              toastIsError
+                ? 'bg-red-950/90 border-red-500/40 text-red-200'
+                : 'bg-amber-950/90 border-amber-500/40 text-amber-200'
+            }`}
           >
-            <Check className="w-4 h-4 text-emerald-400" />
+            {toastIsError ? (
+              <AlertCircle className="w-4 h-4 text-red-400" />
+            ) : (
+              <Check className="w-4 h-4 text-emerald-400" />
+            )}
             <span>{toastMsg}</span>
           </motion.div>
         )}
