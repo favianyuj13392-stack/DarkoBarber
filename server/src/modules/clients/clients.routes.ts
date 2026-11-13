@@ -5,20 +5,39 @@ import { createClientSchema, updateClientProfileSchema } from './clients.schemas
 export const clientsRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new ClientsService(fastify.prisma);
 
+  // GET /clients/:phone/history
+  // - cliente: only their own phone.
+  // - barbero: only their own cuts with that client; otherwise a 200 empty history.
   fastify.get(
     '/clients/:phone/history',
+    { preHandler: [fastify.authenticateUser] },
     async (request, reply) => {
       const { phone } = request.params as { phone: string };
-      const target = await service.findClientByPhone(phone);
+      const user = request.authUser!;
 
-      if (!target) {
-        return reply.status(404).send({
-          exists: false,
-          phone,
-        });
+      if (user.role === 'cliente') {
+        if (!ClientsService.samePhone(user.phone, phone)) {
+          return reply.status(403).send({
+            error: 'FORBIDDEN',
+            message: 'You can only view your own history',
+          });
+        }
+        const history = await service.getClientHistory(user.id);
+        return reply.status(200).send(history);
       }
 
-      const history = await service.getClientHistory(target.id);
+      // Unknown phone and "no cuts with this barber" are deliberately indistinguishable:
+      // same 200 empty shape, so existence cannot be enumerated.
+      const target = await service.findClientByPhone(phone);
+      const allowed = target
+        ? await service.barberHasCutWithClient(user.id, target.id)
+        : false;
+      if (!target || !allowed) {
+        return reply.status(200).send(ClientsService.emptyHistory(phone));
+      }
+
+      // Only this barber's own cuts (and their photos) are exposed.
+      const history = await service.getClientHistory(target.id, user.id);
       return reply.status(200).send(history);
     }
   );

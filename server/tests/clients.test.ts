@@ -33,17 +33,26 @@ describe('Clients Module Integration Tests', () => {
     await app.close();
   });
 
-  it('should return 404 with exists: false when client does not exist', async () => {
+  it('barber + nonexistent phone returns 200 with an empty history shape', async () => {
     const res = await app.inject({
       method: 'GET',
       url: '/clients/69000000/history',
       headers: { authorization: `Bearer ${token}` },
     });
 
-    expect(res.statusCode).toBe(404);
+    expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
-    expect(body.exists).toBe(false);
-    expect(body.phone).toBe('69000000');
+    expect(body).toEqual({
+      client: {
+        id: null,
+        phone: '69000000',
+        displayName: null,
+        avatarUrl: '/assets/images/1.png',
+        isVerified: false,
+      },
+      cuts: [],
+      profiles: [],
+    });
   });
 
   it('should create client and primary profile via POST /clients', async () => {
@@ -128,15 +137,12 @@ describe('Clients Module Integration Tests', () => {
     const body = JSON.parse(res.body);
     expect(body.client.phone).toBe('71987654');
     expect(body.profiles.length).toBe(2);
+    expect(body.cuts.length).toBe(2);
 
-    const rodrigoData = body.profiles.find((p: any) => p.name === 'Rodrigo');
-    expect(rodrigoData.cuts.length).toBe(1);
-    expect(rodrigoData.cuts[0].chips.baseLateral).toBe('#1');
-    expect(rodrigoData.cuts[0].photos.length).toBe(1);
-
-    const sonData = body.profiles.find((p: any) => p.name === 'Rodrigo Jr.');
-    expect(sonData.cuts.length).toBe(1);
-    expect(sonData.cuts[0].chips.baseLateral).toBe('#2');
+    const first = body.cuts.find((c: any) => c.chips.baseLateral === '#1');
+    expect(first.photos.length).toBe(1);
+    const second = body.cuts.find((c: any) => c.chips.baseLateral === '#2');
+    expect(second.photos.length).toBe(0);
   });
 
   describe('authorization', () => {
@@ -144,6 +150,7 @@ describe('Clients Module Integration Tests', () => {
     let otherId: string;
     let ownerToken: string;
     let otherToken: string;
+    let strangerBarberToken: string;
 
     beforeAll(async () => {
       const owner = await app.prisma.client.create({
@@ -166,10 +173,39 @@ describe('Clients Module Integration Tests', () => {
       otherId = other.id;
       ownerToken = app.jwt.sign({ userId: owner.id, role: 'cliente' });
       otherToken = app.jwt.sign({ userId: other.id, role: 'cliente' });
+
+      await app.prisma.cut.create({
+        data: {
+          clientRequestId: 'cut-req-authz-1',
+          barberId,
+          clientProfileId: owner.profiles[0].id,
+          status: 'FINISHED',
+          startedAt: new Date(Date.now() - 3600000),
+          finishedAt: new Date(Date.now() - 1800000),
+        },
+      });
+
+      const { hashSecret } = await import('../src/utils/crypto');
+      await app.prisma.barber.create({
+        data: {
+          phone: '77000111',
+          email: 'stranger-barber@darkobarber.com',
+          displayName: 'Stranger Barber',
+          pinHash: hashSecret('4321'),
+          deviceId: 'dev-stranger',
+        },
+      });
+      const login = await app.inject({
+        method: 'POST',
+        url: '/auth/login',
+        payload: { identifier: '77000111', secret: '4321', type: 'pin', deviceId: 'dev-stranger' },
+      });
+      strangerBarberToken = JSON.parse(login.body).token;
     });
 
     it('rejects unauthenticated access with 401', async () => {
       const calls = [
+        { method: 'GET', url: '/clients/70011122/history' },
         { method: 'GET', url: '/clients/me' },
         { method: 'PUT', url: '/clients/me', payload: { displayName: 'Hacked' } },
       ] as const;
@@ -177,6 +213,126 @@ describe('Clients Module Integration Tests', () => {
         const res = await app.inject({ ...c } as any);
         expect(res.statusCode).toBe(401);
       }
+    });
+
+    it('client history: owner 200, other client 403', async () => {
+      const ok = await app.inject({
+        method: 'GET',
+        url: '/clients/70011122/history',
+        headers: { authorization: `Bearer ${ownerToken}` },
+      });
+      expect(ok.statusCode).toBe(200);
+      expect(JSON.parse(ok.body).client.id).toBe(ownerId);
+
+      const denied = await app.inject({
+        method: 'GET',
+        url: '/clients/70011122/history',
+        headers: { authorization: `Bearer ${otherToken}` },
+      });
+      expect(denied.statusCode).toBe(403);
+    });
+
+    it('client history: barber with a cut sees it, barber without cut gets 200 empty (no leak)', async () => {
+      const ok = await app.inject({
+        method: 'GET',
+        url: '/clients/70011122/history',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(ok.statusCode).toBe(200);
+      const okBody = JSON.parse(ok.body);
+      expect(okBody.client.id).toBe(ownerId);
+      expect(okBody.cuts.length).toBe(1);
+
+      const empty = await app.inject({
+        method: 'GET',
+        url: '/clients/70011122/history',
+        headers: { authorization: `Bearer ${strangerBarberToken}` },
+      });
+      expect(empty.statusCode).toBe(200);
+      const body = JSON.parse(empty.body);
+      expect(body.cuts).toEqual([]);
+      expect(body.profiles).toEqual([]);
+      expect(body.client.id).toBeNull();
+      expect(body.client.displayName).toBeNull();
+
+      // Existing-without-cuts and nonexistent phones must be indistinguishable.
+      const unknown = await app.inject({
+        method: 'GET',
+        url: '/clients/60000001/history',
+        headers: { authorization: `Bearer ${strangerBarberToken}` },
+      });
+      const unknownBody = JSON.parse(unknown.body);
+      expect(unknown.statusCode).toBe(200);
+      expect(Object.keys(unknownBody).sort()).toEqual(Object.keys(body).sort());
+      expect(Object.keys(unknownBody.client).sort()).toEqual(Object.keys(body.client).sort());
+    });
+
+    it('client history: barber only sees own cuts and photos, not other barbers', async () => {
+      const { hashSecret } = await import('../src/utils/crypto');
+      const otherBarber = await app.prisma.barber.create({
+        data: {
+          phone: '77000222',
+          email: 'other-barber@darkobarber.com',
+          displayName: 'Other Barber',
+          pinHash: hashSecret('5678'),
+          deviceId: 'dev-other-barber',
+        },
+      });
+      const shared = await app.prisma.client.create({
+        data: {
+          phone: '+59170077788',
+          displayName: 'Shared Client',
+          profiles: { create: [{ name: 'Shared' }, { name: 'Other Profile' }] },
+        },
+        include: { profiles: true },
+      });
+      const mine = shared.profiles.find((p) => p.name === 'Shared')!;
+      const theirs = shared.profiles.find((p) => p.name === 'Other Profile')!;
+      await app.prisma.cut.create({
+        data: {
+          clientRequestId: 'cut-req-own-1',
+          barberId,
+          clientProfileId: mine.id,
+          status: 'FINISHED',
+          startedAt: new Date(Date.now() - 3600000),
+          finishedAt: new Date(Date.now() - 1800000),
+          photos: { create: [{ r2Key: 'cuts/own/photo.webp', isPublic: false }] },
+        },
+      });
+      await app.prisma.cut.create({
+        data: {
+          clientRequestId: 'cut-req-foreign-1',
+          barberId: otherBarber.id,
+          clientProfileId: mine.id,
+          status: 'FINISHED',
+          startedAt: new Date(Date.now() - 7200000),
+          finishedAt: new Date(Date.now() - 5400000),
+          photos: { create: [{ r2Key: 'cuts/foreign/photo.webp', isPublic: false }] },
+        },
+      });
+      await app.prisma.cut.create({
+        data: {
+          clientRequestId: 'cut-req-foreign-2',
+          barberId: otherBarber.id,
+          clientProfileId: theirs.id,
+          status: 'FINISHED',
+          startedAt: new Date(Date.now() - 9200000),
+          finishedAt: new Date(Date.now() - 9000000),
+        },
+      });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/clients/70077788/history',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.cuts.length).toBe(1);
+      expect(body.cuts[0].barberName).not.toBe('Other Barber');
+      expect(body.cuts[0].photos.map((p: any) => p.url)).toEqual(['cuts/own/photo.webp']);
+      expect(body.profiles.map((p: any) => p.name)).toEqual(['Shared']);
+      expect(res.body).not.toContain('foreign');
     });
 
     it('GET /clients/me resolves only from token and rejects barbers', async () => {

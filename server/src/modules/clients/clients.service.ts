@@ -4,6 +4,19 @@ import { CreateClientInput, UpdateClientProfileInput } from './clients.schemas';
 export class ClientsService {
   constructor(private prisma: PrismaClient) {}
 
+  /** Last 8 digits of a phone number (local Bolivian number), or '' if too short. */
+  static normalizePhone(phone: string | null | undefined): string {
+    const digits = (phone || '').replace(/\D/g, '');
+    return digits.length >= 8 ? digits.slice(-8) : digits;
+  }
+
+  /** True when both phones are non-empty and refer to the same local number. */
+  static samePhone(a: string | null | undefined, b: string | null | undefined): boolean {
+    const na = ClientsService.normalizePhone(a);
+    const nb = ClientsService.normalizePhone(b);
+    return na.length > 0 && na === nb;
+  }
+
   /** Resolves a client strictly by phone (exact normalized variants). No name/email matching. */
   async findClientByPhone(phone: string) {
     const cleanPhone = (phone || '').replace(/\D/g, '');
@@ -13,15 +26,44 @@ export class ClientsService {
     return this.prisma.client.findFirst({ where: { phone: { in: candidates } } });
   }
 
-  /** Builds the history of a single, already-resolved client. */
-  async getClientHistory(clientId: string) {
+  async barberHasCutWithClient(barberId: string, clientId: string): Promise<boolean> {
+    const count = await this.prisma.cut.count({
+      where: { barberId, clientProfile: { clientId } },
+    });
+    return count > 0;
+  }
+
+  /**
+   * Empty history returned to barbers when the client has no cuts with them or the phone
+   * is unknown. Both cases are indistinguishable on purpose (no existence leak) and carry
+   * no private client data; only the requested phone is echoed back.
+   */
+  static emptyHistory(phone: string) {
+    return {
+      client: {
+        id: null,
+        phone,
+        displayName: null,
+        avatarUrl: '/assets/images/1.png',
+        isVerified: false,
+      },
+      cuts: [],
+      profiles: [],
+    };
+  }
+
+  /**
+   * Builds the history of a single, already-authorized client.
+   * When `barberId` is given, only cuts performed by that barber (and their photos) are exposed.
+   */
+  async getClientHistory(clientId: string, barberId?: string) {
     const matchingClients = await this.prisma.client.findMany({
       where: { id: clientId },
       include: {
         profiles: {
           include: {
             cuts: {
-              where: { status: 'FINISHED' },
+              where: { status: 'FINISHED', ...(barberId ? { barberId } : {}) },
               orderBy: { startedAt: 'desc' },
               include: {
                 photos: true,
@@ -111,7 +153,9 @@ export class ClientsService {
           chips: chipsObj,
         };
       }),
-      profiles: client.profiles.map((p) => ({
+      profiles: client.profiles
+        .filter((p) => !barberId || p.cuts.length > 0)
+        .map((p) => ({
         id: p.id,
         name: p.name,
       })),
