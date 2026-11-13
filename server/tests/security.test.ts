@@ -4,6 +4,7 @@ import { buildApp } from '../src/app';
 import { seed } from '../prisma/seed';
 import { hashSecret } from '../src/utils/crypto';
 import { cleanDatabase } from './helpers';
+import { resolveJwtSecret, TEST_JWT_SECRET } from '../src/utils/jwt-secret';
 
 const chips = {
   baseLateral: 'Fade',
@@ -129,6 +130,26 @@ describe('Security fixes', () => {
       const b = JSON.parse(second.body).cut;
       expect(b.status).toBe('FINISHED');
       expect(b.finishedAt).toBe(a.finishedAt);
+    });
+  });
+
+  describe('resolveJwtSecret', () => {
+    it('throws outside test env when the secret is missing or too short', () => {
+      expect(() => resolveJwtSecret({ NODE_ENV: 'production' } as NodeJS.ProcessEnv)).toThrow(/JWT_SECRET/);
+      expect(() => resolveJwtSecret({ NODE_ENV: 'development' } as NodeJS.ProcessEnv)).toThrow(/JWT_SECRET/);
+      expect(() =>
+        resolveJwtSecret({ NODE_ENV: 'production', JWT_SECRET: 'short' } as NodeJS.ProcessEnv)
+      ).toThrow(/JWT_SECRET/);
+      expect(() => resolveJwtSecret({ JWT_SECRET: 'x'.repeat(31) } as NodeJS.ProcessEnv)).toThrow(/JWT_SECRET/);
+    });
+
+    it('accepts a secret of 32+ chars outside test env', () => {
+      const secret = 'x'.repeat(32);
+      expect(resolveJwtSecret({ NODE_ENV: 'production', JWT_SECRET: secret } as NodeJS.ProcessEnv)).toBe(secret);
+    });
+
+    it('falls back to a fixed test secret only when NODE_ENV is "test"', () => {
+      expect(resolveJwtSecret({ NODE_ENV: 'test' } as NodeJS.ProcessEnv)).toBe(TEST_JWT_SECRET);
     });
   });
 });

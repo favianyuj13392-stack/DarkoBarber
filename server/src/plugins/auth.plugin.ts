@@ -2,10 +2,11 @@ import fp from 'fastify-plugin';
 import fastifyJwt from '@fastify/jwt';
 import { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import { AuthPayload, BarberAuthPayload } from '../types';
+import { resolveJwtSecret } from '../utils/jwt-secret';
 
 const authPlugin: FastifyPluginAsync = async (fastify) => {
   await fastify.register(fastifyJwt, {
-    secret: process.env.JWT_SECRET || 'fallback-secret-for-darkobarber-pilot',
+    secret: resolveJwtSecret(),
   });
 
   const authenticateBarber = async (request: FastifyRequest, reply: FastifyReply) => {
