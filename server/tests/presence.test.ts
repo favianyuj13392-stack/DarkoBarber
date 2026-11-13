@@ -437,4 +437,65 @@ describe('Presence Module Integration Tests', () => {
       expect(body.status).toBeDefined();
     });
   });
+
+  describe('PUT /presence/:barberId ownership (IDOR)', () => {
+    let otherBarberId: string;
+
+    beforeAll(async () => {
+      const other = await app.prisma.barber.findUniqueOrThrow({ where: { phone: '77212346' } });
+      otherBarberId = other.id;
+      expect(otherBarberId).not.toBe(barberId);
+      await app.prisma.presence.upsert({
+        where: { barberId: otherBarberId },
+        update: { status: PresenceStatus.GREEN, waitingCount: 0 },
+        create: { barberId: otherBarberId, status: PresenceStatus.GREEN, waitingCount: 0 },
+      });
+    });
+
+    it('should return 401 without a token', async () => {
+      const res = await app.inject({
+        method: 'PUT',
+        url: `/presence/${barberId}`,
+        payload: { status: 'GRAY' },
+      });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('should allow a barber to update their own presence (200)', async () => {
+      const res = await app.inject({
+        method: 'PUT',
+        url: `/presence/${barberId}`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { status: 'GRAY' },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.body).status).toBe('GRAY');
+
+      const restore = await app.inject({
+        method: 'PUT',
+        url: `/presence/${barberId}`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { status: 'GREEN' },
+      });
+      expect(restore.statusCode).toBe(200);
+    });
+
+    it('should return 403 and leave the other barber presence untouched', async () => {
+      const before = await app.prisma.presence.findUniqueOrThrow({ where: { barberId: otherBarberId } });
+
+      const res = await app.inject({
+        method: 'PUT',
+        url: `/presence/${otherBarberId}`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { status: 'GRAY', waitingCount: 2 },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(JSON.parse(res.body).error).toBe('FORBIDDEN');
+
+      const after = await app.prisma.presence.findUniqueOrThrow({ where: { barberId: otherBarberId } });
+      expect(after.status).toBe(before.status);
+      expect(after.waitingCount).toBe(before.waitingCount);
+      expect(after.updatedAt.getTime()).toBe(before.updatedAt.getTime());
+    });
+  });
 });

@@ -558,6 +558,15 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
     { preHandler: [fastify.authenticateBarber] },
     async (request, reply) => {
       const { barberId } = request.params as { barberId: string };
+
+      // A barber may only mutate their own presence (prevents cross-barber sabotage)
+      if (barberId !== request.barber.id) {
+        return reply.status(403).send({
+          error: 'FORBIDDEN',
+          message: 'You can only update your own presence',
+        });
+      }
+
       const body = (request.body as Record<string, unknown>) || {};
 
       if (body.waitingCount !== undefined) {
