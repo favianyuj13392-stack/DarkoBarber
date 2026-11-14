@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { SplashScreen } from './components/presentation/SplashScreen';
 import { OnboardingCarousel } from './components/presentation/OnboardingCarousel';
 import { LoginView } from './components/auth/LoginView';
+import { VerifyEmailView } from './components/auth/VerifyEmailView';
 import { ClientRegisterWizard } from './components/register/ClientRegisterWizard';
 import { BarberRegisterWizard } from './components/register/BarberRegisterWizard';
 import { BarberHubCoordinator } from './components/barber/BarberHubCoordinator';
@@ -28,13 +29,33 @@ type AppScreen =
   | 'historial'
   | 'barber-chair'
   | 'explore'
-  | 'authenticated';
+  | 'authenticated'
+  | 'verify-email';
 
 const HAS_SEEN_ONBOARDING_KEY = 'fade_has_seen_onboarding';
+const VERIFY_EMAIL_PATH = '/verify-email';
+
+/**
+ * Reads the email verification token once at module load and removes it from
+ * the address bar so it is not kept in history or shared by accident.
+ */
+const IS_VERIFY_EMAIL_ROUTE =
+  typeof window !== 'undefined' && window.location.pathname.replace(/\/+$/, '') === VERIFY_EMAIL_PATH;
+const VERIFY_EMAIL_TOKEN: string | null = (() => {
+  if (!IS_VERIFY_EMAIL_ROUTE) return null;
+  const token = new URLSearchParams(window.location.search).get('token');
+  try {
+    window.history.replaceState(null, '', VERIFY_EMAIL_PATH);
+  } catch {
+    // history API unavailable: the token stays in the URL
+  }
+  return token;
+})();
 
 export function App() {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>(() => {
     if (typeof window === 'undefined') return 'splash';
+    if (IS_VERIFY_EMAIL_ROUTE) return 'verify-email';
     const params = new URLSearchParams(window.location.search);
     const token = getStoredToken();
     const user = getStoredUser();
@@ -55,6 +76,9 @@ export function App() {
   const [resetToken, setResetToken] = useState<string | undefined>(undefined);
 
   useEffect(() => {
+    // The email verification link is handled by its own screen (its ?token is not a reset token)
+    if (IS_VERIFY_EMAIL_ROUTE) return;
+
     // Si la URL contiene ?reset_token=, abre directamente el flujo de recuperación
     const params = new URLSearchParams(window.location.search);
     const tokenFromUrl = params.get('reset_token') || params.get('token');
@@ -304,6 +328,31 @@ export function App() {
 
       {/* Transiciones Suaves entre Pantallas */}
       <AnimatePresence mode="wait">
+        {currentScreen === 'verify-email' && (
+          <motion.div
+            key="verify-email"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="w-full min-h-screen"
+          >
+            <VerifyEmailView
+              token={VERIFY_EMAIL_TOKEN}
+              onContinue={() => {
+                const token = getStoredToken();
+                const user = getStoredUser();
+                if (token && user) {
+                  setAuthData({ token, user });
+                  setCurrentScreen(user.role === 'cliente' ? 'historial' : 'barber-chair');
+                } else {
+                  setCurrentScreen('login');
+                }
+              }}
+            />
+          </motion.div>
+        )}
+
         {currentScreen === 'splash' && (
           <motion.div
             key="splash"

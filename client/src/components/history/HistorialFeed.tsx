@@ -39,6 +39,7 @@ import { SPRING_TOUCH } from '../../constants/springs';
 import { getStoredUser, type UserProfile } from '../../services/auth.service';
 import { ExploreCoordinator } from '../explore/ExploreCoordinator';
 import { ClientProfileView } from '../profile/ClientProfileView';
+import { EmailVerificationCard } from '../profile/EmailVerificationCard';
 
 interface HistorialFeedProps {
   onNavigateTab?: (tab: ClientNavTab) => void;
@@ -312,6 +313,7 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
         {/* =========================================================================
             HEADER: Título, Subtítulo y Acciones de Control
             ========================================================================= */}
+        <EmailVerificationCard compact />
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2 border-b border-white/5">
           <div className="space-y-1 text-left">
             <div className="flex items-center gap-3">
