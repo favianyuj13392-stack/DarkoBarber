@@ -39,6 +39,40 @@ interface GoogleSignInButtonProps {
   disabled?: boolean;
 }
 
+const GSI_SRC = 'https://accounts.google.com/gsi/client';
+let gsiScriptPromise: Promise<void> | null = null;
+
+// Loads the GSI script once per page; concurrent buttons share the same promise.
+const loadGoogleScript = (): Promise<void> => {
+  if (window.google?.accounts?.id) return Promise.resolve();
+  if (gsiScriptPromise) return gsiScriptPromise;
+
+  gsiScriptPromise = new Promise<void>((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = GSI_SRC;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      if (window.google?.accounts?.id) {
+        resolve();
+      } else {
+        script.remove();
+        gsiScriptPromise = null;
+        reject(new Error('GSI script loaded but window.google is unavailable'));
+      }
+    };
+    script.onerror = () => {
+      // Allow a later mount to retry (e.g. after going back online).
+      script.remove();
+      gsiScriptPromise = null;
+      reject(new Error('GSI script failed to load (offline, blocked or CSP)'));
+    };
+    document.head.appendChild(script);
+  });
+
+  return gsiScriptPromise;
+};
+
 const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined)?.trim();
 
 export const GoogleSignInButton: FC<GoogleSignInButtonProps> = ({
@@ -50,6 +84,7 @@ export const GoogleSignInButton: FC<GoogleSignInButtonProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isRendered, setIsRendered] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   // Keep the latest callbacks in refs so inline functions from parents
   // do not retrigger the effect (and the Google button re-render).
@@ -106,22 +141,16 @@ export const GoogleSignInButton: FC<GoogleSignInButtonProps> = ({
       }
     };
 
-    if (window.google?.accounts?.id) {
-      renderGoogleBtn();
-    } else {
-      // Check if script tag is already in DOM
-      let script = document.querySelector<HTMLScriptElement>(
-        'script[src="https://accounts.google.com/gsi/client"]'
-      );
-      if (!script) {
-        script = document.createElement('script');
-        script.src = 'https://accounts.google.com/gsi/client';
-        script.async = true;
-        script.defer = true;
-        document.head.appendChild(script);
-      }
-      script.addEventListener('load', renderGoogleBtn);
-    }
+    loadGoogleScript()
+      .then(renderGoogleBtn)
+      .catch((err: unknown) => {
+        if (!isMounted) return;
+        console.error('Google Identity Services failed to load:', err);
+        setLoadFailed(true);
+        onErrorRef.current?.(
+          'No se pudo cargar Google. Revisá tu conexión o desactivá el bloqueador de anuncios.'
+        );
+      });
 
     return () => {
       isMounted = false;
@@ -146,7 +175,15 @@ export const GoogleSignInButton: FC<GoogleSignInButtonProps> = ({
         className="w-full flex justify-center [&>div]:!w-full [&>iframe]:!w-full [&>iframe]:!rounded-xl shadow-lg"
         style={{ display: isRendered ? 'flex' : 'none' }}
       />
-      {!isRendered && (
+      {!isRendered && loadFailed && (
+        <div
+          role="alert"
+          className="w-full py-3 px-4 rounded-xl text-center text-xs font-semibold tracking-wide text-white/60 bg-white/5 border border-white/10"
+        >
+          No se pudo cargar Google Sign-In
+        </div>
+      )}
+      {!isRendered && !loadFailed && (
         <div className="fade-btn-secondary w-full py-3 px-4 rounded-xl flex items-center justify-center gap-2.5 text-xs font-semibold tracking-wide text-white/60 bg-white/5 border border-white/10">
           <svg className="w-4 h-4 animate-spin text-[#B68F4E]" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
