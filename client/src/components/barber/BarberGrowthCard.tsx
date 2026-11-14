@@ -32,8 +32,20 @@ export const BarberGrowthCard: FC<BarberGrowthCardProps> = ({
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+    fetchBarberAcquisitions()
+      .then((res) => {
+        if (!cancelled) setData(res);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : 'No pudimos cargar tu progreso.');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleClaim = async () => {
     setClaiming(true);
