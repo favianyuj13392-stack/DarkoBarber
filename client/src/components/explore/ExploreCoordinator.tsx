@@ -8,7 +8,6 @@ import { BarberDetailView } from './BarberDetailView';
 import { FilterDrawerModal } from './FilterDrawerModal';
 import { BookingFlowModal, type BookingConfirmData } from './BookingFlowModal';
 import { fetchExploreData } from '../../services/explore.service';
-import { createClientBooking } from '../../services/booking.service';
 import type {
   ExploreBarber,
   ShopItem,
@@ -105,10 +104,10 @@ export const ExploreCoordinator: FC<ExploreCoordinatorProps> = ({
     }
   };
 
-  const handleConfirmBooking = async (bookingData: BookingConfirmData) => {
+  // Called by BookingFlowModal only after the API accepted the booking (status PENDING).
+  const handleConfirmBooking = (bookingData: BookingConfirmData) => {
     const bookedBarber = barbers.find((b) => b.id === bookingData.barberId) || bookingBarber;
     if (bookedBarber) {
-      // 1. Mostrar de inmediato la tarjeta activa en el portal del cliente
       setActiveBooking({
         id: `booking-${Date.now()}`,
         dateBadge: bookingData.dateBadge,
@@ -117,24 +116,8 @@ export const ExploreCoordinator: FC<ExploreCoordinatorProps> = ({
         barberName: bookedBarber.name,
         barberAvatar: bookedBarber.avatar,
         serviceName: bookingData.serviceNames.join(', '),
-        status: 'confirmada',
+        status: 'pendiente',
       });
-
-      // 2. Persistir en la base de datos real (PostgreSQL / Supabase)
-      try {
-        await createClientBooking({
-          barberId: bookingData.barberId,
-          clientName: bookingData.clientName,
-          clientPhone: bookingData.clientPhone,
-          serviceName: bookingData.serviceNames.join(', '),
-          servicePriceBs: bookingData.totalBs,
-          durationMin: bookingData.durationMin,
-          date: bookingData.date,
-          time: bookingData.time,
-        });
-      } catch (err) {
-        console.warn('Could not persist booking to API:', err);
-      }
     }
   };
 

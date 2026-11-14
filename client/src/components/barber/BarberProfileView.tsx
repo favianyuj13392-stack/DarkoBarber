@@ -36,7 +36,11 @@ import {
   fetchBarberFollowStatus,
   toggleFollowBarber,
 } from '../../services/auth.service';
-import { createClientBooking } from '../../services/booking.service';
+import {
+  createClientBooking,
+  fetchBarberAvailability,
+  bookingErrorMessage,
+} from '../../services/booking.service';
 import { FadeConfirmModal } from '../common/FadeConfirmModal';
 
 interface BarberProfileViewProps {
@@ -133,15 +137,53 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
 
   // Client Booking Flow State
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
-  const [bookingDate, setBookingDate] = useState('Hoy');
-  const [bookingTime, setBookingTime] = useState('16:00');
-  const [bookingService, setBookingService] = useState('Mid / Low Fade');
-  const [bookingPrice, setBookingPrice] = useState(55);
-  const [bookingDuration, setBookingDuration] = useState(35);
-  const [bookingClientName, setBookingClientName] = useState('Ernesto Salinas');
-  const [bookingClientPhone, setBookingClientPhone] = useState('+591 77212345');
+  // Date is a real 'YYYY-MM-DD'; the server decides price and duration from the service id.
+  const [bookingDays] = useState(() => {
+    const labels = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    const now = new Date();
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(now);
+      d.setDate(now.getDate() + i);
+      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+        d.getDate()
+      ).padStart(2, '0')}`;
+      const prefix = i === 0 ? 'Hoy' : i === 1 ? 'Mañana' : labels[d.getDay()];
+      return { value, label: `${prefix} ${d.getDate()}` };
+    });
+  });
+  const [bookingDate, setBookingDate] = useState(() => bookingDays[0].value);
+  const [bookingTime, setBookingTime] = useState('');
+  const [bookingSlots, setBookingSlots] = useState<string[]>([]);
+  const [chosenServiceId, setBookingServiceId] = useState('');
+  const [bookingClientName, setBookingClientName] = useState('');
+  const [bookingClientPhone, setBookingClientPhone] = useState('');
   const [bookingNotes, setBookingNotes] = useState('');
+  const [bookingError, setBookingError] = useState<string | null>(null);
   const [submittingBooking, setSubmittingBooking] = useState(false);
+  // Defaults to the first service until the user picks another one.
+  const bookingServiceId = chosenServiceId || services[0]?.id || '';
+  const bookingPrice = services.find((s) => s.id === bookingServiceId)?.priceBs ?? 0;
+
+  // Load real availability for the chosen day/service while the booking modal is open.
+  useEffect(() => {
+    if (!isBookingModalOpen || !barber?.id || !bookingServiceId) return;
+    let active = true;
+    fetchBarberAvailability(barber.id, bookingDate, bookingServiceId)
+      .then((res) => {
+        if (!active) return;
+        setBookingSlots(res.availableSlots);
+        setBookingTime((prev) => (res.availableSlots.includes(prev) ? prev : res.availableSlots[0] ?? ''));
+      })
+      .catch((err) => {
+        if (!active) return;
+        setBookingSlots([]);
+        setBookingTime('');
+        setBookingError(bookingErrorMessage(err));
+      });
+    return () => {
+      active = false;
+    };
+  }, [isBookingModalOpen, barber?.id, bookingDate, bookingServiceId]);
 
   useEffect(() => {
     if (barber?.id) {
@@ -365,28 +407,37 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
   };
 
   const handleConfirmBooking = async () => {
-    if (!barber?.id) return;
+    if (!barber?.id || !bookingServiceId || !bookingTime) return;
+    if (!bookingClientName.trim() || !bookingClientPhone.trim()) {
+      setBookingError('Ingresa nombre y celular para la reserva.');
+      return;
+    }
     setSubmittingBooking(true);
+    setBookingError(null);
     try {
       await createClientBooking({
         barberId: barber.id,
-        clientName: bookingClientName,
-        clientPhone: bookingClientPhone,
-        serviceName: bookingService,
-        servicePriceBs: bookingPrice,
-        durationMin: bookingDuration,
+        serviceId: bookingServiceId,
         date: bookingDate,
         time: bookingTime,
-        notes: bookingNotes,
+        clientName: bookingClientName.trim(),
+        clientPhone: bookingClientPhone.trim(),
+        notes: bookingNotes.trim() || undefined,
       });
       setIsBookingModalOpen(false);
       setToastMsg('¡Solicitud de reserva enviada! El barbero la revisará en su agenda.');
-    } catch {
-      setIsBookingModalOpen(false);
-      setToastMsg('Reserva registrada.');
+      setTimeout(() => setToastMsg(null), 3500);
+    } catch (err) {
+      setBookingError(bookingErrorMessage(err));
+      // The slot may be gone (e.g. SLOT_TAKEN): reload the grid for the same day.
+      fetchBarberAvailability(barber.id, bookingDate, bookingServiceId)
+        .then((res) => {
+          setBookingSlots(res.availableSlots);
+          setBookingTime(res.availableSlots[0] ?? '');
+        })
+        .catch(() => {});
     } finally {
       setSubmittingBooking(false);
-      setTimeout(() => setToastMsg(null), 3500);
     }
   };
 
@@ -1163,19 +1214,15 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-semibold text-white/80">Servicio Deseado</label>
                   <select
-                    value={bookingService}
+                    value={bookingServiceId}
                     onChange={(e) => {
-                      const selected = services.find((s) => s.name === e.target.value);
-                      setBookingService(e.target.value);
-                      if (selected) {
-                        setBookingPrice(selected.priceBs);
-                        setBookingDuration(selected.durationMin);
-                      }
+                      setBookingServiceId(e.target.value);
+                      setBookingError(null);
                     }}
                     className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-[#B68F4E]"
                   >
                     {services.map((s) => (
-                      <option key={s.id} value={s.name} className="bg-black text-white">
+                      <option key={s.id} value={s.id} className="bg-black text-white">
                         {s.name} — Bs {s.priceBs} ({s.durationMin} min)
                       </option>
                     ))}
@@ -1188,12 +1235,17 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
                     <label className="text-[11px] font-semibold text-white/80">Día</label>
                     <select
                       value={bookingDate}
-                      onChange={(e) => setBookingDate(e.target.value)}
+                      onChange={(e) => {
+                        setBookingDate(e.target.value);
+                        setBookingError(null);
+                      }}
                       className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-[#B68F4E]"
                     >
-                      <option value="Hoy" className="bg-black text-white">Hoy</option>
-                      <option value="Mañana" className="bg-black text-white">Mañana</option>
-                      <option value="Pasado mañana" className="bg-black text-white">Pasado mañana</option>
+                      {bookingDays.map((d) => (
+                        <option key={d.value} value={d.value} className="bg-black text-white">
+                          {d.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
 
@@ -1204,7 +1256,12 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
                       onChange={(e) => setBookingTime(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-[#B68F4E]"
                     >
-                      {['11:00', '14:30', '16:00', '17:30', '19:00'].map((t) => (
+                      {bookingSlots.length === 0 && (
+                        <option value="" className="bg-black text-white">
+                          Sin turnos
+                        </option>
+                      )}
+                      {bookingSlots.map((t) => (
                         <option key={t} value={t} className="bg-black text-white">
                           {t}
                         </option>
@@ -1248,6 +1305,15 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
                 </div>
               </div>
 
+              {bookingError && (
+                <div
+                  role="alert"
+                  className="p-3 rounded-xl bg-red-950/40 border border-red-500/30 text-[11px] text-red-200"
+                >
+                  {bookingError}
+                </div>
+              )}
+
               <div className="flex items-center justify-between pt-2 border-t border-white/10">
                 <span className="text-xs text-white/60">
                   Total estimado: <strong className="text-[#B68F4E] font-mono text-sm">Bs {bookingPrice}</strong>
@@ -1255,7 +1321,7 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
 
                 <button
                   type="button"
-                  disabled={submittingBooking}
+                  disabled={submittingBooking || !bookingTime}
                   onClick={handleConfirmBooking}
                   className="px-5 py-2.5 rounded-xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-bold text-xs shadow-lg hover:brightness-105 transition-all cursor-pointer disabled:opacity-50"
                 >

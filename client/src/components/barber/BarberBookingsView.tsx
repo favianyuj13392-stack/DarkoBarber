@@ -20,8 +20,34 @@ import {
   updateBookingStatus,
   fetchBookingSettings,
   updateBookingSettings,
+  bookingErrorMessage,
 } from '../../services/booking.service';
 import { BarberScheduleEditor } from './BarberScheduleEditor';
+
+const STATUS_TOASTS: Record<BookingStatus, string> = {
+  PENDING: 'Cita pendiente.',
+  CONFIRMED: '¡Cita confirmada! El cliente ha sido notificado.',
+  COMPLETED: 'Cita marcada como completada con éxito.',
+  CANCELLED: 'Cita cancelada.',
+  REJECTED: 'Cita rechazada.',
+  NO_SHOW: 'Cita marcada como "no se presentó".',
+};
+
+/** True once the appointment start (La Paz wall clock, 'YYYY-MM-DD' + 'HH:mm') has passed. */
+function hasStarted(date: string, time: string): boolean {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/La_Paz',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00';
+  const nowKey = `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`;
+  return `${date} ${time}` <= nowKey;
+}
 
 export const BarberBookingsView: FC = () => {
   const [bookings, setBookings] = useState<BarberBooking[]>([]);
@@ -73,15 +99,9 @@ export const BarberBookingsView: FC = () => {
     try {
       const updated = await updateBookingStatus(bookingId, newStatus, reason);
       setBookings((prev) => prev.map((b) => (b.id === bookingId ? updated : b)));
-      setToastMsg(
-        newStatus === 'CONFIRMED'
-          ? '¡Cita confirmada! El cliente ha sido notificado.'
-          : newStatus === 'COMPLETED'
-          ? 'Cita marcada como completada con éxito.'
-          : 'Cita cancelada.'
-      );
-    } catch {
-      setToastMsg('Estado actualizado.');
+      setToastMsg(STATUS_TOASTS[newStatus]);
+    } catch (err) {
+      setToastMsg(bookingErrorMessage(err));
     }
     setTimeout(() => setToastMsg(null), 3000);
   };
@@ -173,6 +193,9 @@ export const BarberBookingsView: FC = () => {
             { id: 'PENDING', label: `Pendientes (${pendingCount})` },
             { id: 'CONFIRMED', label: `Confirmadas (${confirmedCount})` },
             { id: 'COMPLETED', label: 'Completadas' },
+            { id: 'NO_SHOW', label: 'No se presentó' },
+            { id: 'CANCELLED', label: 'Canceladas' },
+            { id: 'REJECTED', label: 'Rechazadas' },
           ].map((f) => (
             <button
               key={f.id}
@@ -291,6 +314,18 @@ export const BarberBookingsView: FC = () => {
                         <span>Cancelada</span>
                       </span>
                     )}
+                    {b.status === 'REJECTED' && (
+                      <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-500/15 text-red-300 border border-red-500/30 flex items-center gap-1.5">
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>Rechazada</span>
+                      </span>
+                    )}
+                    {b.status === 'NO_SHOW' && (
+                      <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-zinc-500/15 text-zinc-300 border border-zinc-500/30 flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        <span>No se presentó</span>
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -332,7 +367,7 @@ export const BarberBookingsView: FC = () => {
                     <>
                       <button
                         type="button"
-                        onClick={() => handleStatusChange(b.id, 'CANCELLED', 'Rechazada por disponibilidad')}
+                        onClick={() => handleStatusChange(b.id, 'REJECTED', 'Rechazada por disponibilidad')}
                         className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-red-500/15 border border-white/10 text-white/60 hover:text-red-300 text-xs font-semibold transition-all cursor-pointer"
                       >
                         Rechazar
@@ -361,8 +396,28 @@ export const BarberBookingsView: FC = () => {
 
                       <button
                         type="button"
+                        disabled={!hasStarted(b.date, b.time)}
+                        title={
+                          hasStarted(b.date, b.time)
+                            ? undefined
+                            : 'Disponible después de la hora de la cita'
+                        }
+                        onClick={() => handleStatusChange(b.id, 'NO_SHOW')}
+                        className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/50 hover:text-white text-xs font-medium transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        No se presentó
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={!hasStarted(b.date, b.time)}
+                        title={
+                          hasStarted(b.date, b.time)
+                            ? undefined
+                            : 'Disponible después de la hora de la cita'
+                        }
                         onClick={() => handleStatusChange(b.id, 'COMPLETED')}
-                        className="px-4 py-1.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold shadow-md hover:bg-emerald-500/30 transition-all cursor-pointer flex items-center gap-1.5"
+                        className="px-4 py-1.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold shadow-md hover:bg-emerald-500/30 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>Marcar como Atendido</span>

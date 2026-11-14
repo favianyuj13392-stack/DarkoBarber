@@ -13,14 +13,16 @@ import {
 import type { ExploreBarber, BookingDay, BookingSlot } from '../../types/explore';
 import {
   fetchBarberAvailability,
+  createClientBooking,
+  bookingErrorMessage,
+  BookingApiError,
   type BarberAvailabilityResponse,
 } from '../../services/booking.service';
 import { getStoredUser } from '../../services/auth.service';
 
+/** Data of a booking that the server already accepted (it is PENDING until the barber confirms). */
 export interface BookingConfirmData {
   barberId: string;
-  clientName: string;
-  clientPhone: string;
   date: string;
   dateBadge: string;
   time: string;
@@ -43,13 +45,18 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
   onConfirmBooking,
 }) => {
   const currentUser = getStoredUser();
-  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+  const [selectedServiceId, setSelectedServiceId] = useState<string>('');
   const [selectedDay, setSelectedDay] = useState<BookingDay | null>(null);
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [onlyAvailableSlots, setOnlyAvailableSlots] = useState(false);
   const [isConfirmed, setIsConfirmed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Bumped to force a fresh availability fetch (e.g. after a 409 SLOT_TAKEN).
+  const [availabilityRefresh, setAvailabilityRefresh] = useState(0);
 
-  // Client info state
+  // Client info state (only asked for when not signed in as a client)
+  const isClientSession = currentUser?.role === 'cliente';
   const [clientName, setClientName] = useState(currentUser?.displayName || '');
   const [clientPhone, setClientPhone] = useState(currentUser?.phone || '');
 
@@ -99,8 +106,9 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
   useEffect(() => {
     if (barber && isOpen) {
       if (barber.services && barber.services.length > 0) {
-        setSelectedServiceIds([barber.services[0].id]);
+        setSelectedServiceId(barber.services[0].id);
       }
+      setErrorMsg(null);
       const initialDay = realDays[0];
       setSelectedDay(initialDay);
     }
@@ -113,7 +121,7 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
     let isMounted = true;
     setLoadingSlots(true);
 
-    fetchBarberAvailability(barber.id, selectedDay.fullDate)
+    fetchBarberAvailability(barber.id, selectedDay.fullDate, selectedServiceId || undefined)
       .then((res) => {
         if (!isMounted) return;
         setAvailability(res);
@@ -126,6 +134,12 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
           setSelectedTime('');
         }
       })
+      .catch((err) => {
+        if (!isMounted) return;
+        setAvailability(null);
+        setSelectedTime('');
+        setErrorMsg(bookingErrorMessage(err));
+      })
       .finally(() => {
         if (isMounted) setLoadingSlots(false);
       });
@@ -133,7 +147,9 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [barber, selectedDay, isOpen]);
+    // selectedTime is intentionally not a dependency: it only validates the current choice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [barber, selectedDay, isOpen, selectedServiceId, availabilityRefresh]);
 
   const displayedSlots: BookingSlot[] = useMemo(() => {
     if (!availability || !availability.allSlots) return [];
@@ -147,42 +163,69 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
 
   if (!isOpen || !barber || !selectedDay) return null;
 
-  const toggleService = (id: string) => {
-    if (selectedServiceIds.includes(id)) {
-      if (selectedServiceIds.length > 1) {
-        setSelectedServiceIds(selectedServiceIds.filter((s) => s !== id));
-      }
-    } else {
-      setSelectedServiceIds([...selectedServiceIds, id]);
-    }
+  const selectService = (id: string) => {
+    setSelectedServiceId(id);
+    setErrorMsg(null);
   };
 
-  const selectedServices = barber.services.filter((s) =>
-    selectedServiceIds.includes(s.id)
-  );
-  const totalBs = selectedServices.reduce((acc, curr) => acc + curr.priceBs, 0);
-  const totalDurationMin = selectedServices.reduce(
-    (acc, curr) => acc + curr.durationMin,
-    0
-  );
+  // Price and duration shown here are informative: the server recomputes both from serviceId.
+  const selectedService = barber.services.find((s) => s.id === selectedServiceId);
+  const totalBs = selectedService?.priceBs ?? 0;
+  const totalDurationMin = selectedService?.durationMin ?? 0;
 
   const morningSlots = displayedSlots.filter((s) => s.period === 'manana');
   const afternoonSlots = displayedSlots.filter((s) => s.period === 'tarde');
   const eveningSlots = displayedSlots.filter((s) => s.period === 'noche');
 
-  const handleConfirm = () => {
-    if (!selectedTime) return;
+  // Server error codes that mean "the chosen slot is no longer valid": refresh the grid.
+  const STALE_SLOT_CODES = [
+    'SLOT_TAKEN',
+    'INVALID_SLOT',
+    'OUTSIDE_WORKING_HOURS',
+    'BOOKING_IN_PAST',
+    'BOOKING_TOO_SOON',
+    'BARBER_NOT_WORKING',
+  ];
+
+  const handleConfirm = async () => {
+    if (!selectedTime || !selectedService || submitting) return;
+    if (!isClientSession && (!clientName.trim() || !clientPhone.trim())) {
+      setErrorMsg('Ingresa tu nombre y teléfono para reservar.');
+      return;
+    }
+
+    setSubmitting(true);
+    setErrorMsg(null);
+    try {
+      await createClientBooking({
+        barberId: barber.id,
+        serviceId: selectedService.id,
+        date: selectedDay.fullDate,
+        time: selectedTime,
+        ...(isClientSession
+          ? {}
+          : { clientName: clientName.trim(), clientPhone: clientPhone.trim() }),
+      });
+    } catch (err) {
+      setErrorMsg(bookingErrorMessage(err));
+      if (err instanceof BookingApiError && STALE_SLOT_CODES.includes(err.code)) {
+        setSelectedTime('');
+        setAvailabilityRefresh((n) => n + 1);
+      }
+      setSubmitting(false);
+      return;
+    }
+
+    setSubmitting(false);
     setIsConfirmed(true);
     setTimeout(() => {
       onConfirmBooking({
         barberId: barber.id,
-        clientName: clientName.trim() || currentUser?.displayName || 'Cliente FADE',
-        clientPhone: clientPhone.trim() || currentUser?.phone || '+591 70000000',
         date: selectedDay.fullDate,
         dateBadge: `${selectedDay.dayName} ${selectedDay.dayNumber} ${selectedDay.monthName}`,
         time: selectedTime,
         totalBs,
-        serviceNames: selectedServices.map((s) => s.name),
+        serviceNames: [selectedService.name],
         durationMin: totalDurationMin,
       });
       setIsConfirmed(false);
@@ -248,7 +291,7 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
               <h3 className="text-lg font-bold text-white">¡Reserva solicitada con éxito!</h3>
               <p className="text-xs text-white/60 max-w-xs mx-auto">
                 {selectedDay.dayName} {selectedDay.dayNumber} {selectedDay.monthName} a las{' '}
-                {selectedTime} con {barber.name}.
+                {selectedTime} con {barber.name}. Queda pendiente hasta que el barbero la confirme.
               </p>
             </motion.div>
           ) : (
@@ -258,15 +301,15 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                 {/* 1. Selección de Servicios */}
                 <div className="space-y-2.5">
                   <span className="text-xs font-mono uppercase tracking-wider text-[#B68F4E] font-semibold">
-                    1. Selecciona tus servicios
+                    1. Selecciona tu servicio
                   </span>
                   <div className="space-y-2">
                     {barber.services.map((srv) => {
-                      const isSelected = selectedServiceIds.includes(srv.id);
+                      const isSelected = selectedServiceId === srv.id;
                       return (
                         <div
                           key={srv.id}
-                          onClick={() => toggleService(srv.id)}
+                          onClick={() => selectService(srv.id)}
                           className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
                             isSelected
                               ? 'bg-[#B68F4E]/15 border-[#B68F4E] shadow-[0_0_12px_rgba(182,143,78,0.2)]'
@@ -475,7 +518,8 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                   )}
                 </div>
 
-                {/* 4. Datos del Cliente (Pre-cargados o editables) */}
+                {/* 4. Datos del Cliente (solo si no inició sesión como cliente) */}
+                {!isClientSession && (
                 <div className="space-y-2.5 pt-2 border-t border-white/10">
                   <span className="text-xs font-mono uppercase tracking-wider text-[#B68F4E] font-semibold">
                     4. Tus datos para la cita
@@ -503,6 +547,7 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                     </div>
                   </div>
                 </div>
+                )}
 
                 {/* Resumen */}
                 <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between text-xs">
@@ -521,10 +566,20 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
               </div>
 
               {/* Sticky Submit Button */}
-              <div className="p-4 bg-black/80 border-t border-white/10 backdrop-blur-xl">
+              <div className="p-4 bg-black/80 border-t border-white/10 backdrop-blur-xl space-y-2">
+                {errorMsg && (
+                  <div
+                    role="alert"
+                    className="p-3 rounded-xl bg-red-950/40 border border-red-500/30 flex items-start gap-2 text-[11px] text-red-200"
+                  >
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-px" />
+                    <span>{errorMsg}</span>
+                  </div>
+                )}
                 <button
                   type="button"
                   disabled={
+                    submitting ||
                     !selectedTime ||
                     Boolean(availability && (!availability.acceptsBookings || !availability.isWorkingDay))
                   }
@@ -533,7 +588,9 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                 >
                   <Sparkles className="w-4 h-4" />
                   <span>
-                    {!selectedTime
+                    {submitting
+                      ? 'Enviando...'
+                      : !selectedTime
                       ? 'Elige un horario'
                       : `Confirmar reserva (${totalBs} Bs)`}
                   </span>

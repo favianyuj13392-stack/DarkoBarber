@@ -88,5 +88,5 @@ export interface ActiveBooking {
   barberName: string; // "Brian López"
   barberAvatar: string;
   serviceName: string; // "Corte Degradado + Perfilado"
-  status: 'confirmada' | 'en_camino' | 'completada';
+  status: 'pendiente' | 'confirmada' | 'en_camino' | 'completada';
 }
