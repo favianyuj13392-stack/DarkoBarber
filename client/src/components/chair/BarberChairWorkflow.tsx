@@ -206,8 +206,8 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
 
           {/* Ficha e Historial del Cliente Conectado */}
           <BarberClientHistoryView
-            clientPhone={activeClient?.phone || activeClientPhone || '+591 712 34567'}
-            clientName={activeClient?.displayName || 'Ernesto Salinas'}
+            clientPhone={activeClient?.phone || activeClientPhone || ''}
+            clientName={activeClient?.displayName || 'New client'}
             clientAvatar={activeClient?.avatarUrl || '/assets/images/1.png'}
             onClose={handleDisconnectClient}
             onRepeatCut={handleRepeatCut}

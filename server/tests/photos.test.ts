@@ -144,4 +144,88 @@ describe('Photos Module Integration Tests', () => {
     expect(body.photo).toBeDefined();
     expect(body.photo.isPublic).toBe(false);
   });
+
+  describe('PATCH /photos/:photoId/consent', () => {
+    let photoId: string;
+    let ownerToken: string;
+    let otherClientToken: string;
+
+    beforeAll(async () => {
+      const owner = await app.prisma.client.findUnique({ where: { phone: '76112233' } });
+      ownerToken = app.jwt.sign({ userId: owner!.id, role: 'cliente' });
+      const other = await app.prisma.client.create({
+        data: { phone: '76445566', displayName: 'Other Client' },
+      });
+      otherClientToken = app.jwt.sign({ userId: other.id, role: 'cliente' });
+
+      const photo = await app.prisma.cutPhoto.create({
+        data: { cutId: cutAId, r2Key: `cuts/${barberAId}/${cutAId}/consent-target.webp`, isPublic: false },
+      });
+      photoId = photo.id;
+    });
+
+    it('returns 401 when unauthenticated', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/photos/${photoId}/consent`,
+        payload: { isPublic: true },
+      });
+      expect(res.statusCode).toBe(401);
+      const photo = await app.prisma.cutPhoto.findUnique({ where: { id: photoId } });
+      expect(photo?.isPublic).toBe(false);
+    });
+
+    it('returns 403 for a client who does not own the photo', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/photos/${photoId}/consent`,
+        headers: { authorization: `Bearer ${otherClientToken}` },
+        payload: { isPublic: true },
+      });
+      expect(res.statusCode).toBe(403);
+      const photo = await app.prisma.cutPhoto.findUnique({ where: { id: photoId } });
+      expect(photo?.isPublic).toBe(false);
+    });
+
+    it('returns 403 for a barber token', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/photos/${photoId}/consent`,
+        headers: { authorization: `Bearer ${tokenBarberA}` },
+        payload: { isPublic: true },
+      });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('returns 404 when the photo does not exist', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/photos/00000000-0000-0000-0000-000000000000/consent`,
+        headers: { authorization: `Bearer ${ownerToken}` },
+        payload: { isPublic: true },
+      });
+      expect(res.statusCode).toBe(404);
+    });
+
+    it('returns 400 for an invalid body', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/photos/${photoId}/consent`,
+        headers: { authorization: `Bearer ${ownerToken}` },
+        payload: { isPublic: 'yes' },
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('returns 200 and updates consent for the owner', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/photos/${photoId}/consent`,
+        headers: { authorization: `Bearer ${ownerToken}` },
+        payload: { isPublic: true },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.body).isPublic).toBe(true);
+    });
+  });
 });

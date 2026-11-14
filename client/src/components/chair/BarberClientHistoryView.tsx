@@ -28,8 +28,8 @@ interface BarberClientHistoryViewProps {
 type TabType = 'cortes' | 'notas' | 'preferencias';
 
 export const BarberClientHistoryView: FC<BarberClientHistoryViewProps> = ({
-  clientPhone = '+591 712 34567',
-  clientName = 'Ernesto Salinas',
+  clientPhone = '',
+  clientName = 'New client',
   clientAvatar = '/assets/images/1.png',
   onClose,
   onRepeatCut,
@@ -37,15 +37,30 @@ export const BarberClientHistoryView: FC<BarberClientHistoryViewProps> = ({
   const [activeTab, setActiveTab] = useState<TabType>('cortes');
   const [historyData, setHistoryData] = useState<ClientHistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     async function loadData() {
       setLoading(true);
-      const data = await getClientHistory(clientPhone, clientName);
-      setHistoryData(data);
-      setLoading(false);
+      setLoadError(false);
+      try {
+        const data = await getClientHistory(clientPhone, clientName);
+        if (!cancelled) setHistoryData(data);
+      } catch (err) {
+        console.warn('Could not load client history:', err);
+        if (!cancelled) {
+          setHistoryData(null);
+          setLoadError(true);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
     loadData();
+    return () => {
+      cancelled = true;
+    };
   }, [clientPhone, clientName]);
 
   if (loading) {
@@ -59,7 +74,7 @@ export const BarberClientHistoryView: FC<BarberClientHistoryViewProps> = ({
   const client = historyData?.client
     ? {
         ...historyData.client,
-        displayName: clientName || historyData.client.displayName,
+        displayName: clientName || historyData.client.displayName || 'New client',
         avatarUrl: clientAvatar || historyData.client.avatarUrl || '/assets/images/1.png',
       }
     : null;
@@ -172,6 +187,16 @@ export const BarberClientHistoryView: FC<BarberClientHistoryViewProps> = ({
             ========================================================================= */}
         {activeTab === 'cortes' && (
           <div className="space-y-3 text-left">
+            {loadError && (
+              <div className="rounded-2xl p-4 border border-red-500/20 bg-red-500/10 text-xs text-red-300">
+                Could not load this client's history. Check your connection and try again.
+              </div>
+            )}
+            {!loadError && cuts.length === 0 && (
+              <div className="rounded-2xl p-4 border border-white/10 bg-white/5 text-xs text-[#D9C9B0]/80">
+                No previous cuts with you yet. This looks like a first visit.
+              </div>
+            )}
             {cuts.map((cut) => (
               <motion.div
                 key={cut.id}
@@ -251,15 +276,15 @@ export const BarberClientHistoryView: FC<BarberClientHistoryViewProps> = ({
             <div className="space-y-3 text-xs">
               <div className="flex justify-between py-1.5 border-b border-white/5">
                 <span className="text-white/60">Terminación de nuca:</span>
-                <span className="text-white font-medium">{client?.preferences?.neckline || 'Cuadrada natural'}</span>
+                <span className="text-white font-medium">{client?.preferences?.neckline || 'Not recorded'}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-white/5">
                 <span className="text-white/60">Textura superior:</span>
-                <span className="text-white font-medium">{client?.preferences?.topTexture || 'Texturizado mate'}</span>
+                <span className="text-white font-medium">{client?.preferences?.topTexture || 'Not recorded'}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-white/5">
                 <span className="text-white/60">Producto habitual:</span>
-                <span className="text-white font-medium">{client?.preferences?.product || 'Polvo de volumen'}</span>
+                <span className="text-white font-medium">{client?.preferences?.product || 'Not recorded'}</span>
               </div>
               <div className="flex justify-between py-1.5">
                 <span className="text-white/60">Afeitado a navaja:</span>

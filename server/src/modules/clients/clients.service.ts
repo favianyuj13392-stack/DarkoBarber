@@ -1,41 +1,69 @@
 import { PrismaClient } from '@prisma/client';
-import { CreateClientInput } from './clients.schemas';
+import { CreateClientInput, UpdateClientProfileInput } from './clients.schemas';
 
 export class ClientsService {
   constructor(private prisma: PrismaClient) {}
 
-  async getClientHistory(phone: string, query?: { email?: string; name?: string }) {
+  /** Last 8 digits of a phone number (local Bolivian number), or '' if too short. */
+  static normalizePhone(phone: string | null | undefined): string {
+    const digits = (phone || '').replace(/\D/g, '');
+    return digits.length >= 8 ? digits.slice(-8) : digits;
+  }
+
+  /** True when both phones are non-empty and refer to the same local number. */
+  static samePhone(a: string | null | undefined, b: string | null | undefined): boolean {
+    const na = ClientsService.normalizePhone(a);
+    const nb = ClientsService.normalizePhone(b);
+    return na.length > 0 && na === nb;
+  }
+
+  /** Resolves a client strictly by phone (exact normalized variants). No name/email matching. */
+  async findClientByPhone(phone: string) {
     const cleanPhone = (phone || '').replace(/\D/g, '');
-    const email = query?.email?.trim().toLowerCase();
-    const name = query?.name?.trim();
+    if (!cleanPhone) return null;
+    const local = cleanPhone.slice(-8);
+    const candidates = Array.from(new Set([phone, cleanPhone, local, `+591${local}`]));
+    return this.prisma.client.findFirst({ where: { phone: { in: candidates } } });
+  }
 
-    const orConditions: any[] = [];
-    if (phone) orConditions.push({ phone });
-    if (cleanPhone) {
-      orConditions.push({ phone: cleanPhone });
-      if (cleanPhone.length >= 8) {
-        orConditions.push({ phone: `+591${cleanPhone.slice(-8)}` });
-        orConditions.push({ phone: cleanPhone.slice(-8) });
-      }
-    }
-    if (email) {
-      orConditions.push({ email });
-    }
-    if (name) {
-      orConditions.push({ displayName: { contains: name, mode: 'insensitive' } });
-    }
-    // Fallback: si no vino ningún dato específico, buscar Ernesto Salinas
-    orConditions.push({ displayName: { contains: 'Ernesto Salinas', mode: 'insensitive' } });
+  async barberHasCutWithClient(barberId: string, clientId: string): Promise<boolean> {
+    const count = await this.prisma.cut.count({
+      where: { barberId, clientProfile: { clientId } },
+    });
+    return count > 0;
+  }
 
-    const matchingClients = await this.prisma.client.findMany({
-      where: {
-        OR: orConditions,
+  /**
+   * Empty history returned to barbers when the client has no cuts with them or the phone
+   * is unknown. Both cases are indistinguishable on purpose (no existence leak) and carry
+   * no private client data; only the requested phone is echoed back.
+   */
+  static emptyHistory(phone: string) {
+    return {
+      client: {
+        id: null,
+        phone,
+        displayName: null,
+        avatarUrl: '/assets/images/1.png',
+        isVerified: false,
       },
+      cuts: [],
+      profiles: [],
+    };
+  }
+
+  /**
+   * Builds the history of a single, already-authorized client.
+   * When `barberId` is given, only cuts performed by that barber (and their photos) are exposed.
+   */
+  async getClientHistory(clientId: string, barberId?: string) {
+    const matchingClients = await this.prisma.client.findMany({
+      where: { id: clientId },
       include: {
         profiles: {
           include: {
             cuts: {
-              where: { status: 'FINISHED' },
+              where: { status: 'FINISHED', ...(barberId ? { barberId } : {}) },
               orderBy: { startedAt: 'desc' },
               include: {
                 photos: true,
@@ -55,13 +83,6 @@ export class ClientsService {
 
     const client = matchingClients.find((c) => c.profiles.some((p) => p.cuts.length > 0)) || matchingClients[0];
 
-    if (!client.phone && cleanPhone.length >= 8) {
-      await this.prisma.client.update({
-        where: { id: client.id },
-        data: { phone: `+591${cleanPhone.slice(-8)}` },
-      });
-    }
-
     // Unify cuts from all matching profiles (deduplicating by cut ID)
     const rawCuts = matchingClients.flatMap((c) => c.profiles.flatMap((p) => p.cuts));
     const seenCutIds = new Set<string>();
@@ -74,8 +95,8 @@ export class ClientsService {
     return {
       client: {
         id: client.id,
-        phone: client.phone || phone,
-        displayName: client.displayName || 'Ernesto Salinas',
+        phone: client.phone,
+        displayName: client.displayName,
         avatarUrl: client.avatarUrl || '/assets/images/1.png',
         isVerified: true,
       },
@@ -132,7 +153,9 @@ export class ClientsService {
           chips: chipsObj,
         };
       }),
-      profiles: client.profiles.map((p) => ({
+      profiles: client.profiles
+        .filter((p) => !barberId || p.cuts.length > 0)
+        .map((p) => ({
         id: p.id,
         name: p.name,
       })),
@@ -169,42 +192,16 @@ export class ClientsService {
     };
   }
 
-  async updateClientProfile(data: {
-    id?: string;
-    email?: string;
-    phone?: string;
-    displayName?: string;
-    avatarUrl?: string;
-  }) {
-    let client = null;
-    if (data.id) {
-      client = await this.prisma.client.findUnique({ where: { id: data.id } });
-    }
-    if (!client && data.email) {
-      client = await this.prisma.client.findFirst({ where: { email: data.email } });
-    }
-    if (!client && data.phone) {
-      client = await this.prisma.client.findFirst({ where: { phone: data.phone } });
-    }
-
-    if (!client) {
-      client = await this.prisma.client.findFirst({
-        where: { displayName: { contains: 'Ernesto Salinas', mode: 'insensitive' } },
-      });
-    }
-
-    if (!client) return null;
-
-    const updated = await this.prisma.client.update({
-      where: { id: client.id },
+  /** Updates only the given (already authenticated) client. Identity is never taken from the body. */
+  async updateClientProfile(clientId: string, data: UpdateClientProfileInput) {
+    return this.prisma.client.update({
+      where: { id: clientId },
       data: {
         ...(data.displayName ? { displayName: data.displayName } : {}),
         ...(data.phone ? { phone: data.phone } : {}),
-        ...(data.email ? { email: data.email } : {}),
         ...(data.avatarUrl !== undefined ? { avatarUrl: data.avatarUrl } : {}),
       },
+      select: { id: true, email: true, phone: true, displayName: true, avatarUrl: true },
     });
-
-    return updated;
   }
 }
