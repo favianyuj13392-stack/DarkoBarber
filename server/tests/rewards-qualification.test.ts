@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import crypto from 'node:crypto';
 import { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app';
@@ -227,14 +227,22 @@ describe('Rewards: activity log and qualification', () => {
     });
 
     it('a failure while tracking never breaks the main request', async () => {
-      // Token for a client id that does not exist: the FK insert fails and is swallowed.
-      const ghostToken = clientToken(crypto.randomUUID());
-      const res = await app.inject({
-        method: 'GET',
-        url: '/clients/me?email=nobody@example.com',
-        headers: { authorization: `Bearer ${ghostToken}` },
-      });
-      expect(res.statusCode).toBe(200);
+      // /clients/me requires an existing client, so force the activity insert to fail instead.
+      const client = await makeClient();
+      const spy = vi.spyOn(ActivityService.prototype, 'record').mockRejectedValue(new Error('boom'));
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const res = await app.inject({
+          method: 'GET',
+          url: '/clients/me',
+          headers: { authorization: `Bearer ${clientToken(client.id)}` },
+        });
+        expect(res.statusCode).toBe(200);
+        expect(spy).toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+        warn.mockRestore();
+      }
     });
   });
 });
