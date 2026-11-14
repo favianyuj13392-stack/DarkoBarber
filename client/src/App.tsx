@@ -17,6 +17,7 @@ import {
   clearAuthSession,
   type LoginResponse,
 } from './services/auth.service';
+import { savePendingChairBind, consumePendingChairBind } from './services/chair.service';
 
 type AppScreen =
   | 'splash'
@@ -35,9 +36,12 @@ export function App() {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>(() => {
     if (typeof window === 'undefined') return 'splash';
     const params = new URLSearchParams(window.location.search);
-    if (params.get('chair') || params.get('scan')) return 'historial';
     const token = getStoredToken();
     const user = getStoredUser();
+    if (params.get('chair') || params.get('scan')) {
+      // Binding to a chair requires a signed-in client; otherwise sign in first.
+      return token && user?.role === 'cliente' ? 'historial' : 'login';
+    }
     if (token && user) {
       return user.role === 'cliente' ? 'historial' : 'barber-chair';
     }
@@ -65,13 +69,23 @@ export function App() {
     if (chairBarberId) {
       const barberName = params.get('name') || 'Diego Armando';
       const shopName = params.get('shop') || 'Fade Studio — Sopocachi';
-      setPendingChairScan({
+      const scan: ScannedBarberInfo = {
         barberId: chairBarberId,
         barberName,
         shopName,
         avatarUrl: '/assets/images/1.png',
-      });
-      setCurrentScreen('historial');
+      };
+      const storedToken = getStoredToken();
+      const storedUser = getStoredUser();
+      if (storedToken && storedUser?.role === 'cliente') {
+        setAuthData({ token: storedToken, user: storedUser });
+        setPendingChairScan(scan);
+        setCurrentScreen('historial');
+      } else {
+        // Resume the bind after the client signs in.
+        savePendingChairBind(scan);
+        setCurrentScreen('login');
+      }
       return;
     }
 
@@ -90,6 +104,15 @@ export function App() {
   const handleLoginSuccess = (data: LoginResponse) => {
     setAuthData(data);
     if (data.user.role === 'cliente') {
+      const pending = consumePendingChairBind();
+      if (pending) {
+        setPendingChairScan({
+          barberId: pending.barberId,
+          barberName: pending.barberName,
+          shopName: pending.shopName ?? '',
+          avatarUrl: pending.avatarUrl ?? '/assets/images/1.png',
+        });
+      }
       setCurrentScreen('historial');
     } else {
       setCurrentScreen('barber-chair');

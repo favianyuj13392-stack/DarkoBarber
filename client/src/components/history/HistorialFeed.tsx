@@ -24,6 +24,9 @@ import { ShareHistoryModal } from '../chair/ShareHistoryModal';
 import { ClientPhotoConsentModal } from '../chair/ClientPhotoConsentModal';
 import {
   sendChairHandshake,
+  savePendingChairBind,
+  describeChairBindError,
+  ChairBindError,
   respondPhotoConsent,
   pollPhotoConsentRequest,
   CHAIR_SYNC_CHANNEL_NAME,
@@ -72,6 +75,7 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
   });
   const [isShareHistoryOpen, setIsShareHistoryOpen] = useState(Boolean(initialScannedBarber));
   const [shareSuccessToast, setShareSuccessToast] = useState(false);
+  const [chairBindError, setChairBindError] = useState<string | null>(null);
   const [incomingConsentReq, setIncomingConsentReq] = useState<PhotoConsentRequestPayload | null>(null);
   const [consentToastMsg, setConsentToastMsg] = useState<string | null>(null);
 
@@ -708,22 +712,30 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
           setIsShareHistoryOpen(false);
           setActiveNavTab('historial');
         }}
-        onConfirmShare={() => {
-          if (scannedBarber) {
-            sendChairHandshake(
-              scannedBarber.barberId,
-              scannedBarber.barberName,
-              {
-                displayName: userName,
-                phone: currentUser?.phone || '+591 712 34567',
-                avatarUrl: '/assets/images/1.png',
-              }
-            );
-          }
+        onConfirmShare={async () => {
           setIsShareHistoryOpen(false);
-          setShareSuccessToast(true);
-          setTimeout(() => setShareSuccessToast(false), 3500);
           setActiveNavTab('historial');
+          if (!scannedBarber) return;
+
+          try {
+            await sendChairHandshake(scannedBarber.barberId, scannedBarber.barberName);
+            setShareSuccessToast(true);
+            setTimeout(() => setShareSuccessToast(false), 3500);
+          } catch (err) {
+            if (err instanceof ChairBindError && err.code === 'AUTH_REQUIRED') {
+              // Not signed in as a client: resume the bind after login.
+              savePendingChairBind({
+                barberId: scannedBarber.barberId,
+                barberName: scannedBarber.barberName,
+                shopName: scannedBarber.shopName,
+                avatarUrl: scannedBarber.avatarUrl,
+              });
+              onLogout?.();
+              return;
+            }
+            setChairBindError(describeChairBindError(err));
+            setTimeout(() => setChairBindError(null), 6000);
+          }
         }}
       />
 
@@ -738,6 +750,22 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
           >
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span>Historial compartido con éxito. El barbero ya tiene tu ficha técnica en sillón.</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Toast de Error de Enlace */}
+      <AnimatePresence>
+        {chairBindError && (
+          <motion.div
+            role="alert"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl bg-red-950/90 border border-red-500/40 text-red-200 text-xs font-semibold backdrop-blur-xl shadow-2xl flex items-center gap-2 max-w-sm text-center"
+          >
+            <span className="w-2 h-2 rounded-full bg-red-400 shrink-0" />
+            <span>{chairBindError}</span>
           </motion.div>
         )}
       </AnimatePresence>

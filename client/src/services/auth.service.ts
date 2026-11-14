@@ -1,3 +1,5 @@
+import { getDeviceId } from '../utils/device-id';
+
 export interface UserProfile {
   id: string;
   displayName: string;
@@ -32,18 +34,10 @@ export interface ApiError {
   issues?: unknown;
 }
 
-const DEVICE_ID_KEY = 'fade_device_id';
 const TOKEN_KEY = 'fade_auth_token';
 const USER_KEY = 'fade_user_profile';
 
-export const getDeviceId = (): string => {
-  let deviceId = localStorage.getItem(DEVICE_ID_KEY);
-  if (!deviceId) {
-    deviceId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `device-${Date.now()}`;
-    localStorage.setItem(DEVICE_ID_KEY, deviceId);
-  }
-  return deviceId;
-};
+export { getDeviceId };
 
 export const getStoredToken = (): string | null => {
   return localStorage.getItem(TOKEN_KEY);
