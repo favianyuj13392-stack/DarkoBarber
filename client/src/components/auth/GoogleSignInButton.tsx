@@ -39,6 +39,8 @@ interface GoogleSignInButtonProps {
   disabled?: boolean;
 }
 
+const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined)?.trim();
+
 export const GoogleSignInButton: FC<GoogleSignInButtonProps> = ({
   onSuccess,
   onError,
@@ -59,9 +61,14 @@ export const GoogleSignInButton: FC<GoogleSignInButtonProps> = ({
   });
 
   useEffect(() => {
-    const clientId =
-      import.meta.env.VITE_GOOGLE_CLIENT_ID ||
-      '247427692106-2vn9la944ep0rl6m3vdthmo7n0nlgbo4.apps.googleusercontent.com';
+    const clientId = GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      console.error(
+        'Google Sign-In is disabled: VITE_GOOGLE_CLIENT_ID is not set. Add it to client/.env.local (see client/.env.example).'
+      );
+      onErrorRef.current?.('Google Sign-In no está configurado');
+      return;
+    }
 
     let isMounted = true;
 
@@ -120,6 +127,17 @@ export const GoogleSignInButton: FC<GoogleSignInButtonProps> = ({
       isMounted = false;
     };
   }, [text, shape]);
+
+  if (!GOOGLE_CLIENT_ID) {
+    return (
+      <div
+        role="alert"
+        className="w-full py-3 px-4 rounded-xl text-center text-xs font-semibold tracking-wide text-white/60 bg-white/5 border border-white/10"
+      >
+        Google Sign-In no está configurado
+      </div>
+    );
+  }
 
   return (
     <div className={`w-full flex justify-center items-center min-h-[44px] ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
