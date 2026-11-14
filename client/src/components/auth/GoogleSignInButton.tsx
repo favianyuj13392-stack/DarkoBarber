@@ -49,6 +49,15 @@ export const GoogleSignInButton: FC<GoogleSignInButtonProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [isRendered, setIsRendered] = useState(false);
 
+  // Keep the latest callbacks in refs so inline functions from parents
+  // do not retrigger the effect (and the Google button re-render).
+  const onSuccessRef = useRef(onSuccess);
+  const onErrorRef = useRef(onError);
+  useEffect(() => {
+    onSuccessRef.current = onSuccess;
+    onErrorRef.current = onError;
+  });
+
   useEffect(() => {
     const clientId =
       import.meta.env.VITE_GOOGLE_CLIENT_ID ||
@@ -64,9 +73,9 @@ export const GoogleSignInButton: FC<GoogleSignInButtonProps> = ({
           client_id: clientId,
           callback: (response: { credential: string }) => {
             if (response?.credential) {
-              onSuccess(response.credential);
+              onSuccessRef.current(response.credential);
             } else {
-              onError?.('No se recibió la credencial de autenticación de Google');
+              onErrorRef.current?.('No se recibió la credencial de autenticación de Google');
             }
           },
           auto_select: false,
@@ -86,7 +95,7 @@ export const GoogleSignInButton: FC<GoogleSignInButtonProps> = ({
         setIsRendered(true);
       } catch (err) {
         console.error('Error rendering Google Sign-In button:', err);
-        onError?.('No se pudo inicializar el botón de Google');
+        onErrorRef.current?.('No se pudo inicializar el botón de Google');
       }
     };
 
@@ -110,7 +119,7 @@ export const GoogleSignInButton: FC<GoogleSignInButtonProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [onSuccess, onError, text, shape]);
+  }, [text, shape]);
 
   return (
     <div className={`w-full flex justify-center items-center min-h-[44px] ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
