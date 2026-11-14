@@ -178,8 +178,9 @@ export const BarberBookingsView: FC = () => {
       <BarberScheduleEditor
         initialConfig={settings.workingHours}
         onSave={async (newConfig) => {
-          setSettings((prev) => ({ ...prev, workingHours: newConfig }));
+          // Throws when the server rejects the schedule; the editor shows the reason.
           await updateBookingSettings({ workingHours: newConfig });
+          setSettings((prev) => ({ ...prev, workingHours: newConfig }));
           setToastMsg('Horarios semanales guardados y sincronizados.');
           setTimeout(() => setToastMsg(null), 3000);
         }}

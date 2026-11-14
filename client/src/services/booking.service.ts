@@ -252,7 +252,10 @@ export async function updateBookingSettings(
       if (res.ok) {
         return await res.json();
       }
+      // The server validates the settings: surface its reason instead of pretending it saved.
+      if (res.status === 400) throw await toBookingApiError(res);
     } catch (err) {
+      if (err instanceof BookingApiError) throw err;
       console.warn('Could not update booking settings:', err);
     }
   }

@@ -7,6 +7,7 @@ import {
   createBookingSchema,
   listQuerySchema,
   MAX_SERVICES_PER_BOOKING,
+  updateBookingSettingsSchema,
   updateStatusSchema,
 } from './bookings.schemas';
 import { BOOKING_STATUSES } from './bookings.status';
@@ -153,12 +154,17 @@ const bookingsRoutesPlugin: FastifyPluginAsync = async (fastify) => {
       const barberId = request.barber?.id || request.authUser?.id;
       if (!barberId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
 
-      const body = request.body as {
-        acceptsBookings?: boolean;
-        bookingNoticeMin?: number;
-        workingHours?: any;
-      };
-      const settings = await service.updateBarberBookingSettings(barberId, body);
+      const parsed = updateBookingSettingsSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        const first = parsed.error.issues[0];
+        const where = first?.path.length ? ` (${first.path.join('.')})` : '';
+        return reply.status(400).send({
+          error: 'VALIDATION_ERROR',
+          message: `Configuración inválida: ${first?.message ?? 'datos incorrectos'}${where}`,
+          issues: parsed.error.format(),
+        });
+      }
+      const settings = await service.updateBarberBookingSettings(barberId, parsed.data);
       return reply.status(200).send(settings);
     }
   );

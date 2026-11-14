@@ -2,7 +2,7 @@ import { PrismaClient, BookingStatus } from '@prisma/client';
 import { getLaPazNowParts } from '../../utils/la-paz-date';
 import { AppError } from '../../utils/errors';
 import { getBookingsConfig } from './bookings.config';
-import { isRealCalendarDate, normalizePhone } from './bookings.schemas';
+import { isRealCalendarDate, normalizePhone, type UpdateBookingSettingsBody } from './bookings.schemas';
 import {
   dayNumber,
   dayOfWeekOf,
@@ -516,11 +516,7 @@ export class BookingsService {
 
   async updateBarberBookingSettings(
     barberId: string,
-    data: {
-      acceptsBookings?: boolean;
-      bookingNoticeMin?: number;
-      workingHours?: BarberWorkingHoursConfig;
-    }
+    data: UpdateBookingSettingsBody
   ) {
     const updateData: any = {};
     if (data.acceptsBookings !== undefined) {

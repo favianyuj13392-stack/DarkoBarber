@@ -35,6 +35,7 @@ export const BarberScheduleEditor: FC<BarberScheduleEditorProps> = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const handleToggleDay = (dayOfWeek: number) => {
     setConfig((prev) => ({
@@ -117,10 +118,13 @@ export const BarberScheduleEditor: FC<BarberScheduleEditorProps> = ({
 
   const handleSubmit = async () => {
     setIsSaving(true);
+    setSaveError(null);
     try {
       await onSave(config);
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3000);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'No se pudo guardar el horario.');
     } finally {
       setIsSaving(false);
     }
@@ -381,6 +385,11 @@ export const BarberScheduleEditor: FC<BarberScheduleEditorProps> = ({
                     <CheckCircle2 className="w-4 h-4" />
                     <span>¡Horarios guardados y sincronizados con éxito!</span>
                   </>
+                )}
+                {saveError && (
+                  <span role="alert" className="text-red-400">
+                    {saveError}
+                  </span>
                 )}
               </span>
 
