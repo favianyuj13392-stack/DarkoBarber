@@ -6,7 +6,8 @@ import { BrandLogo } from '../common/BrandLogo';
 import { RoleSelector, type UserRole } from './RoleSelector';
 import { EmailPasswordInput } from './EmailPasswordInput';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
-import { loginWithEmailPassword, type LoginResponse } from '../../services/auth.service';
+import { GoogleSignInButton } from './GoogleSignInButton';
+import { loginWithEmailPassword, loginWithGoogle, type LoginResponse } from '../../services/auth.service';
 import { SPRING_TOUCH } from '../../constants/springs';
 
 interface LoginViewProps {
@@ -59,9 +60,21 @@ export const LoginView: FC<LoginViewProps> = ({
     }
   };
 
-  const handleGoogleLogin = () => {
-    // Disparador de Google OAuth (se conectará con el cliente Google Identity Services)
-    setErrorMessage('Conectando con Google Sign-In...');
+  const handleGoogleSuccess = async (credential: string) => {
+    setLoading(true);
+    setErrorMessage(null);
+    try {
+      const result = await loginWithGoogle(credential, role);
+      onLoginSuccess(result);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setErrorMessage(err.message);
+      } else {
+        setErrorMessage('Error al autenticar con Google');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -218,33 +231,15 @@ export const LoginView: FC<LoginViewProps> = ({
             </span>
           </div>
 
-          {/* Botón Google Único Estándar */}
+          {/* Botón Google Oficial con Google Identity Services */}
           <div>
-            <button
-              type="button"
-              onClick={handleGoogleLogin}
-              className="fade-btn-secondary w-full py-3 px-4 rounded-xl flex items-center justify-center gap-2.5 text-xs font-semibold tracking-wide text-white hover:border-[#B68F4E]/40 hover:bg-white/10 transition-all cursor-pointer"
-            >
-              <svg className="w-4 h-4" viewBox="0 0 24 24">
-                <path
-                  fill="#EA4335"
-                  d="M12 5c1.55 0 2.95.53 4.04 1.58l3.03-3.03C17.23 1.74 14.8 1 12 1 7.42 1 3.51 3.58 1.57 7.34l3.69 2.87C6.14 7.33 8.84 5 12 5z"
-                />
-                <path
-                  fill="#4285F4"
-                  d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58l3.71 2.88c2.16-1.99 3.71-4.93 3.71-8.7z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.26 14.79c-.2-.61-.32-1.26-.32-1.93s.12-1.32.32-1.93L1.57 7.34C.57 9.39 0 11.63 0 14s.57 4.61 1.57 6.66l3.69-2.87z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c3.24 0 5.95-1.08 7.93-2.91l-3.71-2.88c-1.07.72-2.45 1.16-4.22 1.16-3.16 0-5.86-2.33-6.74-5.21L1.57 16.03C3.51 19.79 7.42 22.37 12 22.37z"
-                />
-              </svg>
-              <span>Continuar con Google</span>
-            </button>
+            <GoogleSignInButton
+              onSuccess={handleGoogleSuccess}
+              onError={(msg) => setErrorMessage(msg)}
+              text="continue_with"
+              shape="rectangular"
+              disabled={loading}
+            />
           </div>
 
           {/* Links y Switch a Presentación */}
