@@ -1,7 +1,9 @@
 import fp from 'fastify-plugin';
 import { FastifyPluginAsync } from 'fastify';
 import { BookingsService } from './bookings.service';
-import { trackClientActivity } from '../rewards/rewards.hooks';
+import { resolveClientId, trackClientActivity } from '../rewards/rewards.hooks';
+import { createBookingSchema } from './bookings.schemas';
+import { AppError } from '../../utils/errors';
 import { BookingStatus } from '@prisma/client';
 
 const bookingsRoutesPlugin: FastifyPluginAsync = async (fastify) => {
@@ -99,28 +101,40 @@ const bookingsRoutesPlugin: FastifyPluginAsync = async (fastify) => {
     return reply.status(200).send(availability);
   });
 
-  // PUBLIC / CLIENT: POST /api/barbers/:barberId/bookings
+  // PUBLIC (optional client auth): POST /api/barbers/:barberId/bookings
+  // Body: { serviceId, date: 'YYYY-MM-DD', time: 'HH:mm', notes?, clientName?, clientPhone? }
+  // Price/duration come from the BarberService. A valid CLIENT token supplies the identity
+  // (any clientId in the body is ignored); anonymous requests need clientName + clientPhone.
   fastify.post('/barbers/:barberId/bookings', async (request: any, reply) => {
     const { barberId } = request.params as { barberId: string };
-    const body = request.body as {
-      clientName: string;
-      clientPhone: string;
-      serviceName: string;
-      servicePriceBs: number;
-      durationMin?: number;
-      date: string;
-      time: string;
-      notes?: string;
-    };
 
-    const booking = await service.createBooking({
-      barberId,
-      ...body,
-    });
-    // Public endpoint (no authenticate preHandler): a client token is optional here.
-    await trackClientActivity(fastify.prisma, request, 'BOOKING_CREATED', { optionalJwt: true });
+    const parsed = createBookingSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: 'VALIDATION_ERROR',
+        message: 'Datos de reserva inválidos',
+        issues: parsed.error.format(),
+      });
+    }
 
-    return reply.status(201).send(booking);
+    const clientId = await resolveClientId(request, { optionalJwt: true });
+
+    try {
+      const booking = await service.createBooking({
+        barberId,
+        clientId,
+        ...parsed.data,
+      });
+      // Public endpoint (no authenticate preHandler): a client token is optional here.
+      await trackClientActivity(fastify.prisma, request, 'BOOKING_CREATED', { optionalJwt: true });
+
+      return reply.status(201).send(booking);
+    } catch (err) {
+      if (err instanceof AppError) {
+        return reply.status(err.statusCode).send({ error: err.code, message: err.message });
+      }
+      throw err;
+    }
   });
 };
 

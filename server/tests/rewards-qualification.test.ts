@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import crypto from 'node:crypto';
 import { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app';
+import { toLaPazDateString } from '../src/utils/la-paz-date';
 import { cleanDatabase } from './helpers';
 import { ActivityService } from '../src/modules/rewards/activity.service';
 import { QualificationService } from '../src/modules/rewards/qualification.service';
@@ -15,6 +16,7 @@ const NEXT_DAY = new Date('2026-11-15T16:00:00Z');
 describe('Rewards: activity log and qualification', () => {
   let app: FastifyInstance;
   let barberId: string;
+  let serviceId: string;
   let activity: ActivityService;
   let qualification: QualificationService;
 
@@ -50,6 +52,11 @@ describe('Rewards: activity log and qualification', () => {
       data: { displayName: 'Rewards Barber', email: `rb-${crypto.randomUUID()}@example.com` },
     });
     barberId = barber.id;
+    serviceId = (
+      await app.prisma.barberService.create({
+        data: { barberId, name: 'Corte', priceBs: 50, durationMin: 30 },
+      })
+    ).id;
     activity = new ActivityService(app.prisma);
     qualification = new QualificationService(app.prisma);
   });
@@ -195,16 +202,31 @@ describe('Rewards: activity log and qualification', () => {
     });
 
     describe('public booking endpoint (optional client token)', () => {
+      // Real clock (the route is not clock-injectable): book 3 La Paz days ahead, never a Sunday
+      // (default working hours are Mon-Sat 09:00-20:00, 30 min slots, break 13:00-14:00).
+      const futureDate = () => {
+        let date = toLaPazDateString(new Date(Date.now() + 3 * 86_400_000));
+        if (new Date(`${date}T12:00:00Z`).getUTCDay() === 0) {
+          date = toLaPazDateString(new Date(Date.now() + 4 * 86_400_000));
+        }
+        return date;
+      };
+      let slot = 0;
       const bookingPayload = () => ({
         clientName: 'Walk In',
-        clientPhone: '70000000',
-        serviceName: 'Corte',
-        servicePriceBs: 50,
-        date: '2026-12-01',
-        time: '10:00',
+        clientPhone: `7000${String(1000 + slot)}`,
+        serviceId,
+        date: futureDate(),
+        // Distinct 30 min slots between 09:00 and 11:30 so calls never collide.
+        time: `${String(9 + Math.floor(slot / 2)).padStart(2, '0')}:${slot++ % 2 === 0 ? '00' : '30'}`,
       });
       const book = (headers: Record<string, string> = {}) =>
         app.inject({ method: 'POST', url: `/barbers/${barberId}/bookings`, headers, payload: bookingPayload() });
+
+      beforeEach(async () => {
+        slot = 0;
+        await app.prisma.booking.deleteMany({});
+      });
 
       it('records BOOKING_CREATED for a client token', async () => {
         const client = await makeClient();
