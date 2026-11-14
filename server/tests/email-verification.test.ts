@@ -215,6 +215,36 @@ describe('Client email verification', () => {
     expect(sendSpy).not.toHaveBeenCalled();
   });
 
+  it('reports the email verification status to the signed-in client', async () => {
+    const client = await createClient();
+    const headers = { authorization: `Bearer ${clientToken(client.id)}` };
+
+    const before = await app.inject({ method: 'GET', url: '/clients/me/email/status', headers });
+    expect(before.statusCode).toBe(200);
+    expect(JSON.parse(before.body)).toEqual({ email: client.email, verified: false });
+
+    await app.prisma.client.update({ where: { id: client.id }, data: { emailVerifiedAt: new Date() } });
+    const after = await app.inject({ method: 'GET', url: '/clients/me/email/status', headers });
+    expect(JSON.parse(after.body)).toEqual({ email: client.email, verified: true });
+  });
+
+  it('rejects the status endpoint for barbers and anonymous callers', async () => {
+    const barber = await app.prisma.barber.create({
+      data: { displayName: 'Barber', email: `b-${crypto.randomUUID()}@example.com` },
+    });
+    const token = app.jwt.sign({ userId: barber.id, barberId: barber.id, role: 'barbero' });
+
+    const asBarber = await app.inject({
+      method: 'GET',
+      url: '/clients/me/email/status',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(asBarber.statusCode).toBe(403);
+
+    const anonymous = await app.inject({ method: 'GET', url: '/clients/me/email/status' });
+    expect(anonymous.statusCode).toBe(401);
+  });
+
   it('requires authentication for verify-request', async () => {
     const res = await app.inject({ method: 'POST', url: '/clients/me/email/verify-request' });
     expect(res.statusCode).toBe(401);

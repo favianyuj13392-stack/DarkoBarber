@@ -10,6 +10,30 @@ const verifyEmailSchema = z.object({
 export const emailVerificationRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new EmailVerificationService(fastify.prisma);
 
+  // GET /clients/me/email/status (client role only): read-only verification status
+  fastify.get(
+    '/clients/me/email/status',
+    { preHandler: [fastify.authenticateUser] },
+    async (request, reply) => {
+      if (request.authUser?.role !== 'cliente') {
+        return reply.status(403).send({ error: 'FORBIDDEN', message: 'Client account required' });
+      }
+
+      const client = await fastify.prisma.client.findUnique({
+        where: { id: request.authUser.id },
+        select: { email: true, emailVerifiedAt: true },
+      });
+      if (!client) {
+        return reply.status(404).send({ error: 'NOT_FOUND', message: 'Client not found' });
+      }
+
+      return reply.status(200).send({
+        email: client.email,
+        verified: client.emailVerifiedAt !== null,
+      });
+    }
+  );
+
   // POST /clients/me/email/verify-request (client role only)
   fastify.post(
     '/clients/me/email/verify-request',
