@@ -6,6 +6,7 @@ import {
   cancelBodySchema,
   createBookingSchema,
   listQuerySchema,
+  MAX_SERVICES_PER_BOOKING,
   updateStatusSchema,
 } from './bookings.schemas';
 import { BOOKING_STATUSES } from './bookings.status';
@@ -162,14 +163,19 @@ const bookingsRoutesPlugin: FastifyPluginAsync = async (fastify) => {
     }
   );
 
-  // PUBLIC / CLIENT: GET /api/barbers/:barberId/bookings/availability?date=YYYY-MM-DD&serviceId=...
-  // `serviceId` (optional) sizes the slots to that service's duration.
+  // PUBLIC / CLIENT: GET /api/barbers/:barberId/bookings/availability?date=YYYY-MM-DD&serviceIds=a,b
+  // `serviceIds` (optional, comma separated) sizes the slots to the summed service duration.
   fastify.get('/barbers/:barberId/bookings/availability', async (request: any, reply) => {
     const { barberId } = request.params as { barberId: string };
-    const { date, serviceId } = (request.query || {}) as { date?: string; serviceId?: string };
+    const { date, serviceIds } = (request.query || {}) as { date?: string; serviceIds?: string };
+    const ids = (serviceIds ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, MAX_SERVICES_PER_BOOKING);
     try {
       const availability = await service.getBarberAvailability(barberId, date, new Date(), {
-        serviceId,
+        serviceIds: ids,
       });
       return reply.status(200).send(availability);
     } catch (err) {
@@ -181,8 +187,8 @@ const bookingsRoutesPlugin: FastifyPluginAsync = async (fastify) => {
   });
 
   // PUBLIC (optional client auth): POST /api/barbers/:barberId/bookings
-  // Body: { serviceId, date: 'YYYY-MM-DD', time: 'HH:mm', notes?, clientName?, clientPhone? }
-  // Price/duration come from the BarberService. A valid CLIENT token supplies the identity
+  // Body: { serviceIds: string[1..5], date: 'YYYY-MM-DD', time: 'HH:mm', notes?, clientName?, clientPhone? }
+  // Price/duration are summed server-side from the BarberServices. A valid CLIENT token supplies the identity
   // (any clientId in the body is ignored); anonymous requests need clientName + clientPhone.
   fastify.post('/barbers/:barberId/bookings', async (request: any, reply) => {
     const { barberId } = request.params as { barberId: string };

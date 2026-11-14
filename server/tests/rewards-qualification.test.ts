@@ -215,7 +215,7 @@ describe('Rewards: activity log and qualification', () => {
       const bookingPayload = () => ({
         clientName: 'Walk In',
         clientPhone: `7000${String(1000 + slot)}`,
-        serviceId,
+        serviceIds: [serviceId],
         date: futureDate(),
         // Distinct 30 min slots between 09:00 and 11:30 so calls never collide.
         time: `${String(9 + Math.floor(slot / 2)).padStart(2, '0')}:${slot++ % 2 === 0 ? '00' : '30'}`,

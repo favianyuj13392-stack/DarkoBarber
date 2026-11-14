@@ -38,6 +38,7 @@ import {
 } from '../../services/auth.service';
 import {
   createClientBooking,
+  MAX_SERVICES_PER_BOOKING,
   fetchBarberAvailability,
   bookingErrorMessage,
 } from '../../services/booking.service';
@@ -154,21 +155,33 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
   const [bookingDate, setBookingDate] = useState(() => bookingDays[0].value);
   const [bookingTime, setBookingTime] = useState('');
   const [bookingSlots, setBookingSlots] = useState<string[]>([]);
-  const [chosenServiceId, setBookingServiceId] = useState('');
+  const [chosenServiceIds, setChosenServiceIds] = useState<string[] | null>(null);
   const [bookingClientName, setBookingClientName] = useState('');
   const [bookingClientPhone, setBookingClientPhone] = useState('');
   const [bookingNotes, setBookingNotes] = useState('');
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [submittingBooking, setSubmittingBooking] = useState(false);
-  // Defaults to the first service until the user picks another one.
-  const bookingServiceId = chosenServiceId || services[0]?.id || '';
-  const bookingPrice = services.find((s) => s.id === bookingServiceId)?.priceBs ?? 0;
+  // Defaults to the first service until the user changes the selection.
+  const bookingServiceIds = chosenServiceIds ?? (services[0] ? [services[0].id] : []);
+  const bookingServiceIdsKey = bookingServiceIds.join(',');
+  const bookingSelected = services.filter((s) => bookingServiceIds.includes(s.id));
+  const bookingPrice = bookingSelected.reduce((sum, s) => sum + s.priceBs, 0);
+  const bookingDuration = bookingSelected.reduce((sum, s) => sum + s.durationMin, 0);
+  const toggleBookingService = (id: string) => {
+    const next = bookingServiceIds.includes(id)
+      ? bookingServiceIds.filter((x) => x !== id)
+      : bookingServiceIds.length >= MAX_SERVICES_PER_BOOKING
+        ? bookingServiceIds
+        : [...bookingServiceIds, id];
+    setChosenServiceIds(next);
+    setBookingError(null);
+  };
 
   // Load real availability for the chosen day/service while the booking modal is open.
   useEffect(() => {
-    if (!isBookingModalOpen || !barber?.id || !bookingServiceId) return;
+    if (!isBookingModalOpen || !barber?.id || bookingServiceIds.length === 0) return;
     let active = true;
-    fetchBarberAvailability(barber.id, bookingDate, bookingServiceId)
+    fetchBarberAvailability(barber.id, bookingDate, bookingServiceIds)
       .then((res) => {
         if (!active) return;
         setBookingSlots(res.availableSlots);
@@ -183,7 +196,9 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
     return () => {
       active = false;
     };
-  }, [isBookingModalOpen, barber?.id, bookingDate, bookingServiceId]);
+    // bookingServiceIdsKey stands in for the ids array, which is a new array on each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBookingModalOpen, barber?.id, bookingDate, bookingServiceIdsKey]);
 
   useEffect(() => {
     if (barber?.id) {
@@ -407,7 +422,7 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
   };
 
   const handleConfirmBooking = async () => {
-    if (!barber?.id || !bookingServiceId || !bookingTime) return;
+    if (!barber?.id || bookingServiceIds.length === 0 || !bookingTime) return;
     if (!bookingClientName.trim() || !bookingClientPhone.trim()) {
       setBookingError('Ingresa nombre y celular para la reserva.');
       return;
@@ -417,7 +432,7 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
     try {
       await createClientBooking({
         barberId: barber.id,
-        serviceId: bookingServiceId,
+        serviceIds: bookingServiceIds,
         date: bookingDate,
         time: bookingTime,
         clientName: bookingClientName.trim(),
@@ -430,7 +445,7 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
     } catch (err) {
       setBookingError(bookingErrorMessage(err));
       // The slot may be gone (e.g. SLOT_TAKEN): reload the grid for the same day.
-      fetchBarberAvailability(barber.id, bookingDate, bookingServiceId)
+      fetchBarberAvailability(barber.id, bookingDate, bookingServiceIds)
         .then((res) => {
           setBookingSlots(res.availableSlots);
           setBookingTime(res.availableSlots[0] ?? '');
@@ -1212,21 +1227,32 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
               <div className="space-y-4 text-xs">
                 {/* Selección de Servicio */}
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-semibold text-white/80">Servicio Deseado</label>
-                  <select
-                    value={bookingServiceId}
-                    onChange={(e) => {
-                      setBookingServiceId(e.target.value);
-                      setBookingError(null);
-                    }}
-                    className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-[#B68F4E]"
-                  >
+                  <label className="text-[11px] font-semibold text-white/80">
+                    Servicios Deseados (hasta {MAX_SERVICES_PER_BOOKING})
+                  </label>
+                  <div className="space-y-1.5">
                     {services.map((s) => (
-                      <option key={s.id} value={s.id} className="bg-black text-white">
-                        {s.name} — Bs {s.priceBs} ({s.durationMin} min)
-                      </option>
+                      <label
+                        key={s.id}
+                        className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white cursor-pointer"
+                      >
+                        <span className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={bookingServiceIds.includes(s.id)}
+                            onChange={() => toggleBookingService(s.id)}
+                          />
+                          {s.name}
+                        </span>
+                        <span className="text-white/60">
+                          Bs {s.priceBs} ({s.durationMin} min)
+                        </span>
+                      </label>
                     ))}
-                  </select>
+                  </div>
+                  <p className="text-[10px] text-white/50">
+                    Total: Bs {bookingPrice} · {bookingDuration} min
+                  </p>
                 </div>
 
                 {/* Fecha y Hora */}

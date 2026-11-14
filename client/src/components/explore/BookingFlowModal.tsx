@@ -16,6 +16,7 @@ import {
   createClientBooking,
   bookingErrorMessage,
   BookingApiError,
+  MAX_SERVICES_PER_BOOKING,
   type BarberAvailabilityResponse,
 } from '../../services/booking.service';
 import { getStoredUser } from '../../services/auth.service';
@@ -45,7 +46,7 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
   onConfirmBooking,
 }) => {
   const currentUser = getStoredUser();
-  const [selectedServiceId, setSelectedServiceId] = useState<string>('');
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
   const [selectedDay, setSelectedDay] = useState<BookingDay | null>(null);
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [onlyAvailableSlots, setOnlyAvailableSlots] = useState(false);
@@ -63,6 +64,9 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
   // Dynamic availability state
   const [availability, setAvailability] = useState<BarberAvailabilityResponse | null>(null);
   const [loadingSlots, setLoadingSlots] = useState(false);
+
+  // Stable dependency for the availability effect (the array identity changes every render).
+  const selectedServiceIdsKey = selectedServiceIds.join(',');
 
   // Real 7 days window starting from today
   const realDays = useMemo<BookingDay[]>(() => {
@@ -106,7 +110,7 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
   useEffect(() => {
     if (barber && isOpen) {
       if (barber.services && barber.services.length > 0) {
-        setSelectedServiceId(barber.services[0].id);
+        setSelectedServiceIds([barber.services[0].id]);
       }
       setErrorMsg(null);
       const initialDay = realDays[0];
@@ -121,7 +125,11 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
     let isMounted = true;
     setLoadingSlots(true);
 
-    fetchBarberAvailability(barber.id, selectedDay.fullDate, selectedServiceId || undefined)
+    fetchBarberAvailability(
+      barber.id,
+      selectedDay.fullDate,
+      selectedServiceIds.length > 0 ? selectedServiceIds : undefined
+    )
       .then((res) => {
         if (!isMounted) return;
         setAvailability(res);
@@ -149,7 +157,7 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
     };
     // selectedTime is intentionally not a dependency: it only validates the current choice.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [barber, selectedDay, isOpen, selectedServiceId, availabilityRefresh]);
+  }, [barber, selectedDay, isOpen, selectedServiceIdsKey, availabilityRefresh]);
 
   const displayedSlots: BookingSlot[] = useMemo(() => {
     if (!availability || !availability.allSlots) return [];
@@ -163,15 +171,19 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
 
   if (!isOpen || !barber || !selectedDay) return null;
 
-  const selectService = (id: string) => {
-    setSelectedServiceId(id);
+  const toggleService = (id: string) => {
+    setSelectedServiceIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= MAX_SERVICES_PER_BOOKING) return prev;
+      return [...prev, id];
+    });
     setErrorMsg(null);
   };
 
-  // Price and duration shown here are informative: the server recomputes both from serviceId.
-  const selectedService = barber.services.find((s) => s.id === selectedServiceId);
-  const totalBs = selectedService?.priceBs ?? 0;
-  const totalDurationMin = selectedService?.durationMin ?? 0;
+  // Totals shown here are informative: the server recomputes price and duration from serviceIds.
+  const selectedServices = barber.services.filter((s) => selectedServiceIds.includes(s.id));
+  const totalBs = selectedServices.reduce((sum, s) => sum + s.priceBs, 0);
+  const totalDurationMin = selectedServices.reduce((sum, s) => sum + s.durationMin, 0);
 
   const morningSlots = displayedSlots.filter((s) => s.period === 'manana');
   const afternoonSlots = displayedSlots.filter((s) => s.period === 'tarde');
@@ -180,7 +192,6 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
   // Server error codes that mean "the chosen slot is no longer valid": refresh the grid.
   const STALE_SLOT_CODES = [
     'SLOT_TAKEN',
-    'INVALID_SLOT',
     'OUTSIDE_WORKING_HOURS',
     'BOOKING_IN_PAST',
     'BOOKING_TOO_SOON',
@@ -188,7 +199,7 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
   ];
 
   const handleConfirm = async () => {
-    if (!selectedTime || !selectedService || submitting) return;
+    if (!selectedTime || selectedServices.length === 0 || submitting) return;
     if (!isClientSession && (!clientName.trim() || !clientPhone.trim())) {
       setErrorMsg('Ingresa tu nombre y teléfono para reservar.');
       return;
@@ -199,7 +210,7 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
     try {
       await createClientBooking({
         barberId: barber.id,
-        serviceId: selectedService.id,
+        serviceIds: selectedServices.map((s) => s.id),
         date: selectedDay.fullDate,
         time: selectedTime,
         ...(isClientSession
@@ -225,7 +236,7 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
         dateBadge: `${selectedDay.dayName} ${selectedDay.dayNumber} ${selectedDay.monthName}`,
         time: selectedTime,
         totalBs,
-        serviceNames: [selectedService.name],
+        serviceNames: selectedServices.map((s) => s.name),
         durationMin: totalDurationMin,
       });
       setIsConfirmed(false);
@@ -301,15 +312,15 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                 {/* 1. Selección de Servicios */}
                 <div className="space-y-2.5">
                   <span className="text-xs font-mono uppercase tracking-wider text-[#B68F4E] font-semibold">
-                    1. Selecciona tu servicio
+                    1. Selecciona tus servicios
                   </span>
                   <div className="space-y-2">
                     {barber.services.map((srv) => {
-                      const isSelected = selectedServiceId === srv.id;
+                      const isSelected = selectedServiceIds.includes(srv.id);
                       return (
                         <div
                           key={srv.id}
-                          onClick={() => selectService(srv.id)}
+                          onClick={() => toggleService(srv.id)}
                           className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
                             isSelected
                               ? 'bg-[#B68F4E]/15 border-[#B68F4E] shadow-[0_0_12px_rgba(182,143,78,0.2)]'
@@ -581,6 +592,7 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                   disabled={
                     submitting ||
                     !selectedTime ||
+                    selectedServices.length === 0 ||
                     Boolean(availability && (!availability.acceptsBookings || !availability.isWorkingDay))
                   }
                   onClick={handleConfirm}

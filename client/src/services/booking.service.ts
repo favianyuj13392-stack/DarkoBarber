@@ -30,7 +30,6 @@ const BOOKING_ERROR_MESSAGES: Record<string, string> = {
   BOOKING_TOO_FAR: 'Esa fecha queda demasiado lejos para reservar. Elige una más cercana.',
   BARBER_NOT_WORKING: 'El barbero no atiende ese día.',
   OUTSIDE_WORKING_HOURS: 'Ese horario queda fuera del horario de atención del barbero.',
-  INVALID_SLOT: 'Ese horario no es un turno válido.',
   SLOT_TAKEN: 'Ese turno acaba de ser reservado por otra persona. Elige otro horario.',
   TOO_MANY_ACTIVE_BOOKINGS:
     'Ya tienes el máximo de reservas activas. Cancela alguna o espera a que se complete.',
@@ -267,11 +266,11 @@ export async function updateBookingSettings(
 export async function fetchBarberAvailability(
   barberId: string,
   date?: string,
-  serviceId?: string
+  serviceIds?: string[]
 ): Promise<BarberAvailabilityResponse> {
   const params = new URLSearchParams();
   if (date) params.set('date', date);
-  if (serviceId) params.set('serviceId', serviceId);
+  if (serviceIds && serviceIds.length > 0) params.set('serviceIds', serviceIds.join(','));
   const qs = params.toString();
   let res: Response;
   try {
@@ -283,13 +282,16 @@ export async function fetchBarberAvailability(
   return res.json();
 }
 
+/** Max services per booking; keep in sync with the server (MAX_SERVICES_PER_BOOKING). */
+export const MAX_SERVICES_PER_BOOKING = 5;
+
 /**
- * Creates a booking. Price and duration are decided by the server from `serviceId`.
+ * Creates a booking. Price and duration are decided by the server from `serviceIds`.
  * `clientName` / `clientPhone` are only needed when the user is not signed in as a client.
  */
 export async function createClientBooking(data: {
   barberId: string;
-  serviceId: string;
+  serviceIds: string[];
   date: string; // YYYY-MM-DD (La Paz)
   time: string; // HH:mm (La Paz)
   notes?: string;

@@ -28,7 +28,7 @@ describe('Bookings: overlap, availability and concurrency', () => {
     service.createBooking(
       {
         barberId,
-        serviceId: shortId,
+        serviceIds: [shortId],
         date: DAY,
         time: '10:00',
         clientName: 'Anon Client',
@@ -96,14 +96,21 @@ describe('Bookings: overlap, availability and concurrency', () => {
     });
 
     it('rejects partial overlaps in both directions', async () => {
-      await book({ serviceId: longId }); // 10:00-10:45
+      await book({ serviceIds: [longId] }); // 10:00-10:45
       expect((await errorOf(book({ time: '10:30' }))).code).toBe('SLOT_TAKEN'); // starts inside
-      expect((await errorOf(book({ time: '09:30', serviceId: longId }))).code).toBe('SLOT_TAKEN'); // ends inside (10:15)
+      expect((await errorOf(book({ time: '09:30', serviceIds: [longId] }))).code).toBe('SLOT_TAKEN'); // ends inside (10:15)
     });
 
     it('rejects a booking that fully contains an existing one', async () => {
       await book({ time: '10:30' }); // 10:30-11:00
-      expect((await errorOf(book({ time: '10:00', serviceId: longId }))).code).toBe('SLOT_TAKEN'); // 10:00-10:45
+      expect((await errorOf(book({ time: '10:00', serviceIds: [longId] }))).code).toBe('SLOT_TAKEN'); // 10:00-10:45
+    });
+
+    it('uses the summed duration of several services for the overlap check', async () => {
+      await book({ serviceIds: [shortId, longId] }); // 10:00-11:15 (30 + 45)
+      expect((await errorOf(book({ time: '11:00' }))).code).toBe('SLOT_TAKEN'); // inside the second half
+      expect((await errorOf(book({ time: '09:30', serviceIds: [shortId, shortId, longId] }))).code).toBe('SLOT_TAKEN');
+      await expect(book({ time: '11:30' })).resolves.toBeTruthy(); // after 11:15
     });
 
     it('allows adjacent bookings (end == next start) on both sides', async () => {
@@ -123,7 +130,7 @@ describe('Bookings: overlap, availability and concurrency', () => {
       const svc = await app.prisma.barberService.create({
         data: { barberId: otherBarberId, name: 'Otro', priceBs: 40, durationMin: 30 },
       });
-      await expect(book({ barberId: otherBarberId, serviceId: svc.id })).resolves.toBeTruthy();
+      await expect(book({ barberId: otherBarberId, serviceIds: [svc.id] })).resolves.toBeTruthy();
     });
   });
 
@@ -131,7 +138,7 @@ describe('Bookings: overlap, availability and concurrency', () => {
     const slotMap = (r: any) => Object.fromEntries(r.allSlots.map((s: any) => [s.time, s.available]));
 
     it('uses the real duration of existing bookings, not only their start time', async () => {
-      await book({ serviceId: longId }); // 10:00-10:45
+      await book({ serviceIds: [longId] }); // 10:00-10:45
       const r = await service.getBarberAvailability(barberId, DAY, NOW);
       const slots = slotMap(r);
       expect(slots['09:30']).toBe(true);
@@ -143,7 +150,7 @@ describe('Bookings: overlap, availability and concurrency', () => {
 
     it('sizes slots to the requested service duration', async () => {
       await book({ time: '10:00' }); // 10:00-10:30
-      const r = await service.getBarberAvailability(barberId, DAY, NOW, { serviceId: longId });
+      const r = await service.getBarberAvailability(barberId, DAY, NOW, { serviceIds: [longId] });
       const slots = slotMap(r);
       expect(slots['09:00']).toBe(true); // 09:00-09:45
       expect(slots['09:30']).toBe(false); // 09:30-10:15 hits the booking
@@ -151,6 +158,15 @@ describe('Bookings: overlap, availability and concurrency', () => {
       expect(slots['12:30']).toBe(false); // 12:30-13:15 overlaps the break
       expect(slots['19:30']).toBe(false); // would end after closing
       expect(slots['19:00']).toBe(true); // 19:00-19:45
+    });
+
+    it('sizes slots to the summed duration of several services', async () => {
+      const r = await service.getBarberAvailability(barberId, DAY, NOW, { serviceIds: [shortId, longId] }); // 75 min
+      const slots = slotMap(r);
+      expect(slots['11:00']).toBe(true); // 11:00-12:15
+      expect(slots['12:00']).toBe(false); // 12:00-13:15 hits the break
+      expect(slots['18:30']).toBe(true); // 18:30-19:45
+      expect(slots['19:00']).toBe(false); // 19:00-20:15 passes closing
     });
 
     it('marks past and inside-notice slots as unavailable for today', async () => {
@@ -197,7 +213,7 @@ describe('Bookings: overlap, availability and concurrency', () => {
       });
       await book({ clientId: client.id, time: '10:00' });
       await book({ clientId: client.id, time: '11:00' });
-      await book({ clientId: client.id, barberId: otherBarberId, serviceId: other.id, time: '10:00' });
+      await book({ clientId: client.id, barberId: otherBarberId, serviceIds: [other.id], time: '10:00' });
       const err = await errorOf(book({ clientId: client.id, time: '15:00' }));
       expect(err.code).toBe('TOO_MANY_ACTIVE_BOOKINGS');
     });
@@ -242,7 +258,7 @@ describe('Bookings: overlap, availability and concurrency', () => {
           app.inject({
             method: 'POST',
             url: `/barbers/${barberId}/bookings`,
-            payload: { serviceId: shortId, date, time: '10:00', clientName: `Racer ${i}`, clientPhone: nextPhone() },
+            payload: { serviceIds: [shortId], date, time: '10:00', clientName: `Racer ${i}`, clientPhone: nextPhone() },
           })
         )
       );
@@ -262,7 +278,7 @@ describe('Bookings: overlap, availability and concurrency', () => {
           app.inject({
             method: 'POST',
             url: `/barbers/${barberId}/bookings`,
-            payload: { serviceId: longId, date, time, clientName: 'Racer', clientPhone: nextPhone() },
+            payload: { serviceIds: [longId], date, time, clientName: 'Racer', clientPhone: nextPhone() },
           })
         )
       );
@@ -284,7 +300,7 @@ describe('Bookings: overlap, availability and concurrency', () => {
             method: 'POST',
             url: `/barbers/${barberId}/bookings`,
             headers: { authorization: `Bearer ${token}` },
-            payload: { serviceId: shortId, date, time },
+            payload: { serviceIds: [shortId], date, time },
           })
         )
       );

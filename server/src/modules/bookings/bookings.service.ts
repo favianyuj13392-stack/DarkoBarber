@@ -71,7 +71,8 @@ export interface CreateBookingInput {
   /** Contact data supplied in the body; used when the client profile lacks it (or anonymous). */
   clientName?: string;
   clientPhone?: string;
-  serviceId: string;
+  /** Distinct BarberService ids (1..5). Price, duration and name are derived server-side. */
+  serviceIds: string[];
   date: string;
   time: string;
   notes?: string;
@@ -132,7 +133,7 @@ export class BookingsService {
 
   /**
    * Creates a PENDING booking. Price, duration and service name always come from the
-   * barber's BarberService (never from the client). `now` is injectable for tests.
+   * barber's BarberService rows (summed over the chosen services, never from the client). `now` is injectable for tests.
    */
   async createBooking(input: CreateBookingInput, now: Date = new Date()) {
     const config = getBookingsConfig();
@@ -152,18 +153,14 @@ export class BookingsService {
       );
     }
 
-    const barberService = await this.prisma.barberService.findFirst({
-      where: { id: input.serviceId, barberId: barber.id, isActive: true },
-    });
-    if (!barberService) {
-      throw new AppError('SERVICE_NOT_FOUND', 'El servicio no existe o no está disponible', 404);
-    }
+    const { name: serviceName, priceBs: totalPriceBs, durationMin: totalDurationMin } =
+      await this.resolveServices(barber.id, input.serviceIds);
 
     const contact = await this.resolveContact(input);
 
     // --- Time rules (all La Paz wall-clock) ---
     const startMin = parseTimeToMinutes(input.time);
-    const endMin = startMin + barberService.durationMin;
+    const endMin = startMin + totalDurationMin;
     const startLocal = localMinutes(input.date, startMin);
     const nowLocal = nowLocalMinutes(now);
 
@@ -210,9 +207,6 @@ export class BookingsService {
         'El horario elegido coincide con el descanso del barbero',
         409
       );
-    }
-    if ((startMin - window.openMin) % window.slotIntervalMin !== 0) {
-      throw new AppError('INVALID_SLOT', 'El horario elegido no es un turno válido', 400);
     }
 
     const scheduledAt = laPazLocalToUtc(input.date, input.time);
@@ -270,9 +264,9 @@ export class BookingsService {
           clientId: contact.clientId,
           clientName: contact.name,
           clientPhone: contact.phone,
-          serviceName: barberService.name,
-          servicePriceBs: barberService.priceBs,
-          durationMin: barberService.durationMin,
+          serviceName,
+          servicePriceBs: totalPriceBs,
+          durationMin: totalDurationMin,
           date: input.date,
           time: input.time,
           scheduledAt,
@@ -281,6 +275,28 @@ export class BookingsService {
         },
       });
     });
+  }
+
+  /**
+   * Loads the requested services of one barber. Every id must exist, be active and belong
+   * to that barber. Returns the combined name ("A + B", in request order), summed price and
+   * summed duration: one booking is one cut, however many services it bundles.
+   */
+  private async resolveServices(barberId: string, serviceIds: string[]) {
+    const ids = [...new Set(serviceIds)];
+    const rows = await this.prisma.barberService.findMany({
+      where: { id: { in: ids }, barberId, isActive: true },
+    });
+    if (ids.length === 0 || rows.length !== ids.length) {
+      throw new AppError('SERVICE_NOT_FOUND', 'El servicio no existe o no está disponible', 404);
+    }
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const ordered = ids.map((id) => byId.get(id)!);
+    return {
+      name: ordered.map((r) => r.name).join(' + '),
+      priceBs: ordered.reduce((sum, r) => sum + r.priceBs, 0),
+      durationMin: ordered.reduce((sum, r) => sum + r.durationMin, 0),
+    };
   }
 
   /**
@@ -562,7 +578,7 @@ export class BookingsService {
 
   /**
    * Slot grid for one La Paz date. A slot is available only when a booking of
-   * `serviceId`'s duration (or one grid interval when omitted) starting there would be
+   * the chosen services' total duration (or one grid interval when omitted) starting there would be
    * accepted by createBooking: it must fit before closing, avoid the break, not overlap
    * any PENDING/CONFIRMED booking (using each booking's real duration), and respect the
    * barber's notice time, the past, and the advance window. `now` is injectable.
@@ -571,7 +587,7 @@ export class BookingsService {
     barberId: string,
     dateStr?: string,
     now: Date = new Date(),
-    opts: { serviceId?: string } = {}
+    opts: { serviceIds?: string[] } = {}
   ) {
     const nowParts = getLaPazNowParts(now);
     const targetDate = dateStr || nowParts.dateString;
@@ -610,12 +626,12 @@ export class BookingsService {
     }
 
     let durationMin = window.slotIntervalMin;
-    if (opts.serviceId) {
-      const svc = await this.prisma.barberService.findFirst({
-        where: { id: opts.serviceId, barberId, isActive: true },
+    if (opts.serviceIds && opts.serviceIds.length > 0) {
+      const svcs = await this.prisma.barberService.findMany({
+        where: { id: { in: [...new Set(opts.serviceIds)] }, barberId, isActive: true },
         select: { durationMin: true },
       });
-      if (svc) durationMin = svc.durationMin;
+      if (svcs.length > 0) durationMin = svcs.reduce((sum, s) => sum + s.durationMin, 0);
     }
 
     const existingBookings = await this.prisma.booking.findMany({

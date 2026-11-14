@@ -30,7 +30,7 @@ describe('Bookings: create validation', () => {
     service.createBooking(
       {
         barberId,
-        serviceId,
+        serviceIds: [serviceId],
         date: '2026-11-14',
         time: '10:00',
         clientName: 'Anon Client',
@@ -100,14 +100,16 @@ describe('Bookings: create validation', () => {
     });
 
     it('rejects malformed time, date, oversized notes; strips price/duration/clientId', () => {
-      const base = { serviceId: 's', date: '2026-11-14', time: '10:00' };
+      const base = { serviceIds: ['s'], date: '2026-11-14', time: '10:00' };
       expect(createBookingSchema.safeParse(base).success).toBe(true);
       expect(createBookingSchema.safeParse({ ...base, time: '9:00' }).success).toBe(false);
       expect(createBookingSchema.safeParse({ ...base, time: '24:00' }).success).toBe(false);
       expect(createBookingSchema.safeParse({ ...base, time: '10:60' }).success).toBe(false);
       expect(createBookingSchema.safeParse({ ...base, date: '2026-02-30' }).success).toBe(false);
       expect(createBookingSchema.safeParse({ ...base, notes: 'x'.repeat(501) }).success).toBe(false);
-      expect(createBookingSchema.safeParse({ ...base, serviceId: '' }).success).toBe(false);
+      expect(createBookingSchema.safeParse({ ...base, serviceIds: [] }).success).toBe(false);
+      expect(createBookingSchema.safeParse({ ...base, serviceIds: [''] }).success).toBe(false);
+      expect(createBookingSchema.safeParse({ ...base, serviceIds: 'a' }).success).toBe(false);
       expect(createBookingSchema.safeParse({ ...base, clientPhone: '12' }).success).toBe(false);
       const stripped = createBookingSchema.parse({
         ...base,
@@ -122,7 +124,7 @@ describe('Bookings: create validation', () => {
 
   describe('happy path and ownership of price/duration', () => {
     it('creates a PENDING booking taking name, price and duration from the barber service', async () => {
-      const b = await create({ serviceId: longServiceId });
+      const b = await create({ serviceIds: [longServiceId] });
       expect(b.status).toBe('PENDING');
       expect(b.serviceName).toBe('Combo');
       expect(b.servicePriceBs).toBe(80);
@@ -185,18 +187,14 @@ describe('Bookings: create validation', () => {
 
     it('rejects before opening and when the duration does not fit before closing', async () => {
       await expectError(create({ time: '08:30' }), 'OUTSIDE_WORKING_HOURS', 409);
-      await expectError(create({ time: '19:30', serviceId: longServiceId }), 'OUTSIDE_WORKING_HOURS', 409);
+      await expectError(create({ time: '19:30', serviceIds: [longServiceId] }), 'OUTSIDE_WORKING_HOURS', 409);
       await expectError(create({ time: '20:00' }), 'OUTSIDE_WORKING_HOURS', 409);
     });
 
     it('rejects bookings overlapping the break', async () => {
       await expectError(create({ time: '13:00' }), 'OUTSIDE_WORKING_HOURS', 409);
-      await expectError(create({ time: '12:30', serviceId: longServiceId }), 'OUTSIDE_WORKING_HOURS', 409);
+      await expectError(create({ time: '12:30', serviceIds: [longServiceId] }), 'OUTSIDE_WORKING_HOURS', 409);
       await expect(create({ time: '14:00' })).resolves.toBeTruthy(); // starts exactly at break end
-    });
-
-    it('rejects times that are not on the slot grid', async () => {
-      await expectError(create({ time: '10:15' }), 'INVALID_SLOT', 400);
     });
 
     it('uses custom working hours when configured', async () => {
@@ -213,7 +211,6 @@ describe('Bookings: create validation', () => {
         data: { workingHours: { days, slotIntervalMin: 60 } },
       });
       await expectError(create({ time: '10:00' }), 'OUTSIDE_WORKING_HOURS', 409);
-      await expectError(create({ time: '15:30' }), 'INVALID_SLOT', 400);
       await expect(create({ time: '16:00', date: '2026-11-15' })).resolves.toBeTruthy(); // Sunday enabled here
     });
   });
@@ -229,9 +226,97 @@ describe('Bookings: create validation', () => {
     });
 
     it('404 for unknown, foreign and inactive services', async () => {
-      await expectError(create({ serviceId: crypto.randomUUID() }), 'SERVICE_NOT_FOUND', 404);
-      await expectError(create({ serviceId: foreignServiceId }), 'SERVICE_NOT_FOUND', 404);
-      await expectError(create({ serviceId: inactiveServiceId }), 'SERVICE_NOT_FOUND', 404);
+      await expectError(create({ serviceIds: [crypto.randomUUID()] }), 'SERVICE_NOT_FOUND', 404);
+      await expectError(create({ serviceIds: [foreignServiceId] }), 'SERVICE_NOT_FOUND', 404);
+      await expectError(create({ serviceIds: [inactiveServiceId] }), 'SERVICE_NOT_FOUND', 404);
+    });
+  });
+
+  describe('multiple services per booking', () => {
+    let thirdServiceId: string; // 20 min, 30 Bs
+    const extra: string[] = [];
+    beforeAll(async () => {
+      thirdServiceId = (
+        await app.prisma.barberService.create({
+          data: { barberId, name: 'Barba', priceBs: 30, durationMin: 20 },
+        })
+      ).id;
+      for (let i = 0; i < 4; i++) {
+        extra.push(
+          (await app.prisma.barberService.create({ data: { barberId, name: `Extra${i}`, priceBs: 10, durationMin: 5 } })).id
+        );
+      }
+    });
+
+    it('sums price and duration and joins names, computed server-side', async () => {
+      const b = await create({ serviceIds: [serviceId, thirdServiceId, longServiceId] });
+      expect(b.serviceName).toBe('Corte + Barba + Combo');
+      expect(b.servicePriceBs).toBe(50 + 30 + 80);
+      expect(b.durationMin).toBe(30 + 20 + 45);
+    });
+
+    it('is one booking row (one cut) regardless of the number of services', async () => {
+      await create({ serviceIds: [serviceId, thirdServiceId] });
+      expect(await app.prisma.booking.count({ where: { barberId } })).toBe(1);
+    });
+
+    it('dedupes repeated ids at the schema level and in the service', async () => {
+      const parsed = createBookingSchema.parse({
+        serviceIds: ['a', 'b', 'a'],
+        date: '2026-11-14',
+        time: '10:00',
+      });
+      expect(parsed.serviceIds).toEqual(['a', 'b']);
+      const b = await create({ serviceIds: [serviceId, serviceId] });
+      expect(b.serviceName).toBe('Corte');
+      expect(b.servicePriceBs).toBe(50);
+      expect(b.durationMin).toBe(30);
+    });
+
+    it('accepts exactly 5 services and rejects 6 and empty lists at the schema', () => {
+      const base = { date: '2026-11-14', time: '10:00' };
+      const ids = (n: number) => Array.from({ length: n }, (_, i) => `s${i}`);
+      expect(createBookingSchema.safeParse({ ...base, serviceIds: ids(5) }).success).toBe(true);
+      expect(createBookingSchema.safeParse({ ...base, serviceIds: ids(6) }).success).toBe(false);
+      expect(createBookingSchema.safeParse({ ...base, serviceIds: [] }).success).toBe(false);
+    });
+
+    it('rejects the whole booking if any service is inactive, foreign or unknown', async () => {
+      await expectError(create({ serviceIds: [serviceId, inactiveServiceId] }), 'SERVICE_NOT_FOUND', 404);
+      await expectError(create({ serviceIds: [serviceId, foreignServiceId] }), 'SERVICE_NOT_FOUND', 404);
+      await expectError(create({ serviceIds: [serviceId, crypto.randomUUID()] }), 'SERVICE_NOT_FOUND', 404);
+      expect(await app.prisma.booking.count({ where: { barberId } })).toBe(0);
+    });
+
+    it('over HTTP: 6 services and the legacy single serviceId answer 400', async () => {
+      const send = (serviceIds: string[]) =>
+        app.inject({
+          method: 'POST',
+          url: `/barbers/${barberId}/bookings`,
+          payload: {
+            serviceIds,
+            date: toLaPazDateString(new Date(Date.now() + 3 * 86_400_000)),
+            time: '10:00',
+            clientName: 'Multi Client',
+            clientPhone: '71234567',
+          },
+        });
+      const six = await send([serviceId, thirdServiceId, longServiceId, ...extra.slice(0, 3)]);
+      expect(six.statusCode).toBe(400);
+      expect(JSON.parse(six.body).error).toBe('VALIDATION_ERROR');
+      const legacy = await app.inject({
+        method: 'POST',
+        url: `/barbers/${barberId}/bookings`,
+        payload: { serviceId, date: '2026-11-14', time: '10:00', clientName: 'Old Client', clientPhone: '71234567' },
+      });
+      expect(legacy.statusCode).toBe(400);
+    });
+
+    it('the total duration must fit before closing and avoid the break', async () => {
+      // 30 + 20 + 45 = 95 min
+      await expectError(create({ time: '19:00', serviceIds: [serviceId, thirdServiceId, longServiceId] }), 'OUTSIDE_WORKING_HOURS', 409);
+      await expectError(create({ time: '12:00', serviceIds: [serviceId, thirdServiceId, longServiceId] }), 'OUTSIDE_WORKING_HOURS', 409);
+      await expect(create({ time: '09:00', serviceIds: [serviceId, thirdServiceId, longServiceId] })).resolves.toBeTruthy();
     });
   });
 
@@ -249,7 +334,7 @@ describe('Bookings: create validation', () => {
         method: 'POST',
         url: `/barbers/${barberId}/bookings`,
         headers,
-        payload: { serviceId, date: futureDate(), time: '10:00', ...payload },
+        payload: { serviceIds: [serviceId], date: futureDate(), time: '10:00', ...payload },
       });
     let phoneSeq = 0;
     // Unique 8-digit phone per client (Client.phone is unique).
@@ -285,7 +370,7 @@ describe('Bookings: create validation', () => {
       const badPhone = await post({ clientName: 'X Y', clientPhone: '12' });
       expect(badPhone.statusCode).toBe(400);
 
-      const missingService = await post({ serviceId: crypto.randomUUID(), clientName: 'X Y', clientPhone: '71234567' });
+      const missingService = await post({ serviceIds: [crypto.randomUUID()], clientName: 'X Y', clientPhone: '71234567' });
       expect(missingService.statusCode).toBe(404);
       const parsed = JSON.parse(missingService.body);
       expect(parsed.error).toBe('SERVICE_NOT_FOUND');

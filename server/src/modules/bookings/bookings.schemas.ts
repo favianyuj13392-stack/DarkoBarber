@@ -24,8 +24,18 @@ export function normalizePhone(raw: string): string | null {
   return `+591${digits}`;
 }
 
+/** Max services that can be combined in one booking (one booking = one cut). */
+export const MAX_SERVICES_PER_BOOKING = 5;
+
+const serviceIdsSchema = z
+  .array(z.string().trim().min(1).max(64))
+  .min(1)
+  .max(MAX_SERVICES_PER_BOOKING * 4) // hard cap before dedupe, to bound work on junk input
+  .transform((ids) => [...new Set(ids)])
+  .pipe(z.array(z.string()).min(1).max(MAX_SERVICES_PER_BOOKING));
+
 export const createBookingSchema = z.object({
-  serviceId: z.string().trim().min(1).max(64),
+  serviceIds: serviceIdsSchema,
   date: z
     .string()
     .refine(isRealCalendarDate, { message: 'date must be a real calendar date (YYYY-MM-DD)' }),
