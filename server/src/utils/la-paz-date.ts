@@ -64,6 +64,15 @@ export function getLaPazNowParts(now: Date = new Date()): LaPazNowParts {
   };
 }
 
+/**
+ * UTC instant of 00:00 La Paz on the 1st of the La Paz calendar month containing `now`.
+ * La Paz is UTC-4 year-round, so this is 04:00 UTC on that day.
+ */
+export function laPazMonthStartUtc(now: Date = new Date()): Date {
+  const [y, m] = toLaPazDateString(now).split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, 1, 4, 0, 0, 0));
+}
+
 /** True when both instants fall on the same La Paz calendar day. */
 export function isSameLaPazDay(a: Date, b: Date): boolean {
   return toLaPazDateString(a) === toLaPazDateString(b);

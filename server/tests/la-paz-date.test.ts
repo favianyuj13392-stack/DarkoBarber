@@ -4,7 +4,32 @@ import {
   laPazDaysBetween,
   isSameLaPazDay,
   getLaPazNowParts,
+  laPazMonthStartUtc,
 } from '../src/utils/la-paz-date';
+
+describe('laPazMonthStartUtc', () => {
+  it('returns 00:00 La Paz (04:00 UTC) of the 1st of the month', () => {
+    expect(laPazMonthStartUtc(new Date('2026-11-14T15:00:00Z')).toISOString()).toBe('2026-11-01T04:00:00.000Z');
+  });
+
+  it('2026-12-01T03:00:00Z is still November in La Paz', () => {
+    const start = laPazMonthStartUtc(new Date('2026-12-01T03:00:00Z'));
+    expect(start.toISOString()).toBe('2026-11-01T04:00:00.000Z');
+    // A cut at that instant counts toward November, i.e. it is >= the November start
+    // and < the December start.
+    const cutAt = new Date('2026-12-01T03:00:00Z');
+    expect(cutAt >= start).toBe(true);
+    expect(cutAt < laPazMonthStartUtc(new Date('2026-12-01T04:00:00Z'))).toBe(true);
+  });
+
+  it('rolls over to the new month at 04:00 UTC on the 1st', () => {
+    expect(laPazMonthStartUtc(new Date('2026-12-01T04:00:00Z')).toISOString()).toBe('2026-12-01T04:00:00.000Z');
+  });
+
+  it('handles the year boundary', () => {
+    expect(laPazMonthStartUtc(new Date('2027-01-01T03:59:59Z')).toISOString()).toBe('2026-12-01T04:00:00.000Z');
+  });
+});
 
 describe('getLaPazNowParts', () => {
   it('2026-11-13T00:30:00Z is 2026-11-12 20:30 La Paz', () => {

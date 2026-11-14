@@ -3,6 +3,7 @@ import { StartCutInput, FinalizeCutInput } from './cuts.schemas';
 import { ConflictError, ForbiddenError, NotFoundError } from '../../utils/errors';
 import { AuthenticatedBarber } from '../../types';
 import { PresenceService } from '../presence/presence.service';
+import { laPazMonthStartUtc } from '../../utils/la-paz-date';
 
 export class CutsService {
   private presenceService: PresenceService;
@@ -35,9 +36,8 @@ export class CutsService {
     }
 
     // 3. RN-03: Verify monthly cut limit
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
+    // The month resets at 00:00 La Paz on day 1, regardless of the server timezone.
+    const startOfMonth = laPazMonthStartUtc();
 
     const monthlyCutsCount = await this.prisma.cut.count({
       where: {
