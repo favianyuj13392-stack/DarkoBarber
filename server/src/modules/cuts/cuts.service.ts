@@ -4,6 +4,7 @@ import { ConflictError, ForbiddenError, NotFoundError } from '../../utils/errors
 import { AuthenticatedBarber } from '../../types';
 import { PresenceService } from '../presence/presence.service';
 import { getMonthlyCutUsage, getPlanCutLimit } from './cut-quota';
+import { laPazMonthStartUtc } from '../../utils/la-paz-date';
 
 export class CutsService {
   private presenceService: PresenceService;
@@ -112,13 +113,18 @@ export class CutsService {
     }
 
     // 5. Create cut record en PostgreSQL
+    // startedAt is client-supplied (offline sync). Clamp it to the current La Paz month so a
+    // backdated value cannot move the cut out of the month it is counted against.
+    const monthStart = laPazMonthStartUtc();
+    const requestedStart = input.startedAt ? new Date(input.startedAt) : new Date();
+    const startedAt = requestedStart < monthStart ? monthStart : requestedStart;
     const cut = await this.prisma.cut.create({
       data: {
         clientRequestId: input.clientRequestId,
         barberId: barber.id,
         clientProfileId: profile.id,
         status: 'IN_PROGRESS',
-        startedAt: input.startedAt ? new Date(input.startedAt) : new Date(),
+        startedAt,
       },
     });
 

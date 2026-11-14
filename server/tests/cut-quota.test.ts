@@ -231,6 +231,19 @@ describe('cut-quota: database behavior', () => {
     await expectBlocked('AUTONOMO');
   });
 
+  it('clamps a backdated startedAt to the current La Paz month so it cannot evade the quota', async () => {
+    const { cut } = await service.startCut(
+      { id: barber.id, phone: null, displayName: 'Test', shopId: barber.shopId, deviceId: null, plan: 'AUTONOMO' },
+      {
+        clientRequestId: `quota-backdate-${++seq}`,
+        clientProfileId,
+        startedAt: '2020-01-15T12:00:00Z',
+      }
+    );
+    expect(cut.startedAt.getTime()).toBe(monthStart.getTime());
+    expect((await getMonthlyCutUsage(app.prisma, barber.id, 'AUTONOMO')).inProgress).toBe(1);
+  });
+
   it('getBarberSubscription reports the same usage and the cancellation allowance', async () => {
     await seedCuts('FINISHED', 10);
     await seedCuts('CANCELLED', 5);
