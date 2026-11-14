@@ -3,7 +3,9 @@ import { ResendMailAdapter } from './resend.adapter';
 import {
   renderPasswordResetTemplate,
   renderTestEmailTemplate,
+  renderEmailVerificationTemplate,
   PasswordResetTemplateParams,
+  EmailVerificationTemplateParams,
 } from './email.templates';
 
 export class EmailService {
@@ -24,6 +26,18 @@ export class EmailService {
       html,
       text,
     });
+  }
+
+  /**
+   * Dispatches an email verification message containing a one-time link.
+   */
+  async sendEmailVerificationEmail(
+    to: string,
+    params: EmailVerificationTemplateParams
+  ): Promise<SendMailResult> {
+    const { subject, html, text } = renderEmailVerificationTemplate(params);
+
+    return this.adapter.send({ to, subject, html, text });
   }
 
   /**

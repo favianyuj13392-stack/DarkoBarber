@@ -203,7 +203,7 @@ export class AuthService {
   private googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
   async googleAuth(input: GoogleAuthInput): Promise<AuthResult> {
-    let payload: { sub: string; email: string; name?: string; picture?: string };
+    let payload: { sub: string; email: string; name?: string; picture?: string; emailVerified: boolean };
 
     const googleClientId = process.env.GOOGLE_CLIENT_ID;
 
@@ -221,12 +221,14 @@ export class AuthService {
             email: parsed.email || `${input.role}-test@darkobarber.com`,
             name: parsed.name || 'Test User',
             picture: parsed.picture,
+            emailVerified: parsed.email_verified === true,
           };
         } else {
           payload = {
             sub: `mock-google-${input.idToken}`,
             email: `${input.role}-test@darkobarber.com`,
             name: 'Test User',
+            emailVerified: false,
           };
         }
       } catch {
@@ -234,6 +236,7 @@ export class AuthService {
           sub: `mock-google-${input.idToken}`,
           email: `${input.role}-test@darkobarber.com`,
           name: 'Test User',
+          emailVerified: false,
         };
       }
     } else {
@@ -257,6 +260,7 @@ export class AuthService {
           email: ticketPayload.email,
           name: ticketPayload.name,
           picture: ticketPayload.picture,
+          emailVerified: ticketPayload.email_verified === true,
         };
       } catch (err: unknown) {
         const reason = err instanceof Error ? err.message : 'Invalid cryptographic signature or expired token';
@@ -334,6 +338,10 @@ export class AuthService {
             googleId,
             displayName: client.displayName || displayName,
             avatarUrl: client.avatarUrl || avatarUrl,
+            // Google verified the address owner: count it as a verified email.
+            ...(payload.emailVerified && !client.emailVerifiedAt && client.email === email
+              ? { emailVerifiedAt: new Date() }
+              : {}),
           },
         });
       } else {
@@ -341,6 +349,7 @@ export class AuthService {
           data: {
             email,
             googleId,
+            ...(payload.emailVerified ? { emailVerifiedAt: new Date() } : {}),
             displayName,
             avatarUrl,
             profiles: {
