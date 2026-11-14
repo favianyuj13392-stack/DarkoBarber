@@ -32,6 +32,47 @@ export function laPazDaysBetween(from: Date, to: Date): number {
   return Math.round(toUtcDay(to) - toUtcDay(from));
 }
 
+const clockFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: LA_PAZ_TIME_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+export interface LaPazNowParts {
+  /** La Paz calendar date, 'YYYY-MM-DD'. */
+  dateString: string;
+  /** La Paz hour of day, 0-23. */
+  hour: number;
+  /** La Paz minute, 0-59. */
+  minute: number;
+  /** Minutes elapsed since 00:00 La Paz on `dateString`. */
+  minutesSinceMidnight: number;
+}
+
+/** Wall-clock parts of an instant in La Paz time. `now` is injectable for tests. */
+export function getLaPazNowParts(now: Date = new Date()): LaPazNowParts {
+  const parts = clockFormatter.formatToParts(now);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
+  const hour = get('hour');
+  const minute = get('minute');
+  return {
+    dateString: toLaPazDateString(now),
+    hour,
+    minute,
+    minutesSinceMidnight: hour * 60 + minute,
+  };
+}
+
+/**
+ * UTC instant of 00:00 La Paz on the 1st of the La Paz calendar month containing `now`.
+ * La Paz is UTC-4 year-round, so this is 04:00 UTC on that day.
+ */
+export function laPazMonthStartUtc(now: Date = new Date()): Date {
+  const [y, m] = toLaPazDateString(now).split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, 1, 4, 0, 0, 0));
+}
+
 /** True when both instants fall on the same La Paz calendar day. */
 export function isSameLaPazDay(a: Date, b: Date): boolean {
   return toLaPazDateString(a) === toLaPazDateString(b);

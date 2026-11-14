@@ -1,5 +1,63 @@
 import { describe, it, expect } from 'vitest';
-import { toLaPazDateString, laPazDaysBetween, isSameLaPazDay } from '../src/utils/la-paz-date';
+import {
+  toLaPazDateString,
+  laPazDaysBetween,
+  isSameLaPazDay,
+  getLaPazNowParts,
+  laPazMonthStartUtc,
+} from '../src/utils/la-paz-date';
+
+describe('laPazMonthStartUtc', () => {
+  it('returns 00:00 La Paz (04:00 UTC) of the 1st of the month', () => {
+    expect(laPazMonthStartUtc(new Date('2026-11-14T15:00:00Z')).toISOString()).toBe('2026-11-01T04:00:00.000Z');
+  });
+
+  it('2026-12-01T03:00:00Z is still November in La Paz', () => {
+    const start = laPazMonthStartUtc(new Date('2026-12-01T03:00:00Z'));
+    expect(start.toISOString()).toBe('2026-11-01T04:00:00.000Z');
+    // A cut at that instant counts toward November, i.e. it is >= the November start
+    // and < the December start.
+    const cutAt = new Date('2026-12-01T03:00:00Z');
+    expect(cutAt >= start).toBe(true);
+    expect(cutAt < laPazMonthStartUtc(new Date('2026-12-01T04:00:00Z'))).toBe(true);
+  });
+
+  it('rolls over to the new month at 04:00 UTC on the 1st', () => {
+    expect(laPazMonthStartUtc(new Date('2026-12-01T04:00:00Z')).toISOString()).toBe('2026-12-01T04:00:00.000Z');
+  });
+
+  it('handles the year boundary', () => {
+    expect(laPazMonthStartUtc(new Date('2027-01-01T03:59:59Z')).toISOString()).toBe('2026-12-01T04:00:00.000Z');
+  });
+});
+
+describe('getLaPazNowParts', () => {
+  it('2026-11-13T00:30:00Z is 2026-11-12 20:30 La Paz', () => {
+    expect(getLaPazNowParts(new Date('2026-11-13T00:30:00Z'))).toEqual({
+      dateString: '2026-11-12',
+      hour: 20,
+      minute: 30,
+      minutesSinceMidnight: 1230,
+    });
+  });
+
+  it('2026-11-13T03:59:59Z is 2026-11-12 23:59 La Paz', () => {
+    const p = getLaPazNowParts(new Date('2026-11-13T03:59:59Z'));
+    expect(p.dateString).toBe('2026-11-12');
+    expect(p.hour).toBe(23);
+    expect(p.minute).toBe(59);
+    expect(p.minutesSinceMidnight).toBe(1439);
+  });
+
+  it('2026-11-13T04:00:00Z is midnight (hour 0, not 24) of the next La Paz day', () => {
+    expect(getLaPazNowParts(new Date('2026-11-13T04:00:00Z'))).toEqual({
+      dateString: '2026-11-13',
+      hour: 0,
+      minute: 0,
+      minutesSinceMidnight: 0,
+    });
+  });
+});
 
 describe('la-paz-date helpers', () => {
   it('formats a mid-day instant as YYYY-MM-DD', () => {
