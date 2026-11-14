@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { LoginInput, RegisterInput, GoogleAuthInput } from './auth.schemas';
 import { hashSecret, verifySecret } from '../../utils/crypto';
 import { emailService } from '../../services/email/email.service';
+import { laPazMonthStartUtc } from '../../utils/la-paz-date';
 
 export type AuthResult = {
   role: 'barbero' | 'cliente';
@@ -731,15 +732,14 @@ export class AuthService {
     return updated;
   }
 
-  async getBarberSubscription(barberId: string) {
+  async getBarberSubscription(barberId: string, now: Date = new Date()) {
     const barber = await this.prisma.barber.findUnique({
       where: { id: barberId },
     });
     if (!barber) return null;
 
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
+    // Billing month = La Paz calendar month (same boundary as the cut-limit check).
+    const startOfMonth = laPazMonthStartUtc(now);
 
     const monthlyCutsCount = await this.prisma.cut.count({
       where: {
@@ -763,9 +763,11 @@ export class AuthService {
     const maxCuts = limits[barber.plan] || 60;
     const priceBs = prices[barber.plan] || 45;
 
-    const nextBilling = new Date(startOfMonth);
-    nextBilling.setMonth(nextBilling.getMonth() + 1);
-    nextBilling.setDate(0);
+    // Last day of the La Paz month at 00:00 La Paz (04:00 UTC). startOfMonth is 04:00 UTC
+    // on day 1, so its UTC year/month equal the La Paz year/month.
+    const nextBilling = new Date(
+      Date.UTC(startOfMonth.getUTCFullYear(), startOfMonth.getUTCMonth() + 1, 0, 4, 0, 0, 0)
+    );
 
     return {
       barberId: barber.id,
