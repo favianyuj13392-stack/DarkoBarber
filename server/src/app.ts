@@ -12,6 +12,7 @@ import { cutsRoutes } from './modules/cuts/cuts.routes';
 import { photosRoutes } from './modules/photos/photos.routes';
 import bookingsRoutes from './modules/bookings/bookings.routes';
 import { emailVerificationRoutes } from './modules/rewards/email-verification.routes';
+import { adminRewardsRoutes } from './modules/rewards/admin.routes';
 import { startWatchdogs, stopWatchdogs } from './modules/presence/presence.watchdog';
 
 dotenv.config();
@@ -55,6 +56,7 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
   await app.register(photosRoutes);
   await app.register(bookingsRoutes);
   await app.register(emailVerificationRoutes);
+  await app.register(adminRewardsRoutes, { prefix: '/admin/rewards' });
 
   // Register API routes with /api prefix for full client compatibility
   await app.register(async (api) => {
@@ -65,6 +67,7 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
     await api.register(presenceRoutes);
     await api.register(bookingsRoutes);
     await api.register(emailVerificationRoutes);
+    await api.register(adminRewardsRoutes, { prefix: '/admin/rewards' });
   }, { prefix: '/api' });
 
   app.addHook('onReady', async () => {

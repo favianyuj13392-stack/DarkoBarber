@@ -4,7 +4,6 @@ import crypto from 'node:crypto';
 import { LoginInput, RegisterInput, GoogleAuthInput } from './auth.schemas';
 import { hashSecret, verifySecret } from '../../utils/crypto';
 import { emailService } from '../../services/email/email.service';
-import { RewardsService } from '../rewards/rewards.service';
 
 export type AuthResult = {
   role: 'barbero' | 'cliente';
@@ -845,26 +844,6 @@ export class AuthService {
   }
 
   // --- PROGRAMA DE CRECIMIENTO FADE: GAMIFICACIÓN Y RECOMPENSAS ---
-  async claimFreeMonthReward(barberId: string) {
-    const acquisitions = await new RewardsService(this.prisma).getProgress(barberId);
-    if (!acquisitions.goalReached) {
-      throw new Error('Meta no alcanzada todavía');
-    }
-
-    const updated = await this.prisma.barber.update({
-      where: { id: barberId },
-      data: {
-        freeMonthsEarned: { increment: 1 },
-      },
-    });
-
-    return {
-      success: true,
-      freeMonthsEarned: updated.freeMonthsEarned,
-      message: '¡Felicidades! Se ha aplicado 1 mes gratis de Plan Barbería Base a tu cuenta.',
-    };
-  }
-
   async requestPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
     const normalizedEmail = email.trim().toLowerCase();
 

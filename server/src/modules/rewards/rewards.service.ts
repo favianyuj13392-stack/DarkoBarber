@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient, RewardClaim } from '@prisma/client';
 import { getRewardsConfig } from './rewards.config';
 import { QualificationService } from './qualification.service';
 
@@ -83,4 +83,54 @@ export class RewardsService {
       rewardTitle: REWARD_TITLE,
     };
   }
+
+  /**
+   * Creates the one-time acquisition bonus claim (status PENDING). It never touches
+   * freeMonthsEarned: credit happens only when an admin approves the claim.
+   * Atomicity/idempotency relies on the DB unique (barberId, type, goalKey).
+   */
+  async createClaim(barberId: string): Promise<CreateClaimResult> {
+    const progress = await this.getProgress(barberId);
+
+    const existing = await this.findClaim(barberId, progress.goalKey);
+    if (existing) return { outcome: 'ALREADY_CLAIMED', claim: existing };
+
+    if (!progress.goalReached) {
+      return { outcome: 'GOAL_NOT_REACHED', progress };
+    }
+    if (progress.freeMonthsEarned >= progress.maxFreeMonths) {
+      return { outcome: 'CAP_REACHED', progress };
+    }
+
+    try {
+      const claim = await this.prisma.rewardClaim.create({
+        data: {
+          barberId,
+          type: 'ACQUISITION_BONUS',
+          goalKey: progress.goalKey,
+          status: 'PENDING',
+          qualifiedCountAtClaim: progress.qualified,
+        },
+      });
+      return { outcome: 'CREATED', claim };
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const raced = await this.findClaim(barberId, progress.goalKey);
+        if (raced) return { outcome: 'ALREADY_CLAIMED', claim: raced };
+      }
+      throw err;
+    }
+  }
+
+  private findClaim(barberId: string, goalKey: string) {
+    return this.prisma.rewardClaim.findUnique({
+      where: { barberId_type_goalKey: { barberId, type: 'ACQUISITION_BONUS', goalKey } },
+    });
+  }
 }
+
+export type CreateClaimResult =
+  | { outcome: 'CREATED'; claim: RewardClaim }
+  | { outcome: 'ALREADY_CLAIMED'; claim: RewardClaim }
+  | { outcome: 'GOAL_NOT_REACHED'; progress: RewardsProgress }
+  | { outcome: 'CAP_REACHED'; progress: RewardsProgress };
