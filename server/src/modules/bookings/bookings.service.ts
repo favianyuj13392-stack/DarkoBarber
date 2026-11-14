@@ -13,6 +13,7 @@ import {
   parseTimeToMinutes,
   rangesOverlap,
 } from './bookings.time';
+import { CLIENT_CANCELLABLE_FROM, REQUIRES_START_PASSED, canTransition } from './bookings.status';
 
 export interface DaySchedule {
   dayOfWeek: number; // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
@@ -383,29 +384,137 @@ export class BookingsService {
     return { clientId, name, phone };
   }
 
+  /**
+   * Barber-driven status change. Ownership is verified (a booking of another barber is
+   * reported as not found) and the transition must be allowed by the state machine.
+   * COMPLETED / NO_SHOW additionally require the appointment start to have passed.
+   */
   async updateBookingStatus(
     barberId: string,
     bookingId: string,
     status: BookingStatus,
-    cancelReason?: string
+    cancelReason?: string,
+    now: Date = new Date()
   ) {
-    const existing = await (this.prisma as any).booking.findUnique({
-      where: { id: bookingId },
-    });
-
+    const existing = await this.prisma.booking.findUnique({ where: { id: bookingId } });
     if (!existing || existing.barberId !== barberId) {
-      throw new Error('Reserva no encontrada o no pertenece al barbero');
+      throw new AppError('BOOKING_NOT_FOUND', 'Reserva no encontrada', 404);
     }
 
-    const updated = await (this.prisma as any).booking.update({
-      where: { id: bookingId },
-      data: {
-        status,
-        ...(cancelReason ? { cancelReason } : {}),
-      },
-    });
+    this.assertTransition(existing, status, now);
+    return this.applyTransition(existing.id, existing.status, status, cancelReason);
+  }
 
-    return updated;
+  /**
+   * Client-driven cancellation of their own booking (PENDING or CONFIRMED), allowed only
+   * while at least BOOKING_CANCEL_MIN_HOURS remain before the start.
+   */
+  async cancelBookingAsClient(
+    clientId: string,
+    bookingId: string,
+    cancelReason?: string,
+    now: Date = new Date()
+  ) {
+    const existing = await this.prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!existing || !existing.clientId || existing.clientId !== clientId) {
+      throw new AppError('BOOKING_NOT_FOUND', 'Reserva no encontrada', 404);
+    }
+    if (!CLIENT_CANCELLABLE_FROM.includes(existing.status)) {
+      throw new AppError(
+        'INVALID_TRANSITION',
+        `No se puede cancelar una reserva en estado ${existing.status}`,
+        409
+      );
+    }
+
+    const { cancelMinHours } = getBookingsConfig();
+    const minutesToStart = this.startLocalMinutes(existing) - nowLocalMinutes(now);
+    if (minutesToStart < cancelMinHours * 60) {
+      throw new AppError(
+        'TOO_LATE_TO_CANCEL',
+        `Solo puedes cancelar con al menos ${cancelMinHours} horas de anticipación. Contacta al barbero`,
+        409
+      );
+    }
+
+    return this.applyTransition(existing.id, existing.status, BookingStatus.CANCELLED, cancelReason);
+  }
+
+  /** Client's own bookings (upcoming and past), newest first, with barber and service names. */
+  async getClientBookings(clientId: string, now: Date = new Date()) {
+    const rows = await this.prisma.booking.findMany({
+      where: { clientId },
+      include: { barber: { select: { displayName: true } } },
+      orderBy: [{ date: 'desc' }, { time: 'desc' }, { createdAt: 'desc' }],
+    });
+    const nowLocal = nowLocalMinutes(now);
+    const { cancelMinHours } = getBookingsConfig();
+
+    return rows.map((b) => {
+      const minutesToStart = this.startLocalMinutes(b) - nowLocal;
+      return {
+        id: b.id,
+        barberId: b.barberId,
+        barberName: b.barber.displayName,
+        serviceName: b.serviceName,
+        servicePriceBs: b.servicePriceBs,
+        durationMin: b.durationMin,
+        date: b.date,
+        time: b.time,
+        status: b.status,
+        notes: b.notes,
+        cancelReason: b.cancelReason,
+        createdAt: b.createdAt,
+        isUpcoming: minutesToStart > 0,
+        canCancel:
+          CLIENT_CANCELLABLE_FROM.includes(b.status) && minutesToStart >= cancelMinHours * 60,
+      };
+    });
+  }
+
+  private startLocalMinutes(b: { date: string; time: string }): number {
+    return localMinutes(b.date, parseTimeToMinutes(b.time));
+  }
+
+  private assertTransition(
+    booking: { status: BookingStatus; date: string; time: string },
+    target: BookingStatus,
+    now: Date
+  ) {
+    if (!canTransition(booking.status, target)) {
+      throw new AppError(
+        'INVALID_TRANSITION',
+        `No se puede pasar una reserva de ${booking.status} a ${target}`,
+        409
+      );
+    }
+    if (
+      REQUIRES_START_PASSED.includes(target) &&
+      this.startLocalMinutes(booking) > nowLocalMinutes(now)
+    ) {
+      throw new AppError(
+        'BOOKING_NOT_STARTED',
+        'Solo puedes marcar la reserva como completada o ausente después de su hora de inicio',
+        409
+      );
+    }
+  }
+
+  /** Compare-and-set on the current status so two racing updates cannot both apply. */
+  private async applyTransition(
+    id: string,
+    from: BookingStatus,
+    to: BookingStatus,
+    cancelReason?: string
+  ) {
+    const result = await this.prisma.booking.updateMany({
+      where: { id, status: from },
+      data: { status: to, ...(cancelReason ? { cancelReason } : {}) },
+    });
+    if (result.count === 0) {
+      throw new AppError('INVALID_TRANSITION', 'La reserva cambió de estado, vuelve a intentarlo', 409);
+    }
+    return this.prisma.booking.findUniqueOrThrow({ where: { id } });
   }
 
   /**

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BOOKING_STATUSES } from './bookings.status';
 
 /** True when 'YYYY-MM-DD' is a real calendar date (rejects 2026-02-30, 2026-13-01, ...). */
 export function isRealCalendarDate(value: string): boolean {
@@ -41,3 +42,10 @@ export const createBookingSchema = z.object({
 });
 
 export type CreateBookingBody = z.infer<typeof createBookingSchema>;
+
+const statusEnum = z.enum(BOOKING_STATUSES);
+const cancelReason = z.string().trim().max(300).optional();
+
+export const updateStatusSchema = z.object({ status: statusEnum, cancelReason });
+export const cancelBodySchema = z.object({ cancelReason });
+export const listQuerySchema = z.object({ status: statusEnum.optional() });

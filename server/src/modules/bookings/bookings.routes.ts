@@ -2,14 +2,26 @@ import fp from 'fastify-plugin';
 import { FastifyPluginAsync } from 'fastify';
 import { BookingsService } from './bookings.service';
 import { resolveClientId, trackClientActivity } from '../rewards/rewards.hooks';
-import { createBookingSchema } from './bookings.schemas';
+import {
+  cancelBodySchema,
+  createBookingSchema,
+  listQuerySchema,
+  updateStatusSchema,
+} from './bookings.schemas';
+import { BOOKING_STATUSES } from './bookings.status';
 import { AppError } from '../../utils/errors';
-import { BookingStatus } from '@prisma/client';
 
 const bookingsRoutesPlugin: FastifyPluginAsync = async (fastify) => {
   const service = new BookingsService(fastify.prisma);
 
-  // GET /api/barbers/me/bookings
+  const sendAppError = (reply: any, err: unknown) => {
+    if (err instanceof AppError) {
+      return reply.status(err.statusCode).send({ error: err.code, message: err.message });
+    }
+    throw err;
+  };
+
+  // GET /api/barbers/me/bookings?status=
   fastify.get(
     '/barbers/me/bookings',
     { preHandler: [fastify.authenticateBarber] },
@@ -17,13 +29,20 @@ const bookingsRoutesPlugin: FastifyPluginAsync = async (fastify) => {
       const barberId = request.barber?.id || request.authUser?.id;
       if (!barberId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
 
-      const query = request.query as { status?: BookingStatus };
-      const bookings = await service.getBarberBookings(barberId, query.status);
+      const query = listQuerySchema.safeParse(request.query ?? {});
+      if (!query.success) {
+        return reply.status(400).send({
+          error: 'INVALID_STATUS',
+          message: `status must be one of ${BOOKING_STATUSES.join(', ')}`,
+        });
+      }
+      const bookings = await service.getBarberBookings(barberId, query.data.status);
       return reply.status(200).send(bookings);
     }
   );
 
-  // PATCH /api/barbers/me/bookings/:bookingId
+  // PATCH /api/barbers/me/bookings/:bookingId  { status, cancelReason? }
+  // Barber-owned bookings only; transitions follow the state machine in bookings.status.ts.
   fastify.patch(
     '/barbers/me/bookings/:bookingId',
     { preHandler: [fastify.authenticateBarber] },
@@ -32,20 +51,70 @@ const bookingsRoutesPlugin: FastifyPluginAsync = async (fastify) => {
       if (!barberId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
 
       const { bookingId } = request.params as { bookingId: string };
-      const body = request.body as { status: BookingStatus; cancelReason?: string };
-
-      if (!body.status) {
-        return reply.status(400).send({ error: 'STATUS_REQUIRED' });
+      const body = updateStatusSchema.safeParse(request.body ?? {});
+      if (!body.success) {
+        return reply.status(400).send({
+          error: 'VALIDATION_ERROR',
+          message: `status must be one of ${BOOKING_STATUSES.join(', ')}`,
+          issues: body.error.format(),
+        });
       }
 
-      const updated = await service.updateBookingStatus(
-        barberId,
-        bookingId,
-        body.status,
-        body.cancelReason
-      );
+      try {
+        const updated = await service.updateBookingStatus(
+          barberId,
+          bookingId,
+          body.data.status,
+          body.data.cancelReason
+        );
+        return reply.status(200).send(updated);
+      } catch (err) {
+        return sendAppError(reply, err);
+      }
+    }
+  );
 
-      return reply.status(200).send(updated);
+  // GET /api/clients/me/bookings: the authenticated client's bookings, newest first
+  fastify.get(
+    '/clients/me/bookings',
+    { preHandler: [fastify.authenticateUser] },
+    async (request: any, reply) => {
+      if (request.authUser?.role !== 'cliente') {
+        return reply.status(403).send({ error: 'FORBIDDEN', message: 'Solo para clientes' });
+      }
+      const bookings = await service.getClientBookings(request.authUser.id);
+      return reply.status(200).send(bookings);
+    }
+  );
+
+  // PATCH /api/bookings/:bookingId/cancel  { cancelReason? }: the owning client cancels
+  fastify.patch(
+    '/bookings/:bookingId/cancel',
+    { preHandler: [fastify.authenticateUser] },
+    async (request: any, reply) => {
+      if (request.authUser?.role !== 'cliente') {
+        return reply.status(403).send({ error: 'FORBIDDEN', message: 'Solo para clientes' });
+      }
+      const { bookingId } = request.params as { bookingId: string };
+      const body = cancelBodySchema.safeParse(request.body ?? {});
+      if (!body.success) {
+        return reply.status(400).send({
+          error: 'VALIDATION_ERROR',
+          message: 'Datos inválidos',
+          issues: body.error.format(),
+        });
+      }
+
+      try {
+        const updated = await service.cancelBookingAsClient(
+          request.authUser.id,
+          bookingId,
+          body.data.cancelReason
+        );
+        return reply.status(200).send(updated);
+      } catch (err) {
+        return sendAppError(reply, err);
+      }
     }
   );
 
