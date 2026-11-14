@@ -1,4 +1,5 @@
 import { PrismaClient, BookingStatus } from '@prisma/client';
+import { getLaPazNowParts, toLaPazDateString } from '../../utils/la-paz-date';
 
 export interface DaySchedule {
   dayOfWeek: number; // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
@@ -62,7 +63,11 @@ export interface CreateBookingInput {
 export class BookingsService {
   constructor(private prisma: PrismaClient) {}
 
-  async getBarberBookings(barberId: string, statusFilter?: BookingStatus) {
+  async getBarberBookings(
+    barberId: string,
+    statusFilter?: BookingStatus,
+    now: Date = new Date()
+  ) {
     const where: any = { barberId };
     if (statusFilter) {
       where.status = statusFilter;
@@ -75,7 +80,7 @@ export class BookingsService {
 
     // If no bookings exist yet in database, seed realistic demo bookings for the barber
     if (bookings.length === 0) {
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = toLaPazDateString(now);
       const demoSeed = [
         {
           id: `seed-bk-1`,
@@ -181,10 +186,14 @@ export class BookingsService {
     return updated;
   }
 
-  async getUpcomingAlert(barberId: string) {
-    const todayStr = new Date().toISOString().split('T')[0];
-    const now = new Date();
-    const nowMinutesTotal = now.getHours() * 60 + now.getMinutes();
+  /**
+   * Walk-in synergy alert. "Today" and "now" are La Paz wall-clock values
+   * (bookings store date/time as La Paz local strings). Only same-day bookings
+   * are considered: a booking just after midnight never alerts the previous day.
+   */
+  async getUpcomingAlert(barberId: string, now: Date = new Date()) {
+    const { dateString: todayStr, minutesSinceMidnight: nowMinutesTotal } =
+      getLaPazNowParts(now);
 
     const confirmedToday = await (this.prisma as any).booking.findMany({
       where: {
@@ -277,8 +286,8 @@ export class BookingsService {
     };
   }
 
-  async getBarberAvailability(barberId: string, dateStr?: string) {
-    const targetDate = dateStr || new Date().toISOString().split('T')[0];
+  async getBarberAvailability(barberId: string, dateStr?: string, now: Date = new Date()) {
+    const targetDate = dateStr || toLaPazDateString(now);
     const settings = await this.getBarberBookingSettings(barberId);
 
     if (!settings.acceptsBookings) {
