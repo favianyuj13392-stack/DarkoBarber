@@ -2,10 +2,11 @@ import { PrismaClient, BookingStatus } from '@prisma/client';
 import { getLaPazNowParts, toLaPazDateString } from '../../utils/la-paz-date';
 import { AppError } from '../../utils/errors';
 import { getBookingsConfig } from './bookings.config';
-import { normalizePhone } from './bookings.schemas';
+import { isRealCalendarDate, normalizePhone } from './bookings.schemas';
 import {
   dayNumber,
   dayOfWeekOf,
+  formatMinutes,
   laPazLocalToUtc,
   localMinutes,
   nowLocalMinutes,
@@ -58,6 +59,9 @@ export function getDefaultWorkingHours(): BarberWorkingHoursConfig {
     slotIntervalMin: 30,
   };
 }
+
+/** Statuses that hold a slot and count toward a client's active-bookings cap. */
+export const ACTIVE_STATUSES: BookingStatus[] = [BookingStatus.PENDING, BookingStatus.CONFIRMED];
 
 export interface CreateBookingInput {
   barberId: string;
@@ -267,21 +271,71 @@ export class BookingsService {
       throw new AppError('INVALID_SLOT', 'El horario elegido no es un turno válido', 400);
     }
 
-    return (this.prisma as any).booking.create({
-      data: {
-        barberId: barber.id,
-        clientId: contact.clientId,
-        clientName: contact.name,
-        clientPhone: contact.phone,
-        serviceName: barberService.name,
-        servicePriceBs: barberService.priceBs,
-        durationMin: barberService.durationMin,
-        date: input.date,
-        time: input.time,
-        scheduledAt: laPazLocalToUtc(input.date, input.time),
-        status: BookingStatus.PENDING,
-        notes: input.notes || null,
-      },
+    const scheduledAt = laPazLocalToUtc(input.date, input.time);
+    const identityWhere = contact.clientId
+      ? { clientId: contact.clientId }
+      : { clientId: null, clientPhone: contact.phone };
+    const identityKey = contact.clientId ? `client:${contact.clientId}` : `phone:${contact.phone}`;
+    const nowParts = getLaPazNowParts(now);
+    const nowTime = formatMinutes(nowParts.minutesSinceMidnight);
+
+    return this.prisma.$transaction(async (tx) => {
+      // Serialize every booking write for this barber (and for this client identity) so two
+      // concurrent requests cannot both pass the checks below. Lock order is always
+      // barber -> identity, which rules out deadlocks. Both are transaction-scoped.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`barber:${barber.id}`}, 0))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`booking-identity:${identityKey}`}, 0))`;
+
+      const sameDay = await tx.booking.findMany({
+        where: {
+          barberId: barber.id,
+          date: input.date,
+          status: { in: ACTIVE_STATUSES },
+        },
+        select: { time: true, durationMin: true },
+      });
+      const clash = sameDay.some((b) => {
+        const bStart = parseTimeToMinutes(b.time);
+        return rangesOverlap(startMin, endMin, bStart, bStart + b.durationMin);
+      });
+      if (clash) {
+        throw new AppError('SLOT_TAKEN', 'Ese horario ya no está disponible', 409);
+      }
+
+      const activeCount = await tx.booking.count({
+        where: {
+          ...identityWhere,
+          status: { in: ACTIVE_STATUSES },
+          OR: [
+            { date: { gt: nowParts.dateString } },
+            { date: nowParts.dateString, time: { gt: nowTime } },
+          ],
+        },
+      });
+      if (activeCount >= config.maxActivePerClient) {
+        throw new AppError(
+          'TOO_MANY_ACTIVE_BOOKINGS',
+          `Ya tienes ${config.maxActivePerClient} reservas activas. Cancela o completa alguna antes de reservar otra`,
+          409
+        );
+      }
+
+      return tx.booking.create({
+        data: {
+          barberId: barber.id,
+          clientId: contact.clientId,
+          clientName: contact.name,
+          clientPhone: contact.phone,
+          serviceName: barberService.name,
+          servicePriceBs: barberService.priceBs,
+          durationMin: barberService.durationMin,
+          date: input.date,
+          time: input.time,
+          scheduledAt,
+          status: BookingStatus.PENDING,
+          notes: input.notes || null,
+        },
+      });
     });
   }
 
@@ -454,8 +508,24 @@ export class BookingsService {
     };
   }
 
-  async getBarberAvailability(barberId: string, dateStr?: string, now: Date = new Date()) {
-    const targetDate = dateStr || toLaPazDateString(now);
+  /**
+   * Slot grid for one La Paz date. A slot is available only when a booking of
+   * `serviceId`'s duration (or one grid interval when omitted) starting there would be
+   * accepted by createBooking: it must fit before closing, avoid the break, not overlap
+   * any PENDING/CONFIRMED booking (using each booking's real duration), and respect the
+   * barber's notice time, the past, and the advance window. `now` is injectable.
+   */
+  async getBarberAvailability(
+    barberId: string,
+    dateStr?: string,
+    now: Date = new Date(),
+    opts: { serviceId?: string } = {}
+  ) {
+    const nowParts = getLaPazNowParts(now);
+    const targetDate = dateStr || nowParts.dateString;
+    if (!isRealCalendarDate(targetDate)) {
+      throw new AppError('INVALID_DATE', 'La fecha debe tener el formato YYYY-MM-DD', 400);
+    }
     const settings = await this.getBarberBookingSettings(barberId);
 
     if (!settings.acceptsBookings) {
@@ -470,26 +540,12 @@ export class BookingsService {
       };
     }
 
-    // Determine day of week
-    let dayOfWeek = 1;
-    const match = targetDate.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-    if (match) {
-      const y = parseInt(match[1], 10);
-      const m = parseInt(match[2], 10) - 1;
-      const d = parseInt(match[3], 10);
-      dayOfWeek = new Date(y, m, d).getDay();
-    } else {
-      const parsed = new Date(targetDate);
-      if (!isNaN(parsed.getTime())) {
-        dayOfWeek = parsed.getDay();
-      }
-    }
-
     const daySchedule = settings.workingHours.days.find(
-      (d) => d.dayOfWeek === dayOfWeek
+      (d) => d.dayOfWeek === dayOfWeekOf(targetDate)
     );
+    const window = resolveDayWindow(settings.workingHours, targetDate);
 
-    if (!daySchedule || !daySchedule.enabled) {
+    if (!window || !daySchedule) {
       return {
         acceptsBookings: true,
         isWorkingDay: false,
@@ -501,31 +557,31 @@ export class BookingsService {
       };
     }
 
-    const slotInterval = settings.workingHours.slotIntervalMin || 30;
-    const [openH, openM] = daySchedule.openTime.split(':').map(Number);
-    const [closeH, closeM] = daySchedule.closeTime.split(':').map(Number);
-    const openMin = (openH || 9) * 60 + (openM || 0);
-    const closeMin = (closeH || 20) * 60 + (closeM || 0);
-
-    let breakStartMin = -1;
-    let breakEndMin = -1;
-    if (daySchedule.hasBreak && daySchedule.breakStart && daySchedule.breakEnd) {
-      const [bsh, bsm] = daySchedule.breakStart.split(':').map(Number);
-      const [beh, bem] = daySchedule.breakEnd.split(':').map(Number);
-      breakStartMin = (bsh || 13) * 60 + (bsm || 0);
-      breakEndMin = (beh || 14) * 60 + (bem || 0);
+    let durationMin = window.slotIntervalMin;
+    if (opts.serviceId) {
+      const svc = await this.prisma.barberService.findFirst({
+        where: { id: opts.serviceId, barberId, isActive: true },
+        select: { durationMin: true },
+      });
+      if (svc) durationMin = svc.durationMin;
     }
 
-    // Get existing bookings for this barber on targetDate
-    const existingBookings = await (this.prisma as any).booking.findMany({
+    const existingBookings = await this.prisma.booking.findMany({
       where: {
         barberId,
         date: targetDate,
-        status: { in: [BookingStatus.PENDING, BookingStatus.CONFIRMED] },
+        status: { in: ACTIVE_STATUSES },
       },
-      select: { time: true },
+      select: { time: true, durationMin: true },
     });
-    const bookedTimes = new Set<string>(existingBookings.map((b: any) => b.time));
+    const busy = existingBookings.map((b) => {
+      const start = parseTimeToMinutes(b.time);
+      return { start, end: start + b.durationMin };
+    });
+
+    const config = getBookingsConfig();
+    const nowLocal = nowLocalMinutes(now);
+    const tooFar = dayNumber(targetDate) - dayNumber(nowParts.dateString) > config.maxAdvanceDays;
 
     const allSlots: {
       time: string;
@@ -534,31 +590,29 @@ export class BookingsService {
     }[] = [];
     const availableSlots: string[] = [];
 
-    for (let m = openMin; m + slotInterval <= closeMin; m += slotInterval) {
-      // If within break window, skip slot
-      if (breakStartMin >= 0 && breakEndMin > breakStartMin) {
-        if (m >= breakStartMin && m < breakEndMin) {
-          continue;
-        }
+    for (let m = window.openMin; m + window.slotIntervalMin <= window.closeMin; m += window.slotIntervalMin) {
+      // Slots that start inside the break are not offered at all.
+      if (window.breakStartMin >= 0 && m >= window.breakStartMin && m < window.breakEndMin) {
+        continue;
       }
 
-      const hh = String(Math.floor(m / 60)).padStart(2, '0');
-      const mm = String(m % 60).padStart(2, '0');
-      const timeStr = `${hh}:${mm}`;
+      const end = m + durationMin;
+      const startLocal = localMinutes(targetDate, m);
+      const blocked =
+        tooFar ||
+        end > window.closeMin ||
+        (window.breakStartMin >= 0 &&
+          rangesOverlap(m, end, window.breakStartMin, window.breakEndMin)) ||
+        startLocal <= nowLocal ||
+        startLocal < nowLocal + settings.bookingNoticeMin ||
+        busy.some((b) => rangesOverlap(m, end, b.start, b.end));
 
-      const isBooked = bookedTimes.has(timeStr);
+      const timeStr = formatMinutes(m);
       const period: 'manana' | 'tarde' | 'noche' =
         m < 12 * 60 ? 'manana' : m < 18 * 60 ? 'tarde' : 'noche';
 
-      allSlots.push({
-        time: timeStr,
-        period,
-        available: !isBooked,
-      });
-
-      if (!isBooked) {
-        availableSlots.push(timeStr);
-      }
+      allSlots.push({ time: timeStr, period, available: !blocked });
+      if (!blocked) availableSlots.push(timeStr);
     }
 
     return {

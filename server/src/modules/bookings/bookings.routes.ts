@@ -93,12 +93,22 @@ const bookingsRoutesPlugin: FastifyPluginAsync = async (fastify) => {
     }
   );
 
-  // PUBLIC / CLIENT: GET /api/barbers/:barberId/bookings/availability?date=YYYY-MM-DD
+  // PUBLIC / CLIENT: GET /api/barbers/:barberId/bookings/availability?date=YYYY-MM-DD&serviceId=...
+  // `serviceId` (optional) sizes the slots to that service's duration.
   fastify.get('/barbers/:barberId/bookings/availability', async (request: any, reply) => {
     const { barberId } = request.params as { barberId: string };
-    const { date } = (request.query || {}) as { date?: string };
-    const availability = await service.getBarberAvailability(barberId, date);
-    return reply.status(200).send(availability);
+    const { date, serviceId } = (request.query || {}) as { date?: string; serviceId?: string };
+    try {
+      const availability = await service.getBarberAvailability(barberId, date, new Date(), {
+        serviceId,
+      });
+      return reply.status(200).send(availability);
+    } catch (err) {
+      if (err instanceof AppError) {
+        return reply.status(err.statusCode).send({ error: err.code, message: err.message });
+      }
+      throw err;
+    }
   });
 
   // PUBLIC (optional client auth): POST /api/barbers/:barberId/bookings
