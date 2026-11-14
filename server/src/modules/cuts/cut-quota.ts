@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { laPazMonthStartUtc } from '../../utils/la-paz-date';
+import { getCutsConfig } from './cuts.config';
 
 /** Monthly cut limits per plan. Plans missing here (ALTO_FLUJO) are unlimited. */
 export const PLAN_CUT_LIMITS: Readonly<Record<string, number>> = {
@@ -21,6 +22,27 @@ export interface MonthlyCutCounts {
 export interface MonthlyCutUsage extends MonthlyCutCounts {
   /** Number of cuts that count against the plan limit this La Paz month. */
   usage: number;
+  /** Cancelled cuts per month that do not count toward the quota. */
+  cancelAllowance: number;
+}
+
+/** Display-only cap used to size the allowance for plans without a limit. */
+const UNLIMITED_PLAN_DISPLAY_LIMIT = 9999;
+
+/** Free cancellations per month: a percentage of the plan limit, never fewer than 1. */
+export function computeCancelAllowance(limit: number, allowancePct: number): number {
+  return Math.max(1, Math.ceil((limit * allowancePct) / 100));
+}
+
+/**
+ * usage = finished + inProgress + max(0, cancelled - allowance)
+ *
+ * Cancelled cuts are free only up to a small allowance, so a barber cannot perform the
+ * service and then cancel instead of finishing to avoid filling the quota.
+ */
+export function computeUsage(counts: MonthlyCutCounts, limit: number, allowancePct: number): number {
+  const allowance = computeCancelAllowance(limit, allowancePct);
+  return counts.finished + counts.inProgress + Math.max(0, counts.cancelled - allowance);
 }
 
 /** Counts a barber's cuts by status since 00:00 La Paz on day 1 of the month containing `now`. */
@@ -42,12 +64,19 @@ export async function getMonthlyCutCounts(
   };
 }
 
-/** Monthly usage for a barber. Every cut counts, whatever its status. */
+/** Monthly quota usage for a barber on a plan, using the configured cancellation allowance. */
 export async function getMonthlyCutUsage(
   prisma: PrismaClient,
   barberId: string,
+  plan: string,
   now: Date = new Date()
 ): Promise<MonthlyCutUsage> {
   const counts = await getMonthlyCutCounts(prisma, barberId, now);
-  return { ...counts, usage: counts.inProgress + counts.finished + counts.cancelled };
+  const limit = getPlanCutLimit(plan) ?? UNLIMITED_PLAN_DISPLAY_LIMIT;
+  const { cancelAllowancePct } = getCutsConfig();
+  return {
+    ...counts,
+    usage: computeUsage(counts, limit, cancelAllowancePct),
+    cancelAllowance: computeCancelAllowance(limit, cancelAllowancePct),
+  };
 }

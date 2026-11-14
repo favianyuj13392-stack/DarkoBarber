@@ -37,9 +37,11 @@ export class CutsService {
 
     // 3. RN-03: Verify monthly cut limit
     // The month resets at 00:00 La Paz on day 1, regardless of the server timezone.
+    // Counted AFTER the auto-cancel above, so restarts also consume the cancellation allowance.
+    // Note: check-then-create is not atomic; concurrent startCut calls can overshoot slightly.
     const planLimit = getPlanCutLimit(barber.plan);
     if (planLimit !== null) {
-      const { usage } = await getMonthlyCutUsage(this.prisma, barber.id);
+      const { usage } = await getMonthlyCutUsage(this.prisma, barber.id, barber.plan);
       if (usage >= planLimit) {
         throw new ForbiddenError(
           'PLAN_LIMIT_REACHED',

@@ -742,7 +742,11 @@ export class AuthService {
     // Billing month = La Paz calendar month (same boundary as the cut-limit check).
     const startOfMonth = laPazMonthStartUtc(now);
 
-    const { usage: monthlyCutsCount } = await getMonthlyCutUsage(this.prisma, barber.id, now);
+    const {
+      usage: monthlyCutsCount,
+      cancelled: cancelledThisMonth,
+      cancelAllowance,
+    } = await getMonthlyCutUsage(this.prisma, barber.id, barber.plan, now);
 
     const prices: Record<string, number> = {
       AUTONOMO: 45,
@@ -766,6 +770,8 @@ export class AuthService {
       priceBs,
       monthlyCutsCount,
       maxCuts,
+      cancelledThisMonth,
+      cancelAllowance,
       percentage: Math.min(100, Math.round((monthlyCutsCount / maxCuts) * 100)),
       nextBillingDate: nextBilling.toISOString(),
       status: 'ACTIVE',
