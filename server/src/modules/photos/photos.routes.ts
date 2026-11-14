@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { PhotosService } from './photos.service';
 import { presignPhotoSchema, confirmPhotoSchema } from './photos.schemas';
+import { trackClientActivity } from '../rewards/rewards.hooks';
 import { AppError } from '../../utils/errors';
 import { z } from 'zod';
 
@@ -212,6 +213,7 @@ export const photosRoutes: FastifyPluginAsync = async (fastify) => {
         where: { id: photoId },
         data: { isPublic: parseResult.data.isPublic },
       });
+      await trackClientActivity(fastify.prisma, request, 'CONSENT_UPDATE', { ownedPhotoId: photoId });
 
       return reply.status(200).send(updated);
     }

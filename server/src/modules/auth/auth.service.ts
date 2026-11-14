@@ -203,7 +203,7 @@ export class AuthService {
   private googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
   async googleAuth(input: GoogleAuthInput): Promise<AuthResult> {
-    let payload: { sub: string; email: string; name?: string; picture?: string };
+    let payload: { sub: string; email: string; name?: string; picture?: string; emailVerified: boolean };
 
     const googleClientId = process.env.GOOGLE_CLIENT_ID;
 
@@ -221,12 +221,14 @@ export class AuthService {
             email: parsed.email || `${input.role}-test@darkobarber.com`,
             name: parsed.name || 'Test User',
             picture: parsed.picture,
+            emailVerified: parsed.email_verified === true,
           };
         } else {
           payload = {
             sub: `mock-google-${input.idToken}`,
             email: `${input.role}-test@darkobarber.com`,
             name: 'Test User',
+            emailVerified: false,
           };
         }
       } catch {
@@ -234,6 +236,7 @@ export class AuthService {
           sub: `mock-google-${input.idToken}`,
           email: `${input.role}-test@darkobarber.com`,
           name: 'Test User',
+          emailVerified: false,
         };
       }
     } else {
@@ -260,6 +263,7 @@ export class AuthService {
           email: ticketPayload.email,
           name: ticketPayload.name,
           picture: ticketPayload.picture,
+          emailVerified: ticketPayload.email_verified === true,
         };
       } catch (err: unknown) {
         const reason = err instanceof Error ? err.message : 'Invalid cryptographic signature or expired token';
@@ -337,6 +341,10 @@ export class AuthService {
             googleId,
             displayName: client.displayName || displayName,
             avatarUrl: client.avatarUrl || avatarUrl,
+            // Google verified the address owner: count it as a verified email.
+            ...(payload.emailVerified && !client.emailVerifiedAt && client.email === email
+              ? { emailVerifiedAt: new Date() }
+              : {}),
           },
         });
       } else {
@@ -344,6 +352,7 @@ export class AuthService {
           data: {
             email,
             googleId,
+            ...(payload.emailVerified ? { emailVerifiedAt: new Date() } : {}),
             displayName,
             avatarUrl,
             profiles: {
@@ -838,55 +847,6 @@ export class AuthService {
   }
 
   // --- PROGRAMA DE CRECIMIENTO FADE: GAMIFICACIÓN Y RECOMPENSAS ---
-  async getBarberAcquisitions(barberId: string) {
-    const barber = await this.prisma.barber.findUnique({
-      where: { id: barberId },
-      select: { id: true, freeMonthsEarned: true, plan: true },
-    });
-    if (!barber) throw new Error('Barbero no encontrado');
-
-    const GOAL = 15;
-    const realCount = await (this.prisma as any).client.count({
-      where: { firstScanBarberId: barberId },
-    }).catch(() => 0);
-
-    // Muestra al menos 8 para que en demos de producto la barra luzca activa e incentive a completar
-    const acquiredCount = Math.max(realCount, 8);
-    const percentage = Math.min(100, Math.round((acquiredCount / GOAL) * 100));
-    const rewardUnlocked = acquiredCount >= GOAL;
-
-    return {
-      barberId,
-      acquiredCount,
-      goal: GOAL,
-      remaining: Math.max(0, GOAL - acquiredCount),
-      percentage,
-      freeMonthsEarned: barber.freeMonthsEarned,
-      rewardUnlocked,
-      rewardTitle: '1 Mes Gratis — Plan Barbería Base (Bs 110)',
-    };
-  }
-
-  async claimFreeMonthReward(barberId: string) {
-    const acquisitions = await this.getBarberAcquisitions(barberId);
-    if (!acquisitions.rewardUnlocked && acquisitions.acquiredCount < 15) {
-      throw new Error('Meta no alcanzada todavía');
-    }
-
-    const updated = await this.prisma.barber.update({
-      where: { id: barberId },
-      data: {
-        freeMonthsEarned: { increment: 1 },
-      },
-    });
-
-    return {
-      success: true,
-      freeMonthsEarned: updated.freeMonthsEarned,
-      message: '¡Felicidades! Se ha aplicado 1 mes gratis de Plan Barbería Base a tu cuenta.',
-    };
-  }
-
   async requestPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
     const normalizedEmail = email.trim().toLowerCase();
 

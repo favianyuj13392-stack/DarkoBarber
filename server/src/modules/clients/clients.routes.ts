@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { ClientsService } from './clients.service';
 import { createClientSchema, updateClientProfileSchema } from './clients.schemas';
+import { trackClientActivity } from '../rewards/rewards.hooks';
 
 export const clientsRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new ClientsService(fastify.prisma);
@@ -23,6 +24,7 @@ export const clientsRoutes: FastifyPluginAsync = async (fastify) => {
           });
         }
         const history = await service.getClientHistory(user.id);
+        await trackClientActivity(fastify.prisma, request, 'HISTORY_VIEW');
         return reply.status(200).send(history);
       }
 
@@ -72,6 +74,7 @@ export const clientsRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
       const history = await service.getClientHistory(user.id);
+      await trackClientActivity(fastify.prisma, request, 'HISTORY_VIEW');
       return reply.status(200).send(history);
     }
   );

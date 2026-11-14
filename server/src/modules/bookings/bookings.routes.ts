@@ -1,6 +1,7 @@
 import fp from 'fastify-plugin';
 import { FastifyPluginAsync } from 'fastify';
 import { BookingsService } from './bookings.service';
+import { trackClientActivity } from '../rewards/rewards.hooks';
 import { BookingStatus } from '@prisma/client';
 
 const bookingsRoutesPlugin: FastifyPluginAsync = async (fastify) => {
@@ -116,6 +117,7 @@ const bookingsRoutesPlugin: FastifyPluginAsync = async (fastify) => {
       barberId,
       ...body,
     });
+    await trackClientActivity(fastify.prisma, request, 'BOOKING_CREATED');
 
     return reply.status(201).send(booking);
   });

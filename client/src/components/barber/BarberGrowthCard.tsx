@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { FC } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trophy, Sparkles, CheckCircle2, Gift, QrCode, ArrowRight, Check } from 'lucide-react';
+import { Trophy, Sparkles, CheckCircle2, Gift, QrCode, ArrowRight, Check, Clock, AlertCircle } from 'lucide-react';
 import { SPRING_TOUCH } from '../../constants/springs';
 import type { BarberAcquisitionProgress } from '../../services/auth.service';
 import { fetchBarberAcquisitions, claimFreeMonthReward } from '../../services/auth.service';
@@ -16,57 +16,86 @@ export const BarberGrowthCard: FC<BarberGrowthCardProps> = ({
   compact = false,
 }) => {
   const [data, setData] = useState<BarberAcquisitionProgress | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [claiming, setClaiming] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
+  const load = useCallback(async () => {
+    try {
+      const res = await fetchBarberAcquisitions();
+      setData(res);
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'No pudimos cargar tu progreso.');
+    }
+  }, []);
+
   useEffect(() => {
-    fetchBarberAcquisitions().then((res) => setData(res));
+    let cancelled = false;
+    fetchBarberAcquisitions()
+      .then((res) => {
+        if (!cancelled) setData(res);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : 'No pudimos cargar tu progreso.');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleClaim = async () => {
     setClaiming(true);
+    setClaimError(null);
     try {
       const res = await claimFreeMonthReward();
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              freeMonthsEarned: res.freeMonthsEarned,
-              rewardUnlocked: false,
-              acquiredCount: 0,
-              remaining: 15,
-              percentage: 0,
-            }
-          : null
-      );
-      setToastMsg('¡Felicidades! 1 Mes Gratis acreditado a tu suscripción.');
-      if (onRewardClaimed) onRewardClaimed();
-    } catch {
-      // Optimistic demo claim
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              freeMonthsEarned: (prev.freeMonthsEarned || 0) + 1,
-              rewardUnlocked: false,
-              acquiredCount: 0,
-              remaining: 15,
-              percentage: 0,
-            }
-          : null
-      );
-      setToastMsg('¡Felicidades! 1 Mes Gratis acreditado a tu cuenta (Modo Demo).');
+      // The month is credited only after an admin approves the claim.
+      setData((prev) => (prev ? { ...prev, claim: res.claim } : prev));
+      setToastMsg('Solicitud enviada. Un administrador la revisará antes de acreditar tu mes gratis.');
+      setTimeout(() => setToastMsg(null), 5000);
+      onRewardClaimed?.();
+    } catch (err) {
+      setClaimError(err instanceof Error ? err.message : 'No pudimos enviar tu solicitud.');
+      // Refresh so the card reflects the real server state (e.g. already claimed).
+      void load();
     } finally {
       setClaiming(false);
-      setTimeout(() => setToastMsg(null), 4000);
     }
   };
 
-  const acquired = data?.acquiredCount ?? 8;
-  const goal = data?.goal ?? 15;
-  const percentage = data?.percentage ?? Math.round((acquired / goal) * 100);
-  const isUnlocked = data?.rewardUnlocked || acquired >= goal;
-  const freeMonths = data?.freeMonthsEarned ?? 0;
+  if (!data) {
+    return (
+      <div
+        className={`${compact ? 'p-4 rounded-2xl' : 'p-6 rounded-3xl'} bg-black border border-[#B68F4E]/30 text-left text-xs text-[#D9C9B0]/70`}
+      >
+        {loadError ? (
+          <div className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2" role="alert">
+              <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+              <span>{loadError}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="px-3 py-1.5 rounded-lg border border-white/15 text-white text-[11px] font-semibold cursor-pointer"
+            >
+              Reintentar
+            </button>
+          </div>
+        ) : (
+          <span>Cargando programa de crecimiento...</span>
+        )}
+      </div>
+    );
+  }
+
+  const { goal, qualified, pending, remaining, freeMonthsEarned, maxFreeMonths, claim } = data;
+  const percentage = Math.min(100, goal > 0 ? Math.round((qualified / goal) * 100) : 0);
+  const capReached = maxFreeMonths > 0 && freeMonthsEarned >= maxFreeMonths;
+  const breakdown = `${qualified} validados · ${pending} pendientes · ${remaining} faltan`;
 
   if (compact) {
     return (
@@ -79,11 +108,10 @@ export const BarberGrowthCard: FC<BarberGrowthCardProps> = ({
             </span>
           </div>
           <span className="text-[11px] font-mono font-bold text-[#B68F4E]">
-            {acquired} / {goal} Clientes
+            {qualified} / {goal} validados
           </span>
         </div>
 
-        {/* Progress Bar */}
         <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden relative">
           <motion.div
             initial={{ width: 0 }}
@@ -94,8 +122,10 @@ export const BarberGrowthCard: FC<BarberGrowthCardProps> = ({
         </div>
 
         <div className="flex items-center justify-between text-[10px] text-[#D9C9B0]/70 font-mono">
-          <span>{goal - acquired > 0 ? `Faltan ${goal - acquired} clientes` : '¡Meta alcanzada!'}</span>
-          <span className="text-[#B68F4E] font-semibold">Meta: 1 Mes Gratis</span>
+          <span>{breakdown}</span>
+          <span className="text-[#B68F4E] font-semibold">
+            {claim?.status === 'PENDING' ? 'En revisión' : 'Meta: 1 Mes Gratis'}
+          </span>
         </div>
       </div>
     );
@@ -103,13 +133,11 @@ export const BarberGrowthCard: FC<BarberGrowthCardProps> = ({
 
   return (
     <div className="p-6 sm:p-7 rounded-3xl bg-gradient-to-br from-[#1C160C]/60 via-black to-zinc-950 border border-[#B68F4E]/40 backdrop-blur-xl space-y-5 text-left relative overflow-hidden shadow-2xl">
-      {/* Glow ambiental */}
       <div
         className="absolute w-72 h-72 rounded-full blur-[100px] pointer-events-none opacity-20 -top-10 -right-10 bg-[#B68F4E]"
         aria-hidden="true"
       />
 
-      {/* Header & Badges */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
@@ -117,9 +145,9 @@ export const BarberGrowthCard: FC<BarberGrowthCardProps> = ({
               <Trophy className="w-3.5 h-3.5" />
               <span>Incentivo de Activación FADE</span>
             </span>
-            {freeMonths > 0 && (
+            {freeMonthsEarned > 0 && (
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#B68F4E]/20 text-[#D9C9B0] border border-[#B68F4E]/40">
-                {freeMonths} {freeMonths === 1 ? 'Mes Gratis Canjeado' : 'Meses Gratis Canjeados'}
+                {freeMonthsEarned} {freeMonthsEarned === 1 ? 'Mes Gratis Aprobado' : 'Meses Gratis Aprobados'}
               </span>
             )}
           </div>
@@ -131,37 +159,40 @@ export const BarberGrowthCard: FC<BarberGrowthCardProps> = ({
         <div className="text-right shrink-0">
           <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs font-semibold">
             <Gift className="w-3.5 h-3.5 text-[#B68F4E]" />
-            <span>Premio: 1 Mes Gratis Base</span>
+            <span>Premio: 1 Mes Gratis</span>
           </div>
         </div>
       </div>
 
-      {/* Explicación de la Regla del Primer Escaneo */}
       <div className="p-3.5 rounded-2xl bg-black/50 border border-white/10 flex items-start gap-3 text-xs text-[#D9C9B0]/80 relative z-10">
         <QrCode className="w-5 h-5 text-[#B68F4E] shrink-0 mt-0.5" />
         <div className="space-y-1">
           <p className="font-medium text-white leading-snug">
-            ¿Cómo sumar puntos a tu barra?
+            ¿Cuándo cuenta un cliente?
           </p>
           <p className="text-[11px] text-[#D9C9B0]/70 leading-relaxed font-light">
-            Haz que cada cliente nuevo escanee tu <strong>Código QR de Espejo</strong> en su primer corte. El sistema detecta el primer escaneo de su historial y te suma <strong>+1 cliente nuevo</strong> automáticamente.
+            Un cliente queda <strong>pendiente</strong> cuando escanea tu QR en el sillón, y pasa a <strong>validado</strong> cuando verifica su email y usa la app otro día. Solo los validados cuentan para la meta.
           </p>
         </div>
       </div>
 
-      {/* Termómetro Visual & Barra de Progreso */}
       <div className="space-y-3 relative z-10 pt-1">
         <div className="flex items-center justify-between text-xs font-mono">
           <span className="text-[#D9C9B0] font-semibold">
             Progreso hacia la meta ({percentage}%):
           </span>
           <span className="text-[#B68F4E] font-bold text-sm">
-            {acquired} / {goal} Clientes Nuevos
+            {qualified} / {goal} Validados
           </span>
         </div>
 
-        {/* Barra con gradiente dorado y marcadores */}
-        <div className="relative w-full h-4 rounded-full bg-white/10 overflow-hidden p-0.5 border border-white/10">
+        <div
+          className="relative w-full h-4 rounded-full bg-white/10 overflow-hidden p-0.5 border border-white/10"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={goal}
+          aria-valuenow={qualified}
+        >
           <motion.div
             initial={{ width: 0 }}
             animate={{ width: `${percentage}%` }}
@@ -170,51 +201,66 @@ export const BarberGrowthCard: FC<BarberGrowthCardProps> = ({
           />
         </div>
 
-        {/* Hitos Intermedios */}
-        <div className="grid grid-cols-3 gap-2 text-center pt-1 text-[11px]">
-          <div className="p-2 rounded-xl bg-white/[0.02] border border-white/10 space-y-0.5">
-            <span className="font-mono text-[10px] text-white/50 block">Hito 1 (5 Clientes)</span>
-            <span className="font-bold text-white flex items-center justify-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Insignia Pro</span>
-            </span>
-          </div>
-
-          <div className="p-2 rounded-xl bg-white/[0.02] border border-white/10 space-y-0.5">
-            <span className="font-mono text-[10px] text-white/50 block">Hito 2 (10 Clientes)</span>
-            <span className="font-bold text-white flex items-center justify-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Soporte VIP</span>
-            </span>
-          </div>
-
-          <div
-            className={`p-2 rounded-xl border space-y-0.5 transition-all ${
-              isUnlocked
-                ? 'bg-[#B68F4E]/20 border-[#B68F4E] shadow-[0_0_15px_rgba(182,143,78,0.3)]'
-                : 'bg-white/[0.02] border-white/10'
-            }`}
-          >
-            <span className="font-mono text-[10px] text-white/50 block">Meta (15 Clientes)</span>
-            <span className="font-bold text-[#B68F4E] flex items-center justify-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-[#B68F4E]" />
-              <span>1 Mes Gratis</span>
-            </span>
-          </div>
-        </div>
+        <p className="text-[11px] font-mono text-[#D9C9B0]/80">{breakdown}</p>
       </div>
 
-      {/* Acción de Recompensa (Desbloqueada o En Progreso) */}
-      <div className="pt-2 relative z-10">
-        {isUnlocked ? (
+      <div className="pt-2 relative z-10 space-y-3">
+        {claim?.status === 'PENDING' ? (
+          <div className="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 flex items-start gap-3 text-xs">
+            <Clock className="w-5 h-5 text-amber-300 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <span className="font-bold text-amber-200 block">Pendiente de aprobación</span>
+              <p className="text-[11px] text-amber-100/70">
+                Un administrador revisará tu solicitud. El mes gratis se acredita solo cuando sea aprobada.
+              </p>
+            </div>
+          </div>
+        ) : claim?.status === 'APPROVED' ? (
+          <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 flex items-start gap-3 text-xs">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <span className="font-bold text-emerald-300 block">Recompensa aprobada</span>
+              <p className="text-[11px] text-emerald-200/70">
+                Tu mes gratis fue aprobado y acreditado a tu suscripción.
+              </p>
+            </div>
+          </div>
+        ) : claim?.status === 'REJECTED' ? (
+          <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/15 flex items-start gap-3 text-xs">
+            <AlertCircle className="w-5 h-5 text-[#D9C9B0] shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <span className="font-bold text-white block">Solicitud no aprobada</span>
+              <p className="text-[11px] text-[#D9C9B0]/70">
+                No pudimos aprobar esta recompensa. Si tienes dudas, contacta a soporte.
+              </p>
+            </div>
+          </div>
+        ) : claim?.status === 'REVERSED' ? (
+          <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/15 flex items-start gap-3 text-xs">
+            <AlertCircle className="w-5 h-5 text-[#D9C9B0] shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <span className="font-bold text-white block">Recompensa revertida</span>
+              <p className="text-[11px] text-[#D9C9B0]/70">
+                Esta recompensa fue revertida tras una revisión. Contacta a soporte para más información.
+              </p>
+            </div>
+          </div>
+        ) : data.goalReached && capReached ? (
+          <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/15 flex items-start gap-3 text-xs">
+            <Sparkles className="w-5 h-5 text-[#B68F4E] shrink-0 mt-0.5" />
+            <p className="text-[11px] text-[#D9C9B0]/80">
+              Alcanzaste el máximo de {maxFreeMonths} meses gratis disponibles en el programa.
+            </p>
+          </div>
+        ) : data.goalReached ? (
           <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
             <div className="space-y-0.5 text-center sm:text-left">
               <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5 justify-center sm:justify-start">
                 <Sparkles className="w-4 h-4 text-emerald-400" />
-                <span>¡Felicidades! Has alcanzado la meta de 15 clientes</span>
+                <span>Alcanzaste la meta de {goal} clientes validados</span>
               </span>
               <p className="text-[11px] text-emerald-200/70">
-                Tu premio de 1 mes gratis de Plan Barbería Base (valorado en Bs 110) está listo para ser canjeado.
+                Envía tu solicitud. Un administrador la revisará antes de acreditar el mes gratis.
               </p>
             </div>
 
@@ -226,23 +272,29 @@ export const BarberGrowthCard: FC<BarberGrowthCardProps> = ({
               transition={SPRING_TOUCH}
               className="px-6 py-2.5 rounded-xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-bold text-xs tracking-wider uppercase shadow-lg hover:brightness-105 transition-all cursor-pointer whitespace-nowrap disabled:opacity-60"
             >
-              {claiming ? 'Canjeando...' : 'Reclamar 1 Mes Gratis'}
+              {claiming ? 'Enviando...' : 'Reclamar recompensa'}
             </motion.button>
           </div>
         ) : (
           <div className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.02] border border-white/10 text-xs">
             <span className="text-white/60">
-              Te faltan <strong className="text-white font-mono">{goal - acquired} clientes nuevos</strong> para desbloquear tu mes gratis.
+              Te faltan <strong className="text-white font-mono">{remaining} clientes validados</strong> para desbloquear tu mes gratis.
             </span>
-            <span className="text-[#B68F4E] font-mono font-semibold flex items-center gap-1">
+            <span className="text-[#B68F4E] font-mono font-semibold flex items-center gap-1 shrink-0">
               <span>Sigue escaneando</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </span>
           </div>
         )}
+
+        {claimError && (
+          <p role="alert" className="text-[11px] text-red-300 flex items-center gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            <span>{claimError}</span>
+          </p>
+        )}
       </div>
 
-      {/* Toast Feedback */}
       <AnimatePresence>
         {toastMsg && (
           <motion.div

@@ -7,6 +7,7 @@ import {
   forgotPasswordSchema,
   resetPasswordSchema,
 } from './auth.schemas';
+import { RewardsService } from '../rewards/rewards.service';
 
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new AuthService(fastify.prisma);
@@ -370,7 +371,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     async (request: any, reply: any) => {
       const barberId = request.barber?.id || request.authUser?.id;
       if (!barberId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
-      const data = await service.getBarberAcquisitions(barberId);
+      const data = await new RewardsService(fastify.prisma).getProgress(barberId);
       return reply.status(200).send(data);
     }
   );
@@ -381,8 +382,31 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     async (request: any, reply: any) => {
       const barberId = request.barber?.id || request.authUser?.id;
       if (!barberId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
-      const result = await service.claimFreeMonthReward(barberId);
-      return reply.status(200).send(result);
+      const result = await new RewardsService(fastify.prisma).createClaim(barberId);
+      switch (result.outcome) {
+        case 'CREATED':
+          return reply.status(201).send({ success: true, claim: result.claim });
+        case 'ALREADY_CLAIMED':
+          return reply.status(409).send({
+            error: 'ALREADY_CLAIMED',
+            message: 'This reward was already claimed',
+            claim: result.claim,
+          });
+        case 'GOAL_NOT_REACHED':
+          return reply.status(400).send({
+            error: 'GOAL_NOT_REACHED',
+            message: 'Acquisition goal not reached yet',
+            qualified: result.progress.qualified,
+            goal: result.progress.goal,
+          });
+        default:
+          return reply.status(403).send({
+            error: 'FREE_MONTHS_CAP_REACHED',
+            message: 'The maximum number of free months has already been earned',
+            freeMonthsEarned: result.progress.freeMonthsEarned,
+            maxFreeMonths: result.progress.maxFreeMonths,
+          });
+      }
     }
   );
 

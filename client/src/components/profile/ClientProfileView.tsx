@@ -17,6 +17,7 @@ import {
 import type { UserProfile } from '../../services/auth.service';
 import { getStoredUser, getStoredToken } from '../../services/auth.service';
 import type { HaircutItem } from '../../types/history';
+import { EmailVerificationCard } from './EmailVerificationCard';
 
 interface ClientProfileViewProps {
   currentUser?: UserProfile | null;
@@ -258,6 +259,9 @@ export const ClientProfileView: FC<ClientProfileViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Estado de verificación del correo */}
+      <EmailVerificationCard />
 
       {/* 2. Modal/Formulario de Edición de Datos */}
       <AnimatePresence>

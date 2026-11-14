@@ -77,7 +77,7 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
     const unsubHandshake = presenceService.onClientHandshake((client) => {
       if (client.isFirstScan) {
         setFirstScanCelebration(
-          `🎉 ¡Nuevo cliente incorporado (${client.displayName || client.phone})! +1 para tu meta de mes gratis.`
+          `Nuevo cliente capturado (${client.displayName || client.phone}). Contará para tu meta cuando verifique su email y use la app otro día.`
         );
         setTimeout(() => setFirstScanCelebration(null), 6000);
       }

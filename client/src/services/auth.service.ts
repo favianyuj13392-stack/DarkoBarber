@@ -1,3 +1,5 @@
+import { getDeviceId } from '../utils/device-id';
+
 export interface UserProfile {
   id: string;
   displayName: string;
@@ -32,18 +34,10 @@ export interface ApiError {
   issues?: unknown;
 }
 
-const DEVICE_ID_KEY = 'fade_device_id';
 const TOKEN_KEY = 'fade_auth_token';
 const USER_KEY = 'fade_user_profile';
 
-export const getDeviceId = (): string => {
-  let deviceId = localStorage.getItem(DEVICE_ID_KEY);
-  if (!deviceId) {
-    deviceId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `device-${Date.now()}`;
-    localStorage.setItem(DEVICE_ID_KEY, deviceId);
-  }
-  return deviceId;
-};
+export { getDeviceId };
 
 export const getStoredToken = (): string | null => {
   return localStorage.getItem(TOKEN_KEY);
@@ -716,62 +710,106 @@ export async function toggleFollowBarber(barberId: string): Promise<{ followerCo
 }
 
 // --- PROGRAMA DE CRECIMIENTO: GAMIFICACIÓN & ADQUISICIÓN ---
+export type RewardClaimStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'REVERSED';
+
+export interface RewardClaim {
+  id: string;
+  status: RewardClaimStatus;
+}
+
 export interface BarberAcquisitionProgress {
-  barberId: string;
-  acquiredCount: number;
   goal: number;
+  goalKey?: string;
+  /** Clients validated (verified email and own activity on a later day). */
+  qualified: number;
+  /** Captured clients that are not validated yet. */
+  pending: number;
+  revoked: number;
   remaining: number;
   percentage: number;
+  goalReached: boolean;
+  claim: RewardClaim | null;
   freeMonthsEarned: number;
+  maxFreeMonths: number;
+  /** Same value as `qualified`; kept for backward compatibility. */
+  acquiredCount: number;
   rewardUnlocked: boolean;
   rewardTitle: string;
 }
 
-export async function fetchBarberAcquisitions(): Promise<BarberAcquisitionProgress> {
-  const token = getStoredToken();
-  if (token) {
-    try {
-      const res = await fetch('/api/barbers/me/acquisitions', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch (err) {
-      console.warn('Could not fetch barber acquisitions:', err);
-    }
+export class AcquisitionError extends Error {
+  readonly status: number;
+  readonly code?: string;
+
+  constructor(message: string, status = 0, code?: string) {
+    super(message);
+    this.name = 'AcquisitionError';
+    this.status = status;
+    this.code = code;
   }
-  return {
-    barberId: 'barber-brian',
-    acquiredCount: 8,
-    goal: 15,
-    remaining: 7,
-    percentage: 53,
-    freeMonthsEarned: 0,
-    rewardUnlocked: false,
-    rewardTitle: '1 Mes Gratis — Plan Barbería Base (Bs 110)',
-  };
 }
 
-export async function claimFreeMonthReward(): Promise<{ success: boolean; freeMonthsEarned: number; message: string }> {
+export async function fetchBarberAcquisitions(): Promise<BarberAcquisitionProgress> {
   const token = getStoredToken();
   if (!token) {
-    throw new Error('Debes iniciar sesión para reclamar tu recompensa');
+    throw new AcquisitionError('Inicia sesión para ver tu progreso.', 401);
   }
 
-  const res = await fetch('/api/barbers/me/acquisitions/claim', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch('/api/barbers/me/acquisitions', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    throw new AcquisitionError('No pudimos conectar con el servidor. Intenta de nuevo.');
+  }
 
   if (!res.ok) {
-    throw new Error('No se pudo reclamar el mes gratis');
+    throw new AcquisitionError('No pudimos cargar tu progreso. Intenta de nuevo.', res.status);
+  }
+  return (await res.json()) as BarberAcquisitionProgress;
+}
+
+export interface ClaimFreeMonthResult {
+  success: boolean;
+  claim: RewardClaim;
+}
+
+export async function claimFreeMonthReward(): Promise<ClaimFreeMonthResult> {
+  const token = getStoredToken();
+  if (!token) {
+    throw new AcquisitionError('Inicia sesión para reclamar tu recompensa.', 401);
   }
 
-  return await res.json();
+  let res: Response;
+  try {
+    res = await fetch('/api/barbers/me/acquisitions/claim', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  } catch {
+    throw new AcquisitionError('No pudimos conectar con el servidor. Intenta de nuevo.');
+  }
+
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    const code = body.error;
+    if (res.status === 400) {
+      throw new AcquisitionError('Todavía no alcanzas la meta de clientes validados.', 400, code);
+    }
+    if (res.status === 409) {
+      throw new AcquisitionError('Ya enviaste esta recompensa a revisión.', 409, code);
+    }
+    if (res.status === 403) {
+      throw new AcquisitionError('Alcanzaste el máximo de meses gratis disponibles.', 403, code);
+    }
+    throw new AcquisitionError('No pudimos enviar tu solicitud. Intenta de nuevo.', res.status, code);
+  }
+
+  return (await res.json()) as ClaimFreeMonthResult;
 }
 
 export async function requestPasswordReset(email: string): Promise<{ success: boolean; message: string }> {

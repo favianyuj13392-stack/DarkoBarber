@@ -4,7 +4,15 @@ import { WebSocket } from 'ws';
 import { PresenceService } from './presence.service';
 import { presenceGateway } from './presence.gateway';
 import { clientPresenceMessageSchema } from './presence.schemas';
+import { z } from 'zod';
 import { BarberAuthPayload } from '../../types';
+import { checkChairBindRateLimit } from './chair-bind-rate-limit';
+
+const chairBindBodySchema = z.object({
+  barberId: z.string().trim().min(1).max(64),
+  barberName: z.string().trim().max(120).optional(),
+  deviceId: z.string().trim().min(1).max(128).optional(),
+});
 
 const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
   const service = new PresenceService(fastify.prisma);
@@ -15,6 +23,7 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
     client: {
       displayName: string;
       phone: string;
+      email?: string;
       avatarUrl?: string;
       notes?: string;
     };
@@ -222,113 +231,123 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
   );
 
   // 4. Client-to-Barber Chair Handshake: POST /presence/chair/bind
-  fastify.post('/presence/chair/bind', async (request, reply) => {
-    const body = request.body as {
-      barberId: string;
-      barberName?: string;
-      client: {
-        displayName: string;
-        phone: string;
-        avatarUrl?: string;
-        notes?: string;
-      };
-    };
+  // The client identity comes ONLY from the Bearer token (role 'cliente').
+  fastify.post(
+    '/presence/chair/bind',
+    { preHandler: [fastify.authenticateUser] },
+    async (request, reply) => {
+      const authUser = request.authUser;
+      if (!authUser || authUser.role !== 'cliente') {
+        return reply.status(403).send({
+          error: 'FORBIDDEN',
+          message: 'A client account is required to sit in a chair',
+        });
+      }
 
-    if (!body || !body.barberId || !body.client) {
-      return reply.status(400).send({
-        error: 'INVALID_PAYLOAD',
-        message: 'barberId and client data are required',
+      const parsed = chairBindBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({
+          error: 'INVALID_PAYLOAD',
+          message: 'A valid barberId is required',
+        });
+      }
+      const body = parsed.data;
+
+      const limit = checkChairBindRateLimit(authUser.id, request.ip);
+      if (!limit.allowed) {
+        reply.header('Retry-After', String(limit.retryAfterSeconds));
+        return reply.status(429).send({
+          error: 'RATE_LIMITED',
+          message: 'Too many chair scans. Try again shortly.',
+        });
+      }
+
+      const barber = await fastify.prisma.barber.findUnique({
+        where: { id: body.barberId },
+        select: { id: true, email: true, displayName: true },
+      });
+      if (!barber) {
+        return reply.status(404).send({ error: 'BARBER_NOT_FOUND', message: 'Barber not found' });
+      }
+
+      // Self-capture guard: a barber cannot farm rewards with their own email.
+      if (
+        barber.email &&
+        authUser.email &&
+        barber.email.trim().toLowerCase() === authUser.email.trim().toLowerCase()
+      ) {
+        return reply.status(403).send({
+          error: 'SELF_CAPTURE_NOT_ALLOWED',
+          message: 'You cannot be captured by your own account',
+        });
+      }
+
+      // A client can be captured only once: the guard makes the assignment atomic.
+      const capture = await fastify.prisma.client.updateMany({
+        where: { id: authUser.id, firstScanBarberId: null },
+        data: {
+          firstScanBarberId: barber.id,
+          firstScanAt: new Date(),
+          acquisitionStatus: 'PENDING',
+          signupIp: request.ip ?? null,
+          signupDeviceId: body.deviceId ?? null,
+        },
+      });
+      const isFirstScan = capture.count === 1;
+
+      const acquiredCount = await fastify.prisma.client.count({
+        where: { firstScanBarberId: barber.id, acquisitionStatus: 'QUALIFIED' },
+      });
+
+      const client = {
+        displayName: authUser.displayName || 'Cliente FADE',
+        phone: authUser.phone ?? '',
+        email: authUser.email ?? undefined,
+        avatarUrl: authUser.avatarUrl ?? undefined,
+      };
+
+      const payload: ChairBindingPayload = {
+        barberId: barber.id,
+        barberName: body.barberName,
+        client,
+        timestamp: Date.now(),
+        isFirstScan,
+        acquiredCount,
+      };
+
+      // Store under various lookup keys for fuzzy matching
+      pendingChairBindings.set(barber.id.toLowerCase(), payload);
+      if (body.barberName) {
+        const normalizedName = body.barberName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        pendingChairBindings.set(normalizedName, payload);
+      }
+
+      // Attempt to notify active WebSocket connection directly
+      for (const entry of presenceGateway.getAllSockets()) {
+        const matchId = entry.barberId.toLowerCase() === barber.id.toLowerCase();
+        if (matchId && entry.socket.readyState === WebSocket.OPEN) {
+          entry.socket.send(
+            JSON.stringify({
+              type: 'CLIENT_CHAIR_HANDSHAKE',
+              client,
+              barberId: barber.id,
+              timestamp: payload.timestamp,
+              isFirstScan,
+              acquiredCount,
+            })
+          );
+        }
+      }
+
+      return reply.status(200).send({
+        success: true,
+        message: 'Chair handshake recorded and broadcasted',
+        client,
+        isFirstScan,
+        acquiredCount,
       });
     }
-
-    let isFirstScan = false;
-    let acquiredCount = 0;
-
-    // Check acquisition / first scan logic in DB
-    if (body.client.phone && body.barberId) {
-      try {
-        const cleanedPhone = body.client.phone.trim();
-        const existingClient = await fastify.prisma.client.findFirst({
-          where: {
-            OR: [
-              { phone: cleanedPhone },
-              { phone: cleanedPhone.replace(/\D/g, '') },
-            ],
-          },
-        });
-
-        if (!existingClient) {
-          await fastify.prisma.client.create({
-            data: {
-              phone: cleanedPhone,
-              displayName: body.client.displayName || 'Cliente FADE',
-              avatarUrl: body.client.avatarUrl || null,
-              firstScanBarberId: body.barberId,
-              firstScanAt: new Date(),
-            },
-          });
-          isFirstScan = true;
-        } else if (!existingClient.firstScanBarberId) {
-          await fastify.prisma.client.update({
-            where: { id: existingClient.id },
-            data: {
-              firstScanBarberId: body.barberId,
-              firstScanAt: new Date(),
-            },
-          });
-          isFirstScan = true;
-        }
-
-        acquiredCount = await fastify.prisma.client.count({
-          where: { firstScanBarberId: body.barberId },
-        });
-      } catch (err) {
-        console.warn('Error recording first scan acquisition:', err);
-      }
-    }
-
-    const payload: ChairBindingPayload = {
-      barberId: body.barberId,
-      barberName: body.barberName,
-      client: body.client,
-      timestamp: Date.now(),
-      isFirstScan,
-      acquiredCount,
-    };
-
-    // Store under various lookup keys for fuzzy matching
-    pendingChairBindings.set(body.barberId.toLowerCase(), payload);
-    if (body.barberName) {
-      const normalizedName = body.barberName.toLowerCase().replace(/[^a-z0-9]/g, '');
-      pendingChairBindings.set(normalizedName, payload);
-    }
-
-    // Attempt to notify active WebSocket connection directly
-    const allSockets = presenceGateway.getAllSockets();
-    for (const entry of allSockets) {
-      const matchId = entry.barberId.toLowerCase() === body.barberId.toLowerCase();
-      if (matchId && entry.socket.readyState === WebSocket.OPEN) {
-        entry.socket.send(
-          JSON.stringify({
-            type: 'CLIENT_CHAIR_HANDSHAKE',
-            client: body.client,
-            barberId: body.barberId,
-            timestamp: payload.timestamp,
-            isFirstScan,
-            acquiredCount,
-          })
-        );
-      }
-    }
-
-    return reply.status(200).send({
-      success: true,
-      message: 'Chair handshake recorded and broadcasted',
-      client: body.client,
-      isFirstScan,
-      acquiredCount,
-    });
-  });
+  );
 
   // 5. Barber Polling for Pending Chair Handshake: GET /presence/chair/session
   fastify.get('/presence/chair/session', async (request, reply) => {
