@@ -23,8 +23,9 @@ export class BookingApiError extends Error {
 
 const BOOKING_ERROR_MESSAGES: Record<string, string> = {
   VALIDATION_ERROR: 'Revisa los datos de la reserva e inténtalo de nuevo.',
-  CONTACT_REQUIRED: 'Ingresa tu nombre y un teléfono válido para reservar.',
-  INVALID_PHONE: 'El teléfono no es válido.',
+  UNAUTHORIZED: 'Inicia sesión con tu cuenta de cliente para reservar.',
+  FORBIDDEN: 'Solo las cuentas de cliente pueden reservar.',
+  PROFILE_INCOMPLETE: 'Completa tu nombre y teléfono en tu perfil para poder reservar.',
   BOOKING_IN_PAST: 'Ese horario ya pasó. Elige otro turno.',
   BOOKING_TOO_SOON: 'Ese turno es demasiado próximo. Elige uno con más anticipación.',
   BOOKING_TOO_FAR: 'Esa fecha queda demasiado lejos para reservar. Elige una más cercana.',
@@ -282,12 +283,41 @@ export async function fetchBarberAvailability(
   return res.json();
 }
 
+const PENDING_BOOKING_STORAGE_KEY = 'fade_pending_booking_barber';
+
+/** Fired when an action needs a signed-in client; App.tsx listens and shows the login screen. */
+export const LOGIN_REQUIRED_EVENT = 'fade:login-required';
+
+/**
+ * Remembers which barber the user wanted to book, then asks the app to show the login screen.
+ * After a client signs in, `consumePendingBookingBarberId` resumes the booking flow.
+ */
+export function requestLoginForBooking(barberId: string): void {
+  try {
+    sessionStorage.setItem(PENDING_BOOKING_STORAGE_KEY, barberId);
+  } catch {
+    // storage unavailable: the user will have to pick the barber again after login
+  }
+  window.dispatchEvent(new Event(LOGIN_REQUIRED_EVENT));
+}
+
+/** Reads and clears the barber id saved by `requestLoginForBooking`, if any. */
+export function consumePendingBookingBarberId(): string | null {
+  try {
+    const id = sessionStorage.getItem(PENDING_BOOKING_STORAGE_KEY);
+    if (id) sessionStorage.removeItem(PENDING_BOOKING_STORAGE_KEY);
+    return id || null;
+  } catch {
+    return null;
+  }
+}
+
 /** Max services per booking; keep in sync with the server (MAX_SERVICES_PER_BOOKING). */
 export const MAX_SERVICES_PER_BOOKING = 5;
 
 /**
  * Creates a booking. Price and duration are decided by the server from `serviceIds`.
- * `clientName` / `clientPhone` are only needed when the user is not signed in as a client.
+ * Requires a signed-in client: name and phone come from the client profile on the server.
  */
 export async function createClientBooking(data: {
   barberId: string;
@@ -295,10 +325,9 @@ export async function createClientBooking(data: {
   date: string; // YYYY-MM-DD (La Paz)
   time: string; // HH:mm (La Paz)
   notes?: string;
-  clientName?: string;
-  clientPhone?: string;
 }): Promise<BarberBooking> {
   const token = getStoredToken();
+  if (!token) throw new BookingApiError('UNAUTHORIZED', 'Sesión no iniciada', 401);
   const { barberId, ...body } = data;
   let res: Response;
   try {
@@ -306,7 +335,7 @@ export async function createClientBooking(data: {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(body),
     });

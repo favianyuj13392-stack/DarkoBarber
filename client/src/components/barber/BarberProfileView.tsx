@@ -35,6 +35,7 @@ import {
   deleteBarberPortfolioPhotos,
   fetchBarberFollowStatus,
   toggleFollowBarber,
+  getStoredUser,
 } from '../../services/auth.service';
 import {
   createClientBooking,
@@ -156,8 +157,6 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
   const [bookingTime, setBookingTime] = useState('');
   const [bookingSlots, setBookingSlots] = useState<string[]>([]);
   const [chosenServiceIds, setChosenServiceIds] = useState<string[] | null>(null);
-  const [bookingClientName, setBookingClientName] = useState('');
-  const [bookingClientPhone, setBookingClientPhone] = useState('');
   const [bookingNotes, setBookingNotes] = useState('');
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [submittingBooking, setSubmittingBooking] = useState(false);
@@ -423,8 +422,9 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
 
   const handleConfirmBooking = async () => {
     if (!barber?.id || bookingServiceIds.length === 0 || !bookingTime) return;
-    if (!bookingClientName.trim() || !bookingClientPhone.trim()) {
-      setBookingError('Ingresa nombre y celular para la reserva.');
+    // Booking requires a client account; a barber previewing their own profile cannot book.
+    if (getStoredUser()?.role !== 'cliente') {
+      setBookingError('Inicia sesión con una cuenta de cliente para reservar.');
       return;
     }
     setSubmittingBooking(true);
@@ -435,8 +435,6 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
         serviceIds: bookingServiceIds,
         date: bookingDate,
         time: bookingTime,
-        clientName: bookingClientName.trim(),
-        clientPhone: bookingClientPhone.trim(),
         notes: bookingNotes.trim() || undefined,
       });
       setIsBookingModalOpen(false);
@@ -1293,28 +1291,6 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
                         </option>
                       ))}
                     </select>
-                  </div>
-                </div>
-
-                {/* Datos del Cliente */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-semibold text-white/80">Tu Nombre</label>
-                    <input
-                      type="text"
-                      value={bookingClientName}
-                      onChange={(e) => setBookingClientName(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-[#B68F4E]"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-semibold text-white/80">Tu Celular</label>
-                    <input
-                      type="text"
-                      value={bookingClientPhone}
-                      onChange={(e) => setBookingClientPhone(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-[#B68F4E]"
-                    />
                   </div>
                 </div>
 

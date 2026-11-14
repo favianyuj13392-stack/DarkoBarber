@@ -1,7 +1,7 @@
 import fp from 'fastify-plugin';
 import { FastifyPluginAsync } from 'fastify';
 import { BookingsService } from './bookings.service';
-import { resolveClientId, trackClientActivity } from '../rewards/rewards.hooks';
+import { trackClientActivity } from '../rewards/rewards.hooks';
 import {
   cancelBodySchema,
   createBookingSchema,
@@ -186,41 +186,42 @@ const bookingsRoutesPlugin: FastifyPluginAsync = async (fastify) => {
     }
   });
 
-  // PUBLIC (optional client auth): POST /api/barbers/:barberId/bookings
-  // Body: { serviceIds: string[1..5], date: 'YYYY-MM-DD', time: 'HH:mm', notes?, clientName?, clientPhone? }
-  // Price/duration are summed server-side from the BarberServices. A valid CLIENT token supplies the identity
-  // (any clientId in the body is ignored); anonymous requests need clientName + clientPhone.
-  fastify.post('/barbers/:barberId/bookings', async (request: any, reply) => {
-    const { barberId } = request.params as { barberId: string };
-
-    const parsed = createBookingSchema.safeParse(request.body ?? {});
-    if (!parsed.success) {
-      return reply.status(400).send({
-        error: 'VALIDATION_ERROR',
-        message: 'Datos de reserva inválidos',
-        issues: parsed.error.format(),
-      });
-    }
-
-    const clientId = await resolveClientId(request, { optionalJwt: true });
-
-    try {
-      const booking = await service.createBooking({
-        barberId,
-        clientId,
-        ...parsed.data,
-      });
-      // Public endpoint (no authenticate preHandler): a client token is optional here.
-      await trackClientActivity(fastify.prisma, request, 'BOOKING_CREATED', { optionalJwt: true });
-
-      return reply.status(201).send(booking);
-    } catch (err) {
-      if (err instanceof AppError) {
-        return reply.status(err.statusCode).send({ error: err.code, message: err.message });
+  // CLIENT: POST /api/barbers/:barberId/bookings
+  // Body: { serviceIds: string[1..5], date: 'YYYY-MM-DD', time: 'HH:mm', notes? }
+  // Requires a signed-in client account: name and phone come from the client profile and
+  // anything identity-related in the body is ignored. Price/duration are summed server-side.
+  fastify.post(
+    '/barbers/:barberId/bookings',
+    { preHandler: [fastify.authenticateUser] },
+    async (request: any, reply) => {
+      if (request.authUser?.role !== 'cliente') {
+        return reply.status(403).send({ error: 'FORBIDDEN', message: 'Solo para clientes' });
       }
-      throw err;
+      const { barberId } = request.params as { barberId: string };
+
+      const parsed = createBookingSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.status(400).send({
+          error: 'VALIDATION_ERROR',
+          message: 'Datos de reserva inválidos',
+          issues: parsed.error.format(),
+        });
+      }
+
+      try {
+        const booking = await service.createBooking({
+          barberId,
+          clientId: request.authUser.id,
+          ...parsed.data,
+        });
+        await trackClientActivity(fastify.prisma, request, 'BOOKING_CREATED');
+
+        return reply.status(201).send(booking);
+      } catch (err) {
+        return sendAppError(reply, err);
+      }
     }
-  });
+  );
 };
 
 export default fp(bookingsRoutesPlugin);

@@ -201,7 +201,7 @@ describe('Rewards: activity log and qualification', () => {
       expect(await app.prisma.clientActivity.count()).toBe(0);
     });
 
-    describe('public booking endpoint (optional client token)', () => {
+    describe('booking endpoint (client account required)', () => {
       // Real clock (the route is not clock-injectable): book 3 La Paz days ahead, never a Sunday
       // (default working hours are Mon-Sat 09:00-20:00, 30 min slots, break 13:00-14:00).
       const futureDate = () => {
@@ -213,8 +213,6 @@ describe('Rewards: activity log and qualification', () => {
       };
       let slot = 0;
       const bookingPayload = () => ({
-        clientName: 'Walk In',
-        clientPhone: `7000${String(1000 + slot)}`,
         serviceIds: [serviceId],
         date: futureDate(),
         // Distinct 30 min slots between 09:00 and 11:30 so calls never collide.
@@ -228,27 +226,37 @@ describe('Rewards: activity log and qualification', () => {
         await app.prisma.booking.deleteMany({});
       });
 
-      it('records BOOKING_CREATED for a client token', async () => {
+      // Booking identity comes from the profile, so the client needs a name and phone.
+      let phoneSeq = 0;
+      const makeBookingClient = async () => {
         const client = await makeClient();
+        return app.prisma.client.update({
+          where: { id: client.id },
+          data: { displayName: 'Booker', phone: `7100${String(1000 + phoneSeq++)}` },
+        });
+      };
+
+      it('records BOOKING_CREATED for a client token', async () => {
+        const client = await makeBookingClient();
         const res = await book({ authorization: `Bearer ${clientToken(client.id)}` });
         expect(res.statusCode).toBe(201);
         const rows = await app.prisma.clientActivity.findMany({ where: { clientId: client.id } });
         expect(rows.map((r) => r.type)).toEqual(['BOOKING_CREATED']);
       });
 
-      it('records nothing and still succeeds for anonymous, invalid or barber tokens', async () => {
-        const client = await makeClient();
-        const barberToken = app.jwt.sign({ userId: client.id, barberId, role: 'barbero' });
+      it('rejects anonymous, invalid and barber tokens and records nothing', async () => {
+        const barberToken = app.jwt.sign({ userId: barberId, barberId, role: 'barbero' });
 
-        expect((await book()).statusCode).toBe(201);
-        expect((await book({ authorization: 'Bearer not-a-real-token' })).statusCode).toBe(201);
-        expect((await book({ authorization: `Bearer ${barberToken}` })).statusCode).toBe(201);
+        expect((await book()).statusCode).toBe(401);
+        expect((await book({ authorization: 'Bearer not-a-real-token' })).statusCode).toBe(401);
+        expect((await book({ authorization: `Bearer ${barberToken}` })).statusCode).toBe(403);
 
+        expect(await app.prisma.booking.count()).toBe(0);
         expect(await app.prisma.clientActivity.count()).toBe(0);
       });
 
       it('a tracking failure never breaks the booking', async () => {
-        const client = await makeClient();
+        const client = await makeBookingClient();
         const spy = vi.spyOn(ActivityService.prototype, 'record').mockRejectedValue(new Error('boom'));
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         try {

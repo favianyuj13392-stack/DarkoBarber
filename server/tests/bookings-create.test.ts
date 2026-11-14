@@ -26,15 +26,23 @@ describe('Bookings: create validation', () => {
   let foreignServiceId: string;
   let inactiveServiceId: string;
 
-  const create = (over: Record<string, unknown> = {}, now: Date = NOW) =>
+  let phoneSeq = 0;
+  // Unique 8-digit phone per client (Client.phone is unique).
+  const nextPhone = () => `7${String(1_000_000 + phoneSeq++)}`;
+  const makeClient = (data: Record<string, unknown> = {}) =>
+    app.prisma.client.create({
+      data: { email: `c-${crypto.randomUUID()}@example.com`, displayName: 'Real Name', phone: nextPhone(), ...data },
+    });
+
+  // Every call uses a fresh client unless one is given, so the active-bookings cap never interferes.
+  const create = async (over: Record<string, unknown> = {}, now: Date = NOW) =>
     service.createBooking(
       {
         barberId,
         serviceIds: [serviceId],
         date: '2026-11-14',
         time: '10:00',
-        clientName: 'Anon Client',
-        clientPhone: '71234567',
+        clientId: (over.clientId as string | undefined) ?? (await makeClient()).id,
         ...over,
       } as any,
       now
@@ -99,7 +107,7 @@ describe('Bookings: create validation', () => {
       expect(normalizePhone('abc')).toBeNull();
     });
 
-    it('rejects malformed time, date, oversized notes; strips price/duration/clientId', () => {
+    it('rejects malformed time, date, oversized notes; strips price/duration/identity fields', () => {
       const base = { serviceIds: ['s'], date: '2026-11-14', time: '10:00' };
       expect(createBookingSchema.safeParse(base).success).toBe(true);
       expect(createBookingSchema.safeParse({ ...base, time: '9:00' }).success).toBe(false);
@@ -110,9 +118,10 @@ describe('Bookings: create validation', () => {
       expect(createBookingSchema.safeParse({ ...base, serviceIds: [] }).success).toBe(false);
       expect(createBookingSchema.safeParse({ ...base, serviceIds: [''] }).success).toBe(false);
       expect(createBookingSchema.safeParse({ ...base, serviceIds: 'a' }).success).toBe(false);
-      expect(createBookingSchema.safeParse({ ...base, clientPhone: '12' }).success).toBe(false);
       const stripped = createBookingSchema.parse({
         ...base,
+        clientName: 'Someone',
+        clientPhone: '71234567',
         servicePriceBs: 1,
         durationMin: 1,
         clientId: 'someone-else',
@@ -129,8 +138,9 @@ describe('Bookings: create validation', () => {
       expect(b.serviceName).toBe('Combo');
       expect(b.servicePriceBs).toBe(80);
       expect(b.durationMin).toBe(45);
-      expect(b.clientId).toBeNull();
-      expect(b.clientPhone).toBe('+59171234567');
+      expect(b.clientId).toBeTruthy();
+      expect(b.clientName).toBe('Real Name');
+      expect(b.clientPhone).toMatch(/^\+5917\d{7}$/);
       // 10:00 La Paz == 14:00 UTC
       expect(b.scheduledAt.toISOString()).toBe('2026-11-14T14:00:00.000Z');
     });
@@ -289,16 +299,16 @@ describe('Bookings: create validation', () => {
     });
 
     it('over HTTP: 6 services and the legacy single serviceId answer 400', async () => {
+      const token = app.jwt.sign({ userId: (await makeClient()).id, role: 'cliente', deviceId: 'web-client' });
       const send = (serviceIds: string[]) =>
         app.inject({
           method: 'POST',
           url: `/barbers/${barberId}/bookings`,
+          headers: { authorization: `Bearer ${token}` },
           payload: {
             serviceIds,
             date: toLaPazDateString(new Date(Date.now() + 3 * 86_400_000)),
             time: '10:00',
-            clientName: 'Multi Client',
-            clientPhone: '71234567',
           },
         });
       const six = await send([serviceId, thirdServiceId, longServiceId, ...extra.slice(0, 3)]);
@@ -307,7 +317,8 @@ describe('Bookings: create validation', () => {
       const legacy = await app.inject({
         method: 'POST',
         url: `/barbers/${barberId}/bookings`,
-        payload: { serviceId, date: '2026-11-14', time: '10:00', clientName: 'Old Client', clientPhone: '71234567' },
+        headers: { authorization: `Bearer ${token}` },
+        payload: { serviceId, date: '2026-11-14', time: '10:00' },
       });
       expect(legacy.statusCode).toBe(400);
     });
@@ -320,7 +331,7 @@ describe('Bookings: create validation', () => {
     });
   });
 
-  describe('identity', () => {
+  describe('authentication and identity', () => {
     const clientToken = (id: string) => app.jwt.sign({ userId: id, role: 'cliente', deviceId: 'web-client' });
     const futureDate = () => {
       let date = toLaPazDateString(new Date(Date.now() + 3 * 86_400_000));
@@ -336,72 +347,50 @@ describe('Bookings: create validation', () => {
         headers,
         payload: { serviceIds: [serviceId], date: futureDate(), time: '10:00', ...payload },
       });
-    let phoneSeq = 0;
-    // Unique 8-digit phone per client (Client.phone is unique).
-    const nextPhone = () => `7${String(1_000_000 + phoneSeq++)}`;
-    const makeClient = (data: Record<string, unknown> = {}) =>
-      app.prisma.client.create({
-        data: { email: `c-${crypto.randomUUID()}@example.com`, displayName: 'Real Name', phone: nextPhone(), ...data },
-      });
 
-    it('anonymous requests require name and phone', async () => {
-      const res = await post({});
-      expect(res.statusCode).toBe(400);
-      expect(JSON.parse(res.body).error).toBe('CONTACT_REQUIRED');
-
-      const noPhone = await post({ clientName: 'Solo Nombre' });
-      expect(JSON.parse(noPhone.body).error).toBe('CONTACT_REQUIRED');
+    it('rejects anonymous requests with 401 and creates nothing', async () => {
+      const res = await post({ clientName: 'Visitante', clientPhone: '71234567' });
+      expect(res.statusCode).toBe(401);
+      expect(await app.prisma.booking.count()).toBe(0);
     });
 
-    it('anonymous request with valid contact data succeeds and stores no clientId', async () => {
-      const res = await post({ clientName: 'Visitante', clientPhone: '+591 7123 4567' });
-      expect(res.statusCode).toBe(201);
-      const body = JSON.parse(res.body);
-      expect(body.clientId).toBeNull();
-      expect(body.clientName).toBe('Visitante');
-      expect(body.clientPhone).toBe('+59171234567');
+    it('rejects garbage tokens with 401', async () => {
+      const res = await post({}, { authorization: 'Bearer nope' });
+      expect(res.statusCode).toBe(401);
     });
 
-    it('maps validation and business errors to {error, message}', async () => {
-      const bad = await post({ date: '2026-02-30', clientName: 'X Y', clientPhone: '71234567' });
-      expect(bad.statusCode).toBe(400);
-      expect(JSON.parse(bad.body).error).toBe('VALIDATION_ERROR');
-
-      const badPhone = await post({ clientName: 'X Y', clientPhone: '12' });
-      expect(badPhone.statusCode).toBe(400);
-
-      const missingService = await post({ serviceIds: [crypto.randomUUID()], clientName: 'X Y', clientPhone: '71234567' });
-      expect(missingService.statusCode).toBe(404);
-      const parsed = JSON.parse(missingService.body);
-      expect(parsed.error).toBe('SERVICE_NOT_FOUND');
-      expect(typeof parsed.message).toBe('string');
+    it('rejects a barber token with 403', async () => {
+      const barberToken = app.jwt.sign({ userId: barberId, barberId, role: 'barbero' });
+      const res = await post({}, { authorization: `Bearer ${barberToken}` });
+      expect(res.statusCode).toBe(403);
+      expect(JSON.parse(res.body).error).toBe('FORBIDDEN');
+      expect(await app.prisma.booking.count()).toBe(0);
     });
 
-    it('ignores price, duration, status and clientId sent in the body', async () => {
-      const victim = await makeClient({ displayName: 'Victim' });
-      const res = await post({
-        clientName: 'Visitante',
-        clientPhone: '71234567',
-        servicePriceBs: 1,
-        durationMin: 5,
-        serviceName: 'Hacked',
-        status: 'CONFIRMED',
-        clientId: victim.id,
-      });
-      expect(res.statusCode).toBe(201);
-      const body = JSON.parse(res.body);
-      expect(body.servicePriceBs).toBe(50);
-      expect(body.durationMin).toBe(30);
-      expect(body.serviceName).toBe('Corte');
-      expect(body.status).toBe('PENDING');
-      expect(body.clientId).toBeNull();
-    });
-
-    it('an authenticated client takes identity from the profile and ignores body contact data and clientId', async () => {
+    it('a signed-in client books with name and phone taken from the profile', async () => {
       const me = await makeClient();
-      const other = await makeClient({ displayName: 'Other' });
+      const res = await post({}, { authorization: `Bearer ${clientToken(me.id)}` });
+      expect(res.statusCode).toBe(201);
+      const body = JSON.parse(res.body);
+      expect(body.clientId).toBe(me.id);
+      expect(body.clientName).toBe('Real Name');
+      expect(body.clientPhone).toBe(`+591${me.phone}`);
+      expect(body.status).toBe('PENDING');
+    });
+
+    it('ignores identity, price, duration and status sent in the body', async () => {
+      const me = await makeClient();
+      const victim = await makeClient({ displayName: 'Victim' });
       const res = await post(
-        { clientName: 'Fake Name', clientPhone: '60000000', clientId: other.id },
+        {
+          clientName: 'Fake Name',
+          clientPhone: '60000000',
+          clientId: victim.id,
+          servicePriceBs: 1,
+          durationMin: 5,
+          serviceName: 'Hacked',
+          status: 'CONFIRMED',
+        },
         { authorization: `Bearer ${clientToken(me.id)}` }
       );
       expect(res.statusCode).toBe(201);
@@ -409,36 +398,34 @@ describe('Bookings: create validation', () => {
       expect(body.clientId).toBe(me.id);
       expect(body.clientName).toBe('Real Name');
       expect(body.clientPhone).toBe(`+591${me.phone}`);
+      expect(body.servicePriceBs).toBe(50);
+      expect(body.durationMin).toBe(30);
+      expect(body.serviceName).toBe('Corte');
+      expect(body.status).toBe('PENDING');
     });
 
-    it('an authenticated client without phone/name in the profile must provide them', async () => {
-      const bare = await makeClient({ displayName: null, phone: null });
-      const missing = await post({}, { authorization: `Bearer ${clientToken(bare.id)}` });
-      expect(missing.statusCode).toBe(400);
-      expect(JSON.parse(missing.body).error).toBe('CONTACT_REQUIRED');
-
-      const ok = await post(
-        { clientName: 'Nombre Dado', clientPhone: '71234567' },
-        { authorization: `Bearer ${clientToken(bare.id)}` }
-      );
-      expect(ok.statusCode).toBe(201);
-      expect(JSON.parse(ok.body).clientId).toBe(bare.id);
+    it('409 PROFILE_INCOMPLETE when the client profile has no name or phone', async () => {
+      const noPhone = await makeClient({ phone: null });
+      const noName = await makeClient({ displayName: null });
+      for (const c of [noPhone, noName]) {
+        const res = await post({ clientName: 'Given', clientPhone: '71234567' }, { authorization: `Bearer ${clientToken(c.id)}` });
+        expect(res.statusCode).toBe(409);
+        expect(JSON.parse(res.body).error).toBe('PROFILE_INCOMPLETE');
+      }
+      expect(await app.prisma.booking.count()).toBe(0);
     });
 
-    it('a barber token or garbage token is treated as anonymous', async () => {
-      const barberToken = app.jwt.sign({ userId: barberId, barberId, role: 'barbero' });
-      const asBarber = await post(
-        { clientName: 'Visitante', clientPhone: '71234567', time: '10:30' },
-        { authorization: `Bearer ${barberToken}` }
-      );
-      expect(asBarber.statusCode).toBe(201);
-      expect(JSON.parse(asBarber.body).clientId).toBeNull();
+    it('maps validation and business errors to {error, message}', async () => {
+      const auth = { authorization: `Bearer ${clientToken((await makeClient()).id)}` };
+      const bad = await post({ date: '2026-02-30' }, auth);
+      expect(bad.statusCode).toBe(400);
+      expect(JSON.parse(bad.body).error).toBe('VALIDATION_ERROR');
 
-      const garbage = await post(
-        { clientName: 'Visitante', clientPhone: '71234567', time: '11:00' },
-        { authorization: 'Bearer nope' }
-      );
-      expect(garbage.statusCode).toBe(201);
+      const missingService = await post({ serviceIds: [crypto.randomUUID()] }, auth);
+      expect(missingService.statusCode).toBe(404);
+      const parsed = JSON.parse(missingService.body);
+      expect(parsed.error).toBe('SERVICE_NOT_FOUND');
+      expect(typeof parsed.message).toBe('string');
     });
   });
 });

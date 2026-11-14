@@ -7,8 +7,6 @@ import {
   CheckCircle2,
   Sparkles,
   AlertCircle,
-  Phone,
-  User as UserIcon,
 } from 'lucide-react';
 import type { ExploreBarber, BookingDay, BookingSlot } from '../../types/explore';
 import {
@@ -17,9 +15,10 @@ import {
   bookingErrorMessage,
   BookingApiError,
   MAX_SERVICES_PER_BOOKING,
+  requestLoginForBooking,
   type BarberAvailabilityResponse,
 } from '../../services/booking.service';
-import { getStoredUser } from '../../services/auth.service';
+import { getStoredToken, getStoredUser } from '../../services/auth.service';
 
 /** Data of a booking that the server already accepted (it is PENDING until the barber confirms). */
 export interface BookingConfirmData {
@@ -56,10 +55,8 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
   // Bumped to force a fresh availability fetch (e.g. after a 409 SLOT_TAKEN).
   const [availabilityRefresh, setAvailabilityRefresh] = useState(0);
 
-  // Client info state (only asked for when not signed in as a client)
-  const isClientSession = currentUser?.role === 'cliente';
-  const [clientName, setClientName] = useState(currentUser?.displayName || '');
-  const [clientPhone, setClientPhone] = useState(currentUser?.phone || '');
+  // Booking needs a signed-in client account: name and phone come from the profile.
+  const isClientSession = currentUser?.role === 'cliente' && Boolean(getStoredToken());
 
   // Dynamic availability state
   const [availability, setAvailability] = useState<BarberAvailabilityResponse | null>(null);
@@ -105,6 +102,13 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
     }
     return list;
   }, []);
+
+  // Without a client session, send the user to login and come back to this barber afterwards.
+  useEffect(() => {
+    if (isOpen && barber && !isClientSession) {
+      requestLoginForBooking(barber.id);
+    }
+  }, [isOpen, barber, isClientSession]);
 
   // Initialize day & services
   useEffect(() => {
@@ -200,8 +204,8 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
 
   const handleConfirm = async () => {
     if (!selectedTime || selectedServices.length === 0 || submitting) return;
-    if (!isClientSession && (!clientName.trim() || !clientPhone.trim())) {
-      setErrorMsg('Ingresa tu nombre y teléfono para reservar.');
+    if (!isClientSession) {
+      requestLoginForBooking(barber.id);
       return;
     }
 
@@ -213,11 +217,13 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
         serviceIds: selectedServices.map((s) => s.id),
         date: selectedDay.fullDate,
         time: selectedTime,
-        ...(isClientSession
-          ? {}
-          : { clientName: clientName.trim(), clientPhone: clientPhone.trim() }),
       });
     } catch (err) {
+      if (err instanceof BookingApiError && err.status === 401) {
+        requestLoginForBooking(barber.id);
+        setSubmitting(false);
+        return;
+      }
       setErrorMsg(bookingErrorMessage(err));
       if (err instanceof BookingApiError && STALE_SLOT_CODES.includes(err.code)) {
         setSelectedTime('');
@@ -528,37 +534,6 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                     </>
                   )}
                 </div>
-
-                {/* 4. Datos del Cliente (solo si no inició sesión como cliente) */}
-                {!isClientSession && (
-                <div className="space-y-2.5 pt-2 border-t border-white/10">
-                  <span className="text-xs font-mono uppercase tracking-wider text-[#B68F4E] font-semibold">
-                    4. Tus datos para la cita
-                  </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <div className="relative">
-                      <UserIcon className="w-4 h-4 text-white/40 absolute left-3 top-3" />
-                      <input
-                        type="text"
-                        placeholder="Tu nombre"
-                        value={clientName}
-                        onChange={(e) => setClientName(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder-white/35 focus:outline-none focus:border-[#B68F4E]"
-                      />
-                    </div>
-                    <div className="relative">
-                      <Phone className="w-4 h-4 text-white/40 absolute left-3 top-3" />
-                      <input
-                        type="tel"
-                        placeholder="WhatsApp / Teléfono"
-                        value={clientPhone}
-                        onChange={(e) => setClientPhone(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder-white/35 focus:outline-none focus:border-[#B68F4E]"
-                      />
-                    </div>
-                  </div>
-                </div>
-                )}
 
                 {/* Resumen */}
                 <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between text-xs">

@@ -23,16 +23,20 @@ describe('Bookings: overlap, availability and concurrency', () => {
   let phoneSeq = 0;
 
   const nextPhone = () => `6${String(1_000_000 + phoneSeq++)}`;
+  const makeClient = (data: Record<string, unknown> = {}) =>
+    app.prisma.client.create({
+      data: { email: `o-${crypto.randomUUID()}@example.com`, displayName: 'Client', phone: nextPhone(), ...data },
+    });
 
-  const book = (over: Record<string, unknown> = {}, now: Date = NOW) =>
+  // A fresh client per call unless one is given, so the active-bookings cap does not interfere.
+  const book = async (over: Record<string, unknown> = {}, now: Date = NOW) =>
     service.createBooking(
       {
         barberId,
         serviceIds: [shortId],
         date: DAY,
         time: '10:00',
-        clientName: 'Anon Client',
-        clientPhone: nextPhone(),
+        clientId: (over.clientId as string | undefined) ?? (await makeClient()).id,
         ...over,
       } as any,
       now
@@ -192,22 +196,9 @@ describe('Bookings: overlap, availability and concurrency', () => {
     });
   });
 
-  describe('per-identity active bookings cap (default 3)', () => {
-    it('anonymous: caps by normalized phone regardless of formatting', async () => {
-      await book({ time: '10:00', clientPhone: '71234567' });
-      await book({ time: '11:00', clientPhone: '+591 7123 4567' });
-      await book({ time: '12:00', clientPhone: '591-71234567' });
-      const err = await errorOf(book({ time: '15:00', clientPhone: '71234567' }));
-      expect(err.code).toBe('TOO_MANY_ACTIVE_BOOKINGS');
-      expect(err.statusCode).toBe(409);
-      // A different phone is unaffected.
-      await expect(book({ time: '15:00', clientPhone: '71234568' })).resolves.toBeTruthy();
-    });
-
-    it('authenticated: caps by clientId across barbers', async () => {
-      const client = await app.prisma.client.create({
-        data: { email: `cap-${crypto.randomUUID()}@example.com`, displayName: 'Capped', phone: '70555000' },
-      });
+  describe('per-client active bookings cap (default 3)', () => {
+    it('caps by clientId across barbers', async () => {
+      const client = await makeClient({ displayName: 'Capped' });
       const other = await app.prisma.barberService.create({
         data: { barberId: otherBarberId, name: 'X', priceBs: 40, durationMin: 30 },
       });
@@ -216,25 +207,30 @@ describe('Bookings: overlap, availability and concurrency', () => {
       await book({ clientId: client.id, barberId: otherBarberId, serviceIds: [other.id], time: '10:00' });
       const err = await errorOf(book({ clientId: client.id, time: '15:00' }));
       expect(err.code).toBe('TOO_MANY_ACTIVE_BOOKINGS');
+      expect(err.statusCode).toBe(409);
+      // Another client is unaffected.
+      await expect(book({ time: '15:00' })).resolves.toBeTruthy();
     });
 
     it('cancelled, completed and past bookings do not count', async () => {
-      const phone = '+59172000000';
-      await insertBooking({ clientPhone: phone, time: '10:00', status: 'CANCELLED' });
-      await insertBooking({ clientPhone: phone, time: '11:00', status: 'COMPLETED' });
-      await insertBooking({ clientPhone: phone, date: '2026-11-12', time: '10:00', status: 'CONFIRMED' }); // yesterday
-      await insertBooking({ clientPhone: phone, date: '2026-11-13', time: '09:00', status: 'CONFIRMED' }); // earlier today
-      await book({ clientPhone: '72000000', time: '12:00' });
-      await book({ clientPhone: '72000000', time: '14:00' });
-      await expect(book({ clientPhone: '72000000', time: '15:00' })).resolves.toBeTruthy();
-      expect((await errorOf(book({ clientPhone: '72000000', time: '16:00' }))).code).toBe('TOO_MANY_ACTIVE_BOOKINGS');
+      const client = await makeClient();
+      const mine = { clientId: client.id, clientPhone: '+59172000000' };
+      await insertBooking({ ...mine, time: '10:00', status: 'CANCELLED' });
+      await insertBooking({ ...mine, time: '11:00', status: 'COMPLETED' });
+      await insertBooking({ ...mine, date: '2026-11-12', time: '10:00', status: 'CONFIRMED' }); // yesterday
+      await insertBooking({ ...mine, date: '2026-11-13', time: '09:00', status: 'CONFIRMED' }); // earlier today
+      await book({ clientId: client.id, time: '12:00' });
+      await book({ clientId: client.id, time: '14:00' });
+      await expect(book({ clientId: client.id, time: '15:00' })).resolves.toBeTruthy();
+      expect((await errorOf(book({ clientId: client.id, time: '16:00' }))).code).toBe('TOO_MANY_ACTIVE_BOOKINGS');
     });
 
     it('honors BOOKING_MAX_ACTIVE_PER_CLIENT from the environment', async () => {
       process.env.BOOKING_MAX_ACTIVE_PER_CLIENT = '1';
       try {
-        await book({ clientPhone: '73000000', time: '10:00' });
-        expect((await errorOf(book({ clientPhone: '73000000', time: '11:00' }))).code).toBe('TOO_MANY_ACTIVE_BOOKINGS');
+        const client = await makeClient();
+        await book({ clientId: client.id, time: '10:00' });
+        expect((await errorOf(book({ clientId: client.id, time: '11:00' }))).code).toBe('TOO_MANY_ACTIVE_BOOKINGS');
       } finally {
         delete process.env.BOOKING_MAX_ACTIVE_PER_CLIENT;
       }
@@ -250,15 +246,20 @@ describe('Bookings: overlap, availability and concurrency', () => {
       return date;
     };
 
+    const tokenFor = async () =>
+      app.jwt.sign({ userId: (await makeClient({ displayName: 'Racer' })).id, role: 'cliente', deviceId: 'web-client' });
+
     it('N parallel HTTP requests for the same slot produce exactly one 201 and the rest SLOT_TAKEN', async () => {
       const date = futureDate();
       const N = 10;
+      const tokens = await Promise.all(Array.from({ length: N }, tokenFor));
       const results = await Promise.all(
-        Array.from({ length: N }, (_, i) =>
+        tokens.map((token) =>
           app.inject({
             method: 'POST',
             url: `/barbers/${barberId}/bookings`,
-            payload: { serviceIds: [shortId], date, time: '10:00', clientName: `Racer ${i}`, clientPhone: nextPhone() },
+            headers: { authorization: `Bearer ${token}` },
+            payload: { serviceIds: [shortId], date, time: '10:00' },
           })
         )
       );
@@ -273,12 +274,14 @@ describe('Bookings: overlap, availability and concurrency', () => {
     it('parallel overlapping (not identical) requests never double-book', async () => {
       const date = futureDate();
       const starts = ['10:00', '10:30', '10:00', '10:30', '10:00', '10:30'];
+      const tokens = await Promise.all(starts.map(tokenFor));
       const results = await Promise.all(
-        starts.map((time) =>
+        starts.map((time, i) =>
           app.inject({
             method: 'POST',
             url: `/barbers/${barberId}/bookings`,
-            payload: { serviceIds: [longId], date, time, clientName: 'Racer', clientPhone: nextPhone() },
+            headers: { authorization: `Bearer ${tokens[i]}` },
+            payload: { serviceIds: [longId], date, time },
           })
         )
       );

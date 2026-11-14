@@ -41,14 +41,6 @@ export const createBookingSchema = z.object({
     .refine(isRealCalendarDate, { message: 'date must be a real calendar date (YYYY-MM-DD)' }),
   time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'time must be HH:mm (24h)' }),
   notes: z.string().trim().max(500).optional(),
-  // Only used for anonymous requests (or when the client profile lacks them).
-  clientName: z.string().trim().min(2).max(80).optional(),
-  clientPhone: z
-    .string()
-    .trim()
-    .max(30)
-    .refine((v) => normalizePhone(v) !== null, { message: 'clientPhone must be a valid phone number' })
-    .optional(),
 });
 
 export type CreateBookingBody = z.infer<typeof createBookingSchema>;

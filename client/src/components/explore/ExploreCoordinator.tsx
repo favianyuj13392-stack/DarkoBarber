@@ -1,4 +1,4 @@
-import { useState, useEffect, type FC } from 'react';
+import { useState, useEffect, useRef, type FC } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ClientHomeFeed } from './ClientHomeFeed';
 import { BarberListView } from './BarberListView';
@@ -20,10 +20,13 @@ export type ExploreViewType = 'feed' | 'list' | 'map' | 'shop-detail' | 'barber-
 interface ExploreCoordinatorProps {
   initialView?: ExploreViewType;
   onOpenScan?: () => void;
+  /** When set, the booking modal for this barber opens once the barbers have loaded. */
+  resumeBookingBarberId?: string | null;
 }
 
 export const ExploreCoordinator: FC<ExploreCoordinatorProps> = ({
   initialView = 'feed',
+  resumeBookingBarberId = null,
 }) => {
   const [view, setView] = useState<ExploreViewType>(initialView);
   const [barbers, setBarbers] = useState<ExploreBarber[]>([]);
@@ -63,6 +66,18 @@ export const ExploreCoordinator: FC<ExploreCoordinatorProps> = ({
       isMounted = false;
     };
   }, []);
+
+  // Resume a booking interrupted by the login redirect.
+  const resumedBookingRef = useRef(false);
+  useEffect(() => {
+    if (!resumeBookingBarberId || resumedBookingRef.current) return;
+    const target = barbers.find((b) => b.id === resumeBookingBarberId);
+    if (target) {
+      resumedBookingRef.current = true;
+      setBookingBarber(target);
+      setIsBookingModalOpen(true);
+    }
+  }, [resumeBookingBarberId, barbers]);
 
   // Update initial view when prop changes (e.g. from navbar tabs)
   useEffect(() => {

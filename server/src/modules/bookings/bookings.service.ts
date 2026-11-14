@@ -67,10 +67,7 @@ export const ACTIVE_STATUSES: BookingStatus[] = [BookingStatus.PENDING, BookingS
 export interface CreateBookingInput {
   barberId: string;
   /** Authenticated client id (from the token). Never taken from the request body. */
-  clientId?: string | null;
-  /** Contact data supplied in the body; used when the client profile lacks it (or anonymous). */
-  clientName?: string;
-  clientPhone?: string;
+  clientId: string;
   /** Distinct BarberService ids (1..5). Price, duration and name are derived server-side. */
   serviceIds: string[];
   date: string;
@@ -156,7 +153,7 @@ export class BookingsService {
     const { name: serviceName, priceBs: totalPriceBs, durationMin: totalDurationMin } =
       await this.resolveServices(barber.id, input.serviceIds);
 
-    const contact = await this.resolveContact(input);
+    const contact = await this.resolveContact(input.clientId);
 
     // --- Time rules (all La Paz wall-clock) ---
     const startMin = parseTimeToMinutes(input.time);
@@ -210,10 +207,7 @@ export class BookingsService {
     }
 
     const scheduledAt = laPazLocalToUtc(input.date, input.time);
-    const identityWhere = contact.clientId
-      ? { clientId: contact.clientId }
-      : { clientId: null, clientPhone: contact.phone };
-    const identityKey = contact.clientId ? `client:${contact.clientId}` : `phone:${contact.phone}`;
+    const identityKey = `client:${contact.clientId}`;
     const nowParts = getLaPazNowParts(now);
     const nowTime = formatMinutes(nowParts.minutesSinceMidnight);
 
@@ -242,7 +236,7 @@ export class BookingsService {
 
       const activeCount = await tx.booking.count({
         where: {
-          ...identityWhere,
+          clientId: contact.clientId,
           status: { in: ACTIVE_STATUSES },
           OR: [
             { date: { gt: nowParts.dateString } },
@@ -300,47 +294,29 @@ export class BookingsService {
   }
 
   /**
-   * Contact identity: an authenticated client's profile wins over body data (a body
-   * clientId is never trusted); anonymous requests must supply name + phone.
+   * Contact identity comes from the authenticated client's profile; nothing is trusted from
+   * the request body. A profile without name or phone cannot book.
    */
   private async resolveContact(
-    input: CreateBookingInput
-  ): Promise<{ clientId: string | null; name: string; phone: string }> {
-    let clientId: string | null = null;
-    let profileName: string | undefined;
-    let profilePhone: string | undefined;
-
-    if (input.clientId) {
-      const client = await this.prisma.client.findUnique({
-        where: { id: input.clientId },
-        select: { id: true, displayName: true, phone: true },
-      });
-      if (client) {
-        clientId = client.id;
-        profileName = client.displayName?.trim() || undefined;
-        if (client.phone) profilePhone = normalizePhone(client.phone) ?? client.phone;
-      }
+    clientId: string
+  ): Promise<{ clientId: string; name: string; phone: string }> {
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      select: { id: true, displayName: true, phone: true },
+    });
+    if (!client) {
+      throw new AppError('CLIENT_NOT_FOUND', 'Cuenta de cliente no encontrada', 401);
     }
-
-    let bodyPhone: string | undefined;
-    if (input.clientPhone) {
-      const normalized = normalizePhone(input.clientPhone);
-      if (!normalized) {
-        throw new AppError('INVALID_PHONE', 'El teléfono no es válido', 400);
-      }
-      bodyPhone = normalized;
-    }
-
-    const name = profileName || input.clientName?.trim();
-    const phone = profilePhone || bodyPhone;
+    const name = client.displayName?.trim();
+    const phone = client.phone ? normalizePhone(client.phone) ?? client.phone : undefined;
     if (!name || !phone) {
       throw new AppError(
-        'CONTACT_REQUIRED',
-        'Se requieren nombre y teléfono para reservar sin iniciar sesión',
-        400
+        'PROFILE_INCOMPLETE',
+        'Completa tu nombre y teléfono en tu perfil para poder reservar',
+        409
       );
     }
-    return { clientId, name, phone };
+    return { clientId: client.id, name, phone };
   }
 
   /**

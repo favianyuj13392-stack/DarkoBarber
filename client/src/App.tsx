@@ -20,6 +20,7 @@ import {
   type LoginResponse,
 } from './services/auth.service';
 import { savePendingChairBind, consumePendingChairBind } from './services/chair.service';
+import { LOGIN_REQUIRED_EVENT, consumePendingBookingBarberId } from './services/booking.service';
 
 type AppScreen =
   | 'splash'
@@ -81,6 +82,8 @@ export function App() {
   const [barberRegisterStep, setBarberRegisterStep] = useState(1);
   const [pendingChairScan, setPendingChairScan] = useState<ScannedBarberInfo | null>(null);
   const [resetToken, setResetToken] = useState<string | undefined>(undefined);
+  // Barber whose booking was interrupted by the login redirect; resumed after a client signs in.
+  const [resumeBookingBarberId, setResumeBookingBarberId] = useState<string | null>(null);
 
   useEffect(() => {
     // The email verification link is handled by its own screen (its ?token is not a reset token)
@@ -132,9 +135,26 @@ export function App() {
     }
   }, []);
 
+  // A booking attempt without a client session sends the user here (see requestLoginForBooking).
+  useEffect(() => {
+    const onLoginRequired = () => {
+      clearAuthSession();
+      setAuthData(null);
+      setCurrentScreen('login');
+    };
+    window.addEventListener(LOGIN_REQUIRED_EVENT, onLoginRequired);
+    return () => window.removeEventListener(LOGIN_REQUIRED_EVENT, onLoginRequired);
+  }, []);
+
   const handleLoginSuccess = (data: LoginResponse) => {
     setAuthData(data);
     if (data.user.role === 'cliente') {
+      const pendingBookingBarberId = consumePendingBookingBarberId();
+      if (pendingBookingBarberId) {
+        setResumeBookingBarberId(pendingBookingBarberId);
+        setCurrentScreen('explore');
+        return;
+      }
       const pending = consumePendingChairBind();
       if (pending) {
         setPendingChairScan({
@@ -501,7 +521,7 @@ export function App() {
             transition={{ duration: 0.25 }}
             className="w-full min-h-screen pb-20 lg:pb-0"
           >
-            <ExploreCoordinator initialView="feed" />
+            <ExploreCoordinator initialView="feed" resumeBookingBarberId={resumeBookingBarberId} />
             <ClientNavBar
               activeTab="explorar"
               onTabChange={(tab) => {
