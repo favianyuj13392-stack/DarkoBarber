@@ -117,7 +117,8 @@ const bookingsRoutesPlugin: FastifyPluginAsync = async (fastify) => {
       barberId,
       ...body,
     });
-    await trackClientActivity(fastify.prisma, request, 'BOOKING_CREATED');
+    // Public endpoint (no authenticate preHandler): a client token is optional here.
+    await trackClientActivity(fastify.prisma, request, 'BOOKING_CREATED', { optionalJwt: true });
 
     return reply.status(201).send(booking);
   });

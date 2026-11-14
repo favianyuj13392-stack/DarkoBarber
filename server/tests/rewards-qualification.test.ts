@@ -176,7 +176,8 @@ describe('Rewards: activity log and qualification', () => {
       const client = await makeClient();
       const barberToken = app.jwt.sign({ userId: barberId, barberId, role: 'barbero' });
 
-      await app.inject({ method: 'GET', url: `/clients/me?email=${encodeURIComponent(client.email!)}` });
+      const anon = await app.inject({ method: 'GET', url: `/clients/me?email=${encodeURIComponent(client.email!)}` });
+      expect(anon.statusCode).toBe(401);
       await app.inject({
         method: 'GET',
         url: `/clients/me?email=${encodeURIComponent(client.email!)}`,
@@ -191,6 +192,52 @@ describe('Rewards: activity log and qualification', () => {
       });
 
       expect(await app.prisma.clientActivity.count()).toBe(0);
+    });
+
+    describe('public booking endpoint (optional client token)', () => {
+      const bookingPayload = () => ({
+        clientName: 'Walk In',
+        clientPhone: '70000000',
+        serviceName: 'Corte',
+        servicePriceBs: 50,
+        date: '2026-12-01',
+        time: '10:00',
+      });
+      const book = (headers: Record<string, string> = {}) =>
+        app.inject({ method: 'POST', url: `/barbers/${barberId}/bookings`, headers, payload: bookingPayload() });
+
+      it('records BOOKING_CREATED for a client token', async () => {
+        const client = await makeClient();
+        const res = await book({ authorization: `Bearer ${clientToken(client.id)}` });
+        expect(res.statusCode).toBe(201);
+        const rows = await app.prisma.clientActivity.findMany({ where: { clientId: client.id } });
+        expect(rows.map((r) => r.type)).toEqual(['BOOKING_CREATED']);
+      });
+
+      it('records nothing and still succeeds for anonymous, invalid or barber tokens', async () => {
+        const client = await makeClient();
+        const barberToken = app.jwt.sign({ userId: client.id, barberId, role: 'barbero' });
+
+        expect((await book()).statusCode).toBe(201);
+        expect((await book({ authorization: 'Bearer not-a-real-token' })).statusCode).toBe(201);
+        expect((await book({ authorization: `Bearer ${barberToken}` })).statusCode).toBe(201);
+
+        expect(await app.prisma.clientActivity.count()).toBe(0);
+      });
+
+      it('a tracking failure never breaks the booking', async () => {
+        const client = await makeClient();
+        const spy = vi.spyOn(ActivityService.prototype, 'record').mockRejectedValue(new Error('boom'));
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+          const res = await book({ authorization: `Bearer ${clientToken(client.id)}` });
+          expect(res.statusCode).toBe(201);
+          expect(spy).toHaveBeenCalled();
+        } finally {
+          spy.mockRestore();
+          warn.mockRestore();
+        }
+      });
     });
 
     it('records CONSENT_UPDATE only for photos owned by the authenticated client', async () => {

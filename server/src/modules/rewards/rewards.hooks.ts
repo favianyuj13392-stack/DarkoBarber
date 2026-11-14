@@ -4,15 +4,24 @@ import { ActivityService } from './activity.service';
 import { QualificationService } from './qualification.service';
 
 /**
- * Resolves the authenticated CLIENT id of a request, or null. Many client-facing
- * endpoints are public, so the JWT is optional here: a missing, invalid or
- * barber-role token yields null (barbers never generate client activity).
+ * Resolves the authenticated CLIENT id of a request, or null. Identity comes from
+ * `request.authUser` (set by `fastify.authenticateUser`); barber-role users and
+ * anonymous requests yield null (barbers never generate client activity).
+ *
+ * @param opts.optionalJwt ONLY for public endpoints that have no authenticate
+ *   preHandler but accept an optional client token (currently
+ *   POST /barbers/:barberId/bookings). The token is verified best-effort; a
+ *   missing, invalid or barber-role token yields null instead of failing.
  */
-export async function resolveClientId(request: FastifyRequest): Promise<string | null> {
+export async function resolveClientId(
+  request: FastifyRequest,
+  opts: { optionalJwt?: boolean } = {}
+): Promise<string | null> {
+  if (request.authUser) {
+    return request.authUser.role === 'cliente' ? request.authUser.id : null;
+  }
+  if (!opts.optionalJwt) return null;
   try {
-    if (request.authUser) {
-      return request.authUser.role === 'cliente' ? request.authUser.id : null;
-    }
     const decoded = await request.jwtVerify<{ userId?: string; role?: string }>();
     return decoded.role === 'cliente' && decoded.userId ? decoded.userId : null;
   } catch {
@@ -37,15 +46,16 @@ export async function evaluateQualificationSafely(prisma: PrismaClient, clientId
  * @param opts.ownedPhotoId when set, the activity is only recorded if that photo
  *   belongs to the authenticated client (prevents unrelated accounts from
  *   generating qualifying activity on photos that are not theirs).
+ * @param opts.optionalJwt see {@link resolveClientId}; only for public endpoints.
  */
 export async function trackClientActivity(
   prisma: PrismaClient,
   request: FastifyRequest,
   type: ClientActivityType,
-  opts: { ownedPhotoId?: string } = {}
+  opts: { ownedPhotoId?: string; optionalJwt?: boolean } = {}
 ): Promise<void> {
   try {
-    const clientId = await resolveClientId(request);
+    const clientId = await resolveClientId(request, { optionalJwt: opts.optionalJwt });
     if (!clientId) return;
 
     if (opts.ownedPhotoId) {
