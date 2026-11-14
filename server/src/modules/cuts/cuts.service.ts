@@ -132,26 +132,25 @@ export class CutsService {
   }
 
   async finalizeCut(barberId: string, cutId: string, input: FinalizeCutInput) {
-    let cut = await this.prisma.cut.findUnique({
-      where: { id: cutId },
+    // Ownership is enforced in the query: other barbers' cuts are indistinguishable from missing ones.
+    const existing = await this.prisma.cut.findFirst({
+      where: { id: cutId, barberId },
     });
 
-    if (!cut) {
-      cut = await this.prisma.cut.findFirst({
-        where: { barberId, status: 'IN_PROGRESS' },
-      });
-    }
-
-    if (!cut) {
-      cut = await this.prisma.cut.findFirst({
-        where: { barberId },
-        orderBy: { createdAt: 'desc' },
-      });
-    }
-
-    if (!cut) {
+    if (!existing) {
       throw new NotFoundError('NOT_FOUND', 'Cut not found');
     }
+
+    // Idempotent retry: an already finished cut owned by this barber returns the stored result.
+    if (existing.status === 'FINISHED') {
+      return existing;
+    }
+
+    if (existing.status !== 'IN_PROGRESS') {
+      throw new NotFoundError('NOT_FOUND', 'Cut not found');
+    }
+
+    const cut = existing;
 
     const finishedAt = input.finishedAt ? new Date(input.finishedAt) : new Date();
     const durationMinutes = (finishedAt.getTime() - cut.startedAt.getTime()) / (1000 * 60);
@@ -159,8 +158,9 @@ export class CutsService {
     const isExpress = input.chips.adicionales?.includes('Corte Express') ?? false;
     const isRapid = isExpress ? (durationMinutes < 8) : (durationMinutes < 15);
 
-    const finalizedCut = await this.prisma.cut.update({
-      where: { id: cut.id },
+    // Conditional update guards against a concurrent finalize/cancel between read and write.
+    const updated = await this.prisma.cut.updateMany({
+      where: { id: cut.id, barberId, status: 'IN_PROGRESS' },
       data: {
         status: 'FINISHED',
         finishedAt,
@@ -168,6 +168,10 @@ export class CutsService {
         rapidClosure: isRapid,
       },
     });
+    if (updated.count === 0) {
+      throw new NotFoundError('NOT_FOUND', 'Cut not found');
+    }
+    const finalizedCut = await this.prisma.cut.findUniqueOrThrow({ where: { id: cut.id } });
 
     // Guardar fotos del corte en PostgreSQL (CutPhoto)
     if (input.photos && input.photos.length > 0) {
@@ -178,7 +182,8 @@ export class CutsService {
             data: {
               cutId: cut.id,
               r2Key: photo.url,
-              isPublic: Boolean(input.isPublic),
+              // Always private on finalize; public only via the client's consent flow.
+              isPublic: false,
             },
           });
         } catch (photoErr) {
