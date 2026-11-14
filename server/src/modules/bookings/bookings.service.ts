@@ -1,5 +1,5 @@
 import { PrismaClient, BookingStatus } from '@prisma/client';
-import { getLaPazNowParts, toLaPazDateString } from '../../utils/la-paz-date';
+import { getLaPazNowParts } from '../../utils/la-paz-date';
 import { AppError } from '../../utils/errors';
 import { getBookingsConfig } from './bookings.config';
 import { isRealCalendarDate, normalizePhone } from './bookings.schemas';
@@ -123,68 +123,11 @@ export function resolveDayWindow(
 export class BookingsService {
   constructor(private prisma: PrismaClient) {}
 
-  async getBarberBookings(
-    barberId: string,
-    statusFilter?: BookingStatus,
-    now: Date = new Date()
-  ) {
-    const where: any = { barberId };
-    if (statusFilter) {
-      where.status = statusFilter;
-    }
-
-    const bookings = await (this.prisma as any).booking.findMany({
-      where,
+  async getBarberBookings(barberId: string, statusFilter?: BookingStatus) {
+    return this.prisma.booking.findMany({
+      where: { barberId, ...(statusFilter ? { status: statusFilter } : {}) },
       orderBy: [{ date: 'asc' }, { time: 'asc' }, { createdAt: 'desc' }],
     });
-
-    // If no bookings exist yet in database, seed realistic demo bookings for the barber
-    if (bookings.length === 0) {
-      const todayStr = toLaPazDateString(now);
-      const demoSeed = [
-        {
-          id: `seed-bk-1`,
-          barberId,
-          clientName: 'Carlos Mendizábal',
-          clientPhone: '+591 78945612',
-          serviceName: 'Low Fade Texturizado + Perfilado',
-          servicePriceBs: 75,
-          durationMin: 45,
-          date: todayStr,
-          time: '17:30',
-          status: BookingStatus.CONFIRMED,
-          notes: 'Cliente puntual, prefiere tijera en la cúspide.',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-        {
-          id: `seed-bk-2`,
-          barberId,
-          clientName: 'Andrés Villagómez',
-          clientPhone: '+591 76543210',
-          serviceName: 'Corte Clásico & Fade',
-          servicePriceBs: 50,
-          durationMin: 35,
-          date: todayStr,
-          time: '19:00',
-          status: BookingStatus.PENDING,
-          notes: 'Primera vez en Fade Studio.',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ];
-
-      for (const item of demoSeed) {
-        await (this.prisma as any).booking.create({ data: item }).catch(() => null);
-      }
-
-      return (this.prisma as any).booking.findMany({
-        where,
-        orderBy: [{ date: 'asc' }, { time: 'asc' }],
-      });
-    }
-
-    return bookings;
   }
 
   /**

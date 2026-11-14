@@ -324,4 +324,14 @@ describe('Bookings: state machine, client cancellation and client list', () => {
       ]);
     });
   });
+
+  describe('no demo data', () => {
+    it('a barber without bookings gets an empty list and nothing is written to the database', async () => {
+      const res = await app.inject({ method: 'GET', url: '/barbers/me/bookings', headers: auth(barberToken(otherBarberId)) });
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.body)).toEqual([]);
+      expect(await app.prisma.booking.count({ where: { barberId: otherBarberId } })).toBe(0);
+      expect(await app.prisma.booking.count({ where: { id: { startsWith: 'seed-bk' } } })).toBe(0);
+    });
+  });
 });
