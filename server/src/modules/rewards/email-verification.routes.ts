@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { EmailVerificationService } from './email-verification.service';
+import { evaluateQualificationSafely } from './rewards.hooks';
 
 const verifyEmailSchema = z.object({
   token: z.string().min(3).max(256),
@@ -54,6 +55,7 @@ export const emailVerificationRoutes: FastifyPluginAsync = async (fastify) => {
       });
     }
 
+    await evaluateQualificationSafely(fastify.prisma, clientId);
     return reply.status(200).send({ verified: true });
   });
 };
