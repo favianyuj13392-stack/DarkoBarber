@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { LoginInput, RegisterInput, GoogleAuthInput } from './auth.schemas';
 import { hashSecret, verifySecret } from '../../utils/crypto';
 import { emailService } from '../../services/email/email.service';
+import { RewardsService } from '../rewards/rewards.service';
 
 export type AuthResult = {
   role: 'barbero' | 'cliente';
@@ -844,38 +845,9 @@ export class AuthService {
   }
 
   // --- PROGRAMA DE CRECIMIENTO FADE: GAMIFICACIÓN Y RECOMPENSAS ---
-  async getBarberAcquisitions(barberId: string) {
-    const barber = await this.prisma.barber.findUnique({
-      where: { id: barberId },
-      select: { id: true, freeMonthsEarned: true, plan: true },
-    });
-    if (!barber) throw new Error('Barbero no encontrado');
-
-    const GOAL = 15;
-    const realCount = await (this.prisma as any).client.count({
-      where: { firstScanBarberId: barberId },
-    }).catch(() => 0);
-
-    // Muestra al menos 8 para que en demos de producto la barra luzca activa e incentive a completar
-    const acquiredCount = Math.max(realCount, 8);
-    const percentage = Math.min(100, Math.round((acquiredCount / GOAL) * 100));
-    const rewardUnlocked = acquiredCount >= GOAL;
-
-    return {
-      barberId,
-      acquiredCount,
-      goal: GOAL,
-      remaining: Math.max(0, GOAL - acquiredCount),
-      percentage,
-      freeMonthsEarned: barber.freeMonthsEarned,
-      rewardUnlocked,
-      rewardTitle: '1 Mes Gratis — Plan Barbería Base (Bs 110)',
-    };
-  }
-
   async claimFreeMonthReward(barberId: string) {
-    const acquisitions = await this.getBarberAcquisitions(barberId);
-    if (!acquisitions.rewardUnlocked && acquisitions.acquiredCount < 15) {
+    const acquisitions = await new RewardsService(this.prisma).getProgress(barberId);
+    if (!acquisitions.goalReached) {
       throw new Error('Meta no alcanzada todavía');
     }
 

@@ -8,6 +8,7 @@ import {
   resetPasswordSchema,
 } from './auth.schemas';
 import { emailService } from '../../services/email/email.service';
+import { RewardsService } from '../rewards/rewards.service';
 
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new AuthService(fastify.prisma);
@@ -371,7 +372,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     async (request: any, reply: any) => {
       const barberId = request.barber?.id || request.authUser?.id;
       if (!barberId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
-      const data = await service.getBarberAcquisitions(barberId);
+      const data = await new RewardsService(fastify.prisma).getProgress(barberId);
       return reply.status(200).send(data);
     }
   );
