@@ -5,6 +5,7 @@ import { LoginInput, RegisterInput, GoogleAuthInput } from './auth.schemas';
 import { hashSecret, verifySecret } from '../../utils/crypto';
 import { emailService } from '../../services/email/email.service';
 import { laPazMonthStartUtc } from '../../utils/la-paz-date';
+import { getMonthlyCutUsage, getPlanCutLimit } from '../cuts/cut-quota';
 
 export type AuthResult = {
   role: 'barbero' | 'cliente';
@@ -741,18 +742,7 @@ export class AuthService {
     // Billing month = La Paz calendar month (same boundary as the cut-limit check).
     const startOfMonth = laPazMonthStartUtc(now);
 
-    const monthlyCutsCount = await this.prisma.cut.count({
-      where: {
-        barberId: barber.id,
-        startedAt: { gte: startOfMonth },
-      },
-    });
-
-    const limits: Record<string, number> = {
-      AUTONOMO: 60,
-      BARBERIA_BASE: 200,
-      ALTO_FLUJO: 9999,
-    };
+    const { usage: monthlyCutsCount } = await getMonthlyCutUsage(this.prisma, barber.id, now);
 
     const prices: Record<string, number> = {
       AUTONOMO: 45,
@@ -760,7 +750,8 @@ export class AuthService {
       ALTO_FLUJO: 190,
     };
 
-    const maxCuts = limits[barber.plan] || 60;
+    // Unlimited plans (ALTO_FLUJO) report a large display cap.
+    const maxCuts = getPlanCutLimit(barber.plan) ?? 9999;
     const priceBs = prices[barber.plan] || 45;
 
     // Last day of the La Paz month at 00:00 La Paz (04:00 UTC). startOfMonth is 04:00 UTC

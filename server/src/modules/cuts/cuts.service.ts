@@ -3,7 +3,7 @@ import { StartCutInput, FinalizeCutInput } from './cuts.schemas';
 import { ConflictError, ForbiddenError, NotFoundError } from '../../utils/errors';
 import { AuthenticatedBarber } from '../../types';
 import { PresenceService } from '../presence/presence.service';
-import { laPazMonthStartUtc } from '../../utils/la-paz-date';
+import { getMonthlyCutUsage, getPlanCutLimit } from './cut-quota';
 
 export class CutsService {
   private presenceService: PresenceService;
@@ -37,20 +37,15 @@ export class CutsService {
 
     // 3. RN-03: Verify monthly cut limit
     // The month resets at 00:00 La Paz on day 1, regardless of the server timezone.
-    const startOfMonth = laPazMonthStartUtc();
-
-    const monthlyCutsCount = await this.prisma.cut.count({
-      where: {
-        barberId: barber.id,
-        startedAt: { gte: startOfMonth },
-      },
-    });
-
-    if (barber.plan === 'AUTONOMO' && monthlyCutsCount >= 60) {
-      throw new ForbiddenError('PLAN_LIMIT_REACHED', 'Monthly cut limit reached for AUTONOMO plan (60 cuts)');
-    }
-    if (barber.plan === 'BARBERIA_BASE' && monthlyCutsCount >= 200) {
-      throw new ForbiddenError('PLAN_LIMIT_REACHED', 'Monthly cut limit reached for BARBERIA_BASE plan (200 cuts)');
+    const planLimit = getPlanCutLimit(barber.plan);
+    if (planLimit !== null) {
+      const { usage } = await getMonthlyCutUsage(this.prisma, barber.id);
+      if (usage >= planLimit) {
+        throw new ForbiddenError(
+          'PLAN_LIMIT_REACHED',
+          `Monthly cut limit reached for ${barber.plan} plan (${planLimit} cuts)`
+        );
+      }
     }
 
     // 4. Asegurar que existe un ClientProfile válido en PostgreSQL asociado al cliente correcto
