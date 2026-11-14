@@ -1,0 +1,18 @@
+<svg viewBox="0 0 100 116" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="fadeGoldShine" x1="0" y1="0" x2="100" y2="115" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F5EBDD" />
+      <stop offset="50%" stop-color="#D9C9B0" />
+      <stop offset="100%" stop-color="#B68F4E" />
+    </linearGradient>
+  </defs>
+  <path
+    d="M20 18C20 9.16 27.16 2 36 2H76C86 2 92.5 8.5 90.5 18.5C88.5 28.5 76 34 68 34C60 34 46.5 35 40 43C53 38 68 39 74 46C79 52 74 63 64 66C52 69.5 40 68 40 76C40 86 42 98 42 104C42 110.63 36.63 116 30 116C23.37 116 20 110.63 20 104V18Z"
+    fill="url(#fadeGoldShine)"
+  />
+  <path
+    d="M20 74C23 60 31 46 44 40C34 45 27 57 23 68L20 74Z"
+    fill="#000000"
+    opacity="0.4"
+  />
+</svg>

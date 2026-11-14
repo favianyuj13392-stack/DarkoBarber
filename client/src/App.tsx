@@ -11,6 +11,7 @@ import { AuthenticatedView } from './components/dashboard/AuthenticatedView';
 import { HistorialFeed } from './components/history/HistorialFeed';
 import { ExploreCoordinator } from './components/explore/ExploreCoordinator';
 import { ClientNavBar } from './components/common/ClientNavBar';
+import { LegalView } from './components/common/LegalView';
 import type { ScannedBarberInfo } from './components/chair/QrScannerModal';
 import {
   getStoredToken,
@@ -30,7 +31,9 @@ type AppScreen =
   | 'barber-chair'
   | 'explore'
   | 'authenticated'
-  | 'verify-email';
+  | 'verify-email'
+  | 'legal-privacidad'
+  | 'legal-terminos';
 
 const HAS_SEEN_ONBOARDING_KEY = 'fade_has_seen_onboarding';
 const VERIFY_EMAIL_PATH = '/verify-email';
@@ -56,6 +59,10 @@ export function App() {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>(() => {
     if (typeof window === 'undefined') return 'splash';
     if (IS_VERIFY_EMAIL_ROUTE) return 'verify-email';
+    const path = window.location.pathname.toLowerCase();
+    if (path.includes('privacidad') || path.includes('privacy')) return 'legal-privacidad';
+    if (path.includes('terminos') || path.includes('terms')) return 'legal-terminos';
+
     const params = new URLSearchParams(window.location.search);
     const token = getStoredToken();
     const user = getStoredUser();
@@ -508,6 +515,20 @@ export function App() {
               userName={authData?.user.displayName || 'Ernesto Salinas'}
             />
           </motion.div>
+        )}
+
+        {currentScreen === 'legal-privacidad' && (
+          <LegalView
+            type="privacidad"
+            onBack={() => setCurrentScreen('login')}
+          />
+        )}
+
+        {currentScreen === 'legal-terminos' && (
+          <LegalView
+            type="terminos"
+            onBack={() => setCurrentScreen('login')}
+          />
         )}
 
         {currentScreen === 'authenticated' && authData && (
