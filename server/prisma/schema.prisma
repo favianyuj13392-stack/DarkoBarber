@@ -34,6 +34,31 @@ enum BookingStatus {
   CANCELLED
 }
 
+enum AcquisitionStatus {
+  PENDING
+  QUALIFIED
+  REVOKED
+}
+
+enum ClientActivityType {
+  HISTORY_VIEW
+  CONSENT_UPDATE
+  BOOKING_CREATED
+  CUT_CONFIRMED
+  APP_SESSION
+}
+
+enum RewardType {
+  ACQUISITION_BONUS
+}
+
+enum RewardClaimStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REVERSED
+}
+
 model Shop {
   id          String   @id @default(uuid())
   name        String
@@ -73,6 +98,7 @@ model Barber {
   followers     BarberFollower[]
   freeMonthsEarned Int             @default(0)
   acquiredClients Client[]        @relation("BarberAcquisitions")
+  rewardClaims  RewardClaim[]
   acceptsBookings Boolean         @default(true)
   bookingNoticeMin Int            @default(15)
   workingHours  Json?
@@ -111,15 +137,26 @@ model Client {
   firstScanBarberId String?
   firstScanBarber   Barber?         @relation("BarberAcquisitions", fields: [firstScanBarberId], references: [id], onDelete: SetNull)
   firstScanAt       DateTime?
+  // Rewards program. NULL = not part of any acquisition (all pre-existing rows stay NULL,
+  // so they never count toward a barber's reward). Set to PENDING only when a client is
+  // newly captured by a barber after this feature ships.
+  acquisitionStatus AcquisitionStatus?
+  qualifiedAt       DateTime?
+  emailVerifiedAt   DateTime?
+  signupIp          String?
+  signupDeviceId    String?
   profiles     ClientProfile[]
   following    BarberFollower[]
   bookings     Booking[]
+  activities   ClientActivity[]
+  emailVerificationTokens EmailVerificationToken[]
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
   @@index([email])
   @@index([phone])
   @@index([firstScanBarberId])
+  @@index([firstScanBarberId, acquisitionStatus])
 }
 
 model ClientProfile {
@@ -231,4 +268,43 @@ model PasswordResetToken {
 
   @@index([email])
   @@index([token])
+}
+
+model ClientActivity {
+  id        String             @id @default(uuid())
+  clientId  String
+  client    Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  type      ClientActivityType
+  createdAt DateTime           @default(now())
+
+  @@index([clientId, createdAt])
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  clientId  String
+  client    Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([clientId])
+}
+
+model RewardClaim {
+  id                    String            @id @default(uuid())
+  barberId              String
+  barber                Barber            @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  type                  RewardType
+  goalKey               String
+  status                RewardClaimStatus @default(PENDING)
+  qualifiedCountAtClaim Int
+  note                  String?
+  reviewedAt            DateTime?
+  reviewedBy            String?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  @@unique([barberId, type, goalKey])
 }
