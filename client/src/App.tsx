@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { SplashScreen } from './components/presentation/SplashScreen';
 import { OnboardingCarousel } from './components/presentation/OnboardingCarousel';
@@ -169,6 +169,8 @@ export function App() {
       setCurrentScreen('barber-chair');
     }
   };
+
+  const clearResumeBooking = useCallback(() => setResumeBookingBarberId(null), []);
 
   const handleLogout = () => {
     clearAuthSession();
@@ -521,7 +523,11 @@ export function App() {
             transition={{ duration: 0.25 }}
             className="w-full min-h-screen pb-20 lg:pb-0"
           >
-            <ExploreCoordinator initialView="feed" resumeBookingBarberId={resumeBookingBarberId} />
+            <ExploreCoordinator
+              initialView="feed"
+              resumeBookingBarberId={resumeBookingBarberId}
+              onResumed={clearResumeBooking}
+            />
             <ClientNavBar
               activeTab="explorar"
               onTabChange={(tab) => {

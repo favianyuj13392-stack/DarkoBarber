@@ -22,11 +22,14 @@ interface ExploreCoordinatorProps {
   onOpenScan?: () => void;
   /** When set, the booking modal for this barber opens once the barbers have loaded. */
   resumeBookingBarberId?: string | null;
+  /** Called once the resume request was consumed, so the owner can clear it. */
+  onResumed?: () => void;
 }
 
 export const ExploreCoordinator: FC<ExploreCoordinatorProps> = ({
   initialView = 'feed',
   resumeBookingBarberId = null,
+  onResumed,
 }) => {
   const [view, setView] = useState<ExploreViewType>(initialView);
   const [barbers, setBarbers] = useState<ExploreBarber[]>([]);
@@ -76,8 +79,10 @@ export const ExploreCoordinator: FC<ExploreCoordinatorProps> = ({
       resumedBookingRef.current = true;
       setBookingBarber(target);
       setIsBookingModalOpen(true);
+      // Tell the owner the pending resume was consumed so a remount does not reopen the modal.
+      onResumed?.();
     }
-  }, [resumeBookingBarberId, barbers]);
+  }, [resumeBookingBarberId, barbers, onResumed]);
 
   // Update initial view when prop changes (e.g. from navbar tabs)
   useEffect(() => {
