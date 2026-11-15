@@ -1,10 +1,14 @@
 import Fastify, { FastifyInstance, FastifyServerOptions } from 'fastify';
 import cors from '@fastify/cors';
+import { defaultBodyLimit } from './utils/body-limits';
 import dotenv from 'dotenv';
 import websocketPlugin from './plugins/websocket.plugin';
 import prismaPlugin from './plugins/prisma.plugin';
 import authPlugin from './plugins/auth.plugin';
 import s3Plugin from './plugins/s3.plugin';
+import errorHandlerPlugin from './plugins/error-handler.plugin';
+import helmet from '@fastify/helmet';
+import rateLimitPlugin from './plugins/rate-limit.plugin';
 import { presenceRoutes } from './modules/presence/presence.routes';
 import { authRoutes } from './modules/auth/auth.routes';
 import { clientsRoutes } from './modules/clients/clients.routes';
@@ -17,9 +21,25 @@ import { startWatchdogs, stopWatchdogs } from './modules/presence/presence.watch
 
 dotenv.config();
 
+/**
+ * TRUST_PROXY is opt-in: unset means X-Forwarded-For is ignored and the socket
+ * address is the client IP. Accepts "true", a hop count ("1"), or a comma-separated
+ * list of trusted proxy IPs/CIDRs.
+ */
+function resolveTrustProxy(): boolean | number | string[] | undefined {
+  const raw = process.env.TRUST_PROXY?.trim();
+  if (!raw || raw === 'false') return undefined;
+  if (raw === 'true') return true;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  return raw.split(',').map((v) => v.trim()).filter(Boolean);
+}
+
 export async function buildApp(opts: FastifyServerOptions = {}): Promise<FastifyInstance> {
+  const trustProxy = resolveTrustProxy();
   const app = Fastify({
-    bodyLimit: 30 * 1024 * 1024, // 30 MB body limit for mobile photos and multi-angle portfolios
+    ...(trustProxy !== undefined ? { trustProxy } : {}),
+    // Small global limit; image-carrying routes opt in to uploadBodyLimit() individually.
+    bodyLimit: defaultBodyLimit(),
     ...opts,
   });
 
@@ -44,6 +64,23 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
     credentials: true,
   });
 
+  await app.register(errorHandlerPlugin);
+
+  // Security headers. This server only returns JSON (no HTML), so instead of the
+  // browser-page default CSP we ship the strictest one: nothing may load or frame
+  // a response from the API. Other helmet defaults (HSTS, nosniff, referrer policy,
+  // frame/CORP/COOP headers, X-Powered-By removal) stay enabled.
+  await app.register(helmet, {
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        'default-src': ["'none'"],
+        'frame-ancestors': ["'none'"],
+      },
+    },
+  });
+
+  await app.register(rateLimitPlugin);
   await app.register(websocketPlugin);
   await app.register(prismaPlugin);
   await app.register(authPlugin);
