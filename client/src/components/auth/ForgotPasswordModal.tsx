@@ -70,8 +70,8 @@ export const ForgotPasswordModal: FC<ForgotPasswordModalProps> = ({
       setErrorMsg('Ingresa el código o token de recuperación');
       return;
     }
-    if (newPassword.length < 6) {
-      setErrorMsg('La nueva contraseña debe tener al menos 6 caracteres');
+    if (newPassword.length < 8) {
+      setErrorMsg('La nueva contraseña debe tener al menos 8 caracteres');
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -248,7 +248,7 @@ export const ForgotPasswordModal: FC<ForgotPasswordModalProps> = ({
                     type="password"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Mínimo 6 caracteres"
+                    placeholder="Mínimo 8 caracteres"
                     required
                     className="w-full bg-transparent py-2 text-sm text-white placeholder-white/20 focus:outline-none"
                   />

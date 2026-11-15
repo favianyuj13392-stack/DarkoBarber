@@ -8,6 +8,7 @@ export interface BarberAuthPayload {
   role?: 'barbero' | 'cliente';
   shopId: string | null;
   deviceId: string;
+  tv?: number;
 }
 
 export interface AuthPayload {
@@ -16,6 +17,7 @@ export interface AuthPayload {
   barberId?: string;
   shopId?: string | null;
   deviceId?: string;
+  tv?: number;
 }
 
 export interface AuthenticatedBarber {
