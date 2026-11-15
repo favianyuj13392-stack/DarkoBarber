@@ -89,8 +89,8 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
       return;
     }
 
-    if (!form.password || form.password.length < 6) {
-      setErrorMessage('La contraseña debe tener al menos 6 caracteres');
+    if (!form.password || form.password.length < 8) {
+      setErrorMessage('La contraseña debe tener al menos 8 caracteres');
       return;
     }
 
@@ -402,7 +402,7 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
                       required
                       value={form.password}
                       onChange={(e) => setForm({ ...form, password: e.target.value })}
-                      placeholder="Mínimo 6 caracteres"
+                      placeholder="Mínimo 8 caracteres"
                       className="w-full pl-10 pr-10 py-3 rounded-2xl bg-white/5 border border-white/10 text-white placeholder-white/20 text-sm focus:outline-none focus:border-[#B68F4E] transition-all"
                     />
                     <button

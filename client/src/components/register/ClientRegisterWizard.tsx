@@ -99,8 +99,8 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
       return;
     }
 
-    if (!form.password || form.password.length < 6) {
-      setErrorMessage('La contraseña debe tener al menos 6 caracteres');
+    if (!form.password || form.password.length < 8) {
+      setErrorMessage('La contraseña debe tener al menos 8 caracteres');
       return;
     }
 
@@ -358,7 +358,7 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
                       type={showPassword ? 'text' : 'password'}
                       value={form.password}
                       onChange={(e) => setForm({ ...form, password: e.target.value })}
-                      placeholder="Mínimo 6 caracteres"
+                      placeholder="Mínimo 8 caracteres"
                       autoComplete="new-password"
                       className="w-full bg-transparent py-2 text-sm text-white placeholder-white/20 focus:outline-none"
                     />
