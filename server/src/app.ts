@@ -1,5 +1,6 @@
 import Fastify, { FastifyInstance, FastifyServerOptions } from 'fastify';
 import cors from '@fastify/cors';
+import { defaultBodyLimit } from './utils/body-limits';
 import dotenv from 'dotenv';
 import websocketPlugin from './plugins/websocket.plugin';
 import prismaPlugin from './plugins/prisma.plugin';
@@ -37,7 +38,8 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
   const trustProxy = resolveTrustProxy();
   const app = Fastify({
     ...(trustProxy !== undefined ? { trustProxy } : {}),
-    bodyLimit: 30 * 1024 * 1024, // 30 MB body limit for mobile photos and multi-angle portfolios
+    // Small global limit; image-carrying routes opt in to uploadBodyLimit() individually.
+    bodyLimit: defaultBodyLimit(),
     ...opts,
   });
 

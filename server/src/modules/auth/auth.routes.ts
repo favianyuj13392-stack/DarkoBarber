@@ -7,6 +7,7 @@ import {
   forgotPasswordSchema,
   resetPasswordSchema,
 } from './auth.schemas';
+import { uploadBodyLimit } from '../../utils/body-limits';
 import { RewardsService } from '../rewards/rewards.service';
 
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
@@ -201,8 +202,10 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     return reply.status(200).send(updated);
   };
 
-  fastify.put('/auth/barber/profile', { preHandler: [fastify.authenticateBarber] }, updateBarberProfileHandler);
-  fastify.put('/barbers/me', { preHandler: [fastify.authenticateBarber] }, updateBarberProfileHandler);
+  // The profile may carry an inline avatar image (data URL), so it gets the upload limit.
+  const profileRouteOptions = { bodyLimit: uploadBodyLimit(), preHandler: [fastify.authenticateBarber] };
+  fastify.put('/auth/barber/profile', profileRouteOptions, updateBarberProfileHandler);
+  fastify.put('/barbers/me', profileRouteOptions, updateBarberProfileHandler);
 
   // GET /shops (Público: lista de salones registrados)
   fastify.get('/shops', async (_request, reply) => {
@@ -317,9 +320,11 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   // --- GESTIÓN DE PORTAFOLIO (AÑADIR / ELIMINAR FOTOS) ---
+  // Photos are sent inline as data URLs (and deleted by that same value), so the
+  // portfolio routes get the larger upload body limit.
   fastify.post(
     '/barbers/me/portfolio',
-    { preHandler: [fastify.authenticateBarber] },
+    { bodyLimit: uploadBodyLimit(), preHandler: [fastify.authenticateBarber] },
     async (request: any, reply: any) => {
       const barberId = request.barber?.id || request.authUser?.id;
       if (!barberId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
@@ -332,7 +337,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.delete(
     '/barbers/me/portfolio',
-    { preHandler: [fastify.authenticateBarber] },
+    { bodyLimit: uploadBodyLimit(), preHandler: [fastify.authenticateBarber] },
     async (request: any, reply: any) => {
       const barberId = request.barber?.id || request.authUser?.id;
       if (!barberId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
