@@ -1,5 +1,19 @@
 import { PrismaClient, BookingStatus } from '@prisma/client';
-import { getLaPazNowParts, toLaPazDateString } from '../../utils/la-paz-date';
+import { getLaPazNowParts } from '../../utils/la-paz-date';
+import { AppError } from '../../utils/errors';
+import { getBookingsConfig } from './bookings.config';
+import { isRealCalendarDate, normalizePhone, type UpdateBookingSettingsBody } from './bookings.schemas';
+import {
+  dayNumber,
+  dayOfWeekOf,
+  formatMinutes,
+  laPazLocalToUtc,
+  localMinutes,
+  nowLocalMinutes,
+  parseTimeToMinutes,
+  rangesOverlap,
+} from './bookings.time';
+import { CLIENT_CANCELLABLE_FROM, REQUIRES_START_PASSED, canTransition } from './bookings.status';
 
 export interface DaySchedule {
   dayOfWeek: number; // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
@@ -47,143 +61,416 @@ export function getDefaultWorkingHours(): BarberWorkingHoursConfig {
   };
 }
 
+/** Statuses that hold a slot and count toward a client's active-bookings cap. */
+export const ACTIVE_STATUSES: BookingStatus[] = [BookingStatus.PENDING, BookingStatus.CONFIRMED];
+
 export interface CreateBookingInput {
   barberId: string;
-  clientId?: string;
-  clientName: string;
-  clientPhone: string;
-  serviceName: string;
-  servicePriceBs: number;
-  durationMin?: number;
+  /** Authenticated client id (from the token). Never taken from the request body. */
+  clientId: string;
+  /** Distinct BarberService ids (1..5). Price, duration and name are derived server-side. */
+  serviceIds: string[];
   date: string;
   time: string;
   notes?: string;
 }
 
+/** Working-day window of a barber for one date, in minutes since midnight. */
+export interface DayWindow {
+  dayName: string;
+  openMin: number;
+  closeMin: number;
+  breakStartMin: number; // -1 when there is no break
+  breakEndMin: number;
+  slotIntervalMin: number;
+}
+
+/**
+ * Resolves the barber's schedule for a 'YYYY-MM-DD' date, or null when it is a rest day.
+ * Single source of truth for both slot generation and booking validation.
+ */
+export function resolveDayWindow(
+  workingHours: BarberWorkingHoursConfig,
+  date: string
+): DayWindow | null {
+  // Stored rows predate the Zod validation, so nothing here can be trusted: anything malformed
+  // closes the day instead of letting NaN comparisons slip past the working-hours checks.
+  if (!workingHours || !Array.isArray(workingHours.days)) return null;
+  const daySchedule = workingHours.days.find((d) => d?.dayOfWeek === dayOfWeekOf(date));
+  if (!daySchedule || !daySchedule.enabled) return null;
+
+  const openMin = parseStoredTime(daySchedule.openTime);
+  const closeMin = parseStoredTime(daySchedule.closeTime);
+  if (openMin === null || closeMin === null || closeMin <= openMin) return null;
+
+  let breakStartMin = -1;
+  let breakEndMin = -1;
+  if (daySchedule.hasBreak && daySchedule.breakStart && daySchedule.breakEnd) {
+    const bs = parseStoredTime(daySchedule.breakStart);
+    const be = parseStoredTime(daySchedule.breakEnd);
+    if (bs === null || be === null) return null;
+    if (be > bs) {
+      breakStartMin = bs;
+      breakEndMin = be;
+    }
+  }
+  return {
+    dayName: daySchedule.dayName,
+    openMin,
+    closeMin,
+    breakStartMin,
+    breakEndMin,
+    slotIntervalMin: safeSlotInterval(workingHours.slotIntervalMin),
+  };
+}
+
+const DEFAULT_SLOT_INTERVAL_MIN = 30;
+
+/** Strict 'HH:mm' -> minutes since midnight, or null when malformed. */
+function parseStoredTime(value: unknown): number | null {
+  if (typeof value !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return null;
+  return parseTimeToMinutes(value);
+}
+
+/** Integer in 5..240, otherwise the default; guarantees the slot loop always advances. */
+function safeSlotInterval(value: unknown): number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 5 && value <= 240
+    ? value
+    : DEFAULT_SLOT_INTERVAL_MIN;
+}
+
 export class BookingsService {
   constructor(private prisma: PrismaClient) {}
 
-  async getBarberBookings(
-    barberId: string,
-    statusFilter?: BookingStatus,
-    now: Date = new Date()
-  ) {
-    const where: any = { barberId };
-    if (statusFilter) {
-      where.status = statusFilter;
-    }
-
-    const bookings = await (this.prisma as any).booking.findMany({
-      where,
+  async getBarberBookings(barberId: string, statusFilter?: BookingStatus) {
+    return this.prisma.booking.findMany({
+      where: { barberId, ...(statusFilter ? { status: statusFilter } : {}) },
       orderBy: [{ date: 'asc' }, { time: 'asc' }, { createdAt: 'desc' }],
     });
-
-    // If no bookings exist yet in database, seed realistic demo bookings for the barber
-    if (bookings.length === 0) {
-      const todayStr = toLaPazDateString(now);
-      const demoSeed = [
-        {
-          id: `seed-bk-1`,
-          barberId,
-          clientName: 'Carlos Mendizábal',
-          clientPhone: '+591 78945612',
-          serviceName: 'Low Fade Texturizado + Perfilado',
-          servicePriceBs: 75,
-          durationMin: 45,
-          date: todayStr,
-          time: '17:30',
-          status: BookingStatus.CONFIRMED,
-          notes: 'Cliente puntual, prefiere tijera en la cúspide.',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-        {
-          id: `seed-bk-2`,
-          barberId,
-          clientName: 'Andrés Villagómez',
-          clientPhone: '+591 76543210',
-          serviceName: 'Corte Clásico & Fade',
-          servicePriceBs: 50,
-          durationMin: 35,
-          date: todayStr,
-          time: '19:00',
-          status: BookingStatus.PENDING,
-          notes: 'Primera vez en Fade Studio.',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ];
-
-      for (const item of demoSeed) {
-        await (this.prisma as any).booking.create({ data: item }).catch(() => null);
-      }
-
-      return (this.prisma as any).booking.findMany({
-        where,
-        orderBy: [{ date: 'asc' }, { time: 'asc' }],
-      });
-    }
-
-    return bookings;
   }
 
-  async createBooking(input: CreateBookingInput) {
-    if (!input.barberId || !input.clientName || !input.clientPhone || !input.serviceName) {
-      throw new Error('Datos incompletos para la reserva');
-    }
+  /**
+   * Creates a PENDING booking. Price, duration and service name always come from the
+   * barber's BarberService rows (summed over the chosen services, never from the client). `now` is injectable for tests.
+   */
+  async createBooking(input: CreateBookingInput, now: Date = new Date()) {
+    const config = getBookingsConfig();
 
-    // Check if barber accepts bookings
     const barber = await this.prisma.barber.findUnique({
       where: { id: input.barberId },
-      select: { acceptsBookings: true },
+      select: { id: true, acceptsBookings: true, bookingNoticeMin: true, workingHours: true },
     });
-
-    if (barber && !barber.acceptsBookings) {
-      throw new Error('Este barbero no está aceptando reservas programadas en este momento');
+    if (!barber) {
+      throw new AppError('BARBER_NOT_FOUND', 'Barbero no encontrado', 404);
+    }
+    if (!barber.acceptsBookings) {
+      throw new AppError(
+        'BOOKINGS_DISABLED',
+        'Este barbero no está aceptando reservas programadas en este momento',
+        409
+      );
     }
 
-    const booking = await (this.prisma as any).booking.create({
-      data: {
-        barberId: input.barberId,
-        clientId: input.clientId || null,
-        clientName: input.clientName,
-        clientPhone: input.clientPhone,
-        serviceName: input.serviceName,
-        servicePriceBs: input.servicePriceBs || 50,
-        durationMin: input.durationMin || 30,
-        date: input.date,
-        time: input.time,
-        status: BookingStatus.PENDING,
-        notes: input.notes || null,
-      },
-    });
+    const { name: serviceName, priceBs: totalPriceBs, durationMin: totalDurationMin } =
+      await this.resolveServices(barber.id, input.serviceIds);
 
-    return booking;
+    const contact = await this.resolveContact(input.clientId);
+
+    // --- Time rules (all La Paz wall-clock) ---
+    const startMin = parseTimeToMinutes(input.time);
+    const endMin = startMin + totalDurationMin;
+    const startLocal = localMinutes(input.date, startMin);
+    const nowLocal = nowLocalMinutes(now);
+
+    if (startLocal <= nowLocal) {
+      throw new AppError('BOOKING_IN_PAST', 'No se puede reservar en una fecha u hora pasada', 400);
+    }
+    const noticeMin = barber.bookingNoticeMin ?? 0;
+    if (startLocal < nowLocal + noticeMin) {
+      throw new AppError(
+        'BOOKING_TOO_SOON',
+        `Este barbero requiere al menos ${noticeMin} minutos de anticipación`,
+        400
+      );
+    }
+    const today = getLaPazNowParts(now).dateString;
+    if (dayNumber(input.date) - dayNumber(today) > config.maxAdvanceDays) {
+      throw new AppError(
+        'BOOKING_TOO_FAR',
+        `Solo se puede reservar con hasta ${config.maxAdvanceDays} días de anticipación`,
+        400
+      );
+    }
+
+    // --- Working hours ---
+    const workingHours =
+      (barber.workingHours as unknown as BarberWorkingHoursConfig) || getDefaultWorkingHours();
+    const window = resolveDayWindow(workingHours, input.date);
+    if (!window) {
+      throw new AppError('BARBER_NOT_WORKING', 'El barbero no atiende ese día', 409);
+    }
+    if (startMin < window.openMin || endMin > window.closeMin) {
+      throw new AppError(
+        'OUTSIDE_WORKING_HOURS',
+        'El horario elegido queda fuera del horario de atención',
+        409
+      );
+    }
+    if (
+      window.breakStartMin >= 0 &&
+      rangesOverlap(startMin, endMin, window.breakStartMin, window.breakEndMin)
+    ) {
+      throw new AppError(
+        'OUTSIDE_WORKING_HOURS',
+        'El horario elegido coincide con el descanso del barbero',
+        409
+      );
+    }
+
+    const scheduledAt = laPazLocalToUtc(input.date, input.time);
+    const identityKey = `client:${contact.clientId}`;
+    const nowParts = getLaPazNowParts(now);
+    const nowTime = formatMinutes(nowParts.minutesSinceMidnight);
+
+    return this.prisma.$transaction(async (tx) => {
+      // Serialize every booking write for this barber (and for this client identity) so two
+      // concurrent requests cannot both pass the checks below. Lock order is always
+      // barber -> identity, which rules out deadlocks. Both are transaction-scoped.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`barber:${barber.id}`}, 0))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`booking-identity:${identityKey}`}, 0))`;
+
+      const sameDay = await tx.booking.findMany({
+        where: {
+          barberId: barber.id,
+          date: input.date,
+          status: { in: ACTIVE_STATUSES },
+        },
+        select: { time: true, durationMin: true },
+      });
+      const clash = sameDay.some((b) => {
+        const bStart = parseTimeToMinutes(b.time);
+        return rangesOverlap(startMin, endMin, bStart, bStart + b.durationMin);
+      });
+      if (clash) {
+        throw new AppError('SLOT_TAKEN', 'Ese horario ya no está disponible', 409);
+      }
+
+      const activeCount = await tx.booking.count({
+        where: {
+          clientId: contact.clientId,
+          status: { in: ACTIVE_STATUSES },
+          OR: [
+            { date: { gt: nowParts.dateString } },
+            { date: nowParts.dateString, time: { gt: nowTime } },
+          ],
+        },
+      });
+      if (activeCount >= config.maxActivePerClient) {
+        throw new AppError(
+          'TOO_MANY_ACTIVE_BOOKINGS',
+          `Ya tienes ${config.maxActivePerClient} reservas activas. Cancela o completa alguna antes de reservar otra`,
+          409
+        );
+      }
+
+      return tx.booking.create({
+        data: {
+          barberId: barber.id,
+          clientId: contact.clientId,
+          clientName: contact.name,
+          clientPhone: contact.phone,
+          serviceName,
+          servicePriceBs: totalPriceBs,
+          durationMin: totalDurationMin,
+          date: input.date,
+          time: input.time,
+          scheduledAt,
+          status: BookingStatus.PENDING,
+          notes: input.notes || null,
+        },
+      });
+    });
   }
 
+  /**
+   * Loads the requested services of one barber. Every id must exist, be active and belong
+   * to that barber. Returns the combined name ("A + B", in request order), summed price and
+   * summed duration: one booking is one cut, however many services it bundles.
+   */
+  private async resolveServices(barberId: string, serviceIds: string[]) {
+    const ids = [...new Set(serviceIds)];
+    const rows = await this.prisma.barberService.findMany({
+      where: { id: { in: ids }, barberId, isActive: true },
+    });
+    if (ids.length === 0 || rows.length !== ids.length) {
+      throw new AppError('SERVICE_NOT_FOUND', 'El servicio no existe o no está disponible', 404);
+    }
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const ordered = ids.map((id) => byId.get(id)!);
+    return {
+      name: ordered.map((r) => r.name).join(' + '),
+      priceBs: ordered.reduce((sum, r) => sum + r.priceBs, 0),
+      durationMin: ordered.reduce((sum, r) => sum + r.durationMin, 0),
+    };
+  }
+
+  /**
+   * Contact identity comes from the authenticated client's profile; nothing is trusted from
+   * the request body. A profile without name or phone cannot book.
+   */
+  private async resolveContact(
+    clientId: string
+  ): Promise<{ clientId: string; name: string; phone: string }> {
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      select: { id: true, displayName: true, phone: true },
+    });
+    if (!client) {
+      throw new AppError('CLIENT_NOT_FOUND', 'Cuenta de cliente no encontrada', 401);
+    }
+    const name = client.displayName?.trim();
+    const phone = client.phone ? normalizePhone(client.phone) ?? client.phone : undefined;
+    if (!name || !phone) {
+      throw new AppError(
+        'PROFILE_INCOMPLETE',
+        'Completa tu nombre y teléfono en tu perfil para poder reservar',
+        409
+      );
+    }
+    return { clientId: client.id, name, phone };
+  }
+
+  /**
+   * Barber-driven status change. Ownership is verified (a booking of another barber is
+   * reported as not found) and the transition must be allowed by the state machine.
+   * COMPLETED / NO_SHOW additionally require the appointment start to have passed.
+   */
   async updateBookingStatus(
     barberId: string,
     bookingId: string,
     status: BookingStatus,
-    cancelReason?: string
+    cancelReason?: string,
+    now: Date = new Date()
   ) {
-    const existing = await (this.prisma as any).booking.findUnique({
-      where: { id: bookingId },
-    });
-
+    const existing = await this.prisma.booking.findUnique({ where: { id: bookingId } });
     if (!existing || existing.barberId !== barberId) {
-      throw new Error('Reserva no encontrada o no pertenece al barbero');
+      throw new AppError('BOOKING_NOT_FOUND', 'Reserva no encontrada', 404);
     }
 
-    const updated = await (this.prisma as any).booking.update({
-      where: { id: bookingId },
-      data: {
-        status,
-        ...(cancelReason ? { cancelReason } : {}),
-      },
-    });
+    this.assertTransition(existing, status, now);
+    return this.applyTransition(existing.id, existing.status, status, cancelReason);
+  }
 
-    return updated;
+  /**
+   * Client-driven cancellation of their own booking (PENDING or CONFIRMED), allowed only
+   * while at least BOOKING_CANCEL_MIN_HOURS remain before the start.
+   */
+  async cancelBookingAsClient(
+    clientId: string,
+    bookingId: string,
+    cancelReason?: string,
+    now: Date = new Date()
+  ) {
+    const existing = await this.prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!existing || !existing.clientId || existing.clientId !== clientId) {
+      throw new AppError('BOOKING_NOT_FOUND', 'Reserva no encontrada', 404);
+    }
+    if (!CLIENT_CANCELLABLE_FROM.includes(existing.status)) {
+      throw new AppError(
+        'INVALID_TRANSITION',
+        `No se puede cancelar una reserva en estado ${existing.status}`,
+        409
+      );
+    }
+
+    const { cancelMinHours } = getBookingsConfig();
+    const minutesToStart = this.startLocalMinutes(existing) - nowLocalMinutes(now);
+    if (minutesToStart < cancelMinHours * 60) {
+      throw new AppError(
+        'TOO_LATE_TO_CANCEL',
+        `Solo puedes cancelar con al menos ${cancelMinHours} horas de anticipación. Contacta al barbero`,
+        409
+      );
+    }
+
+    return this.applyTransition(existing.id, existing.status, BookingStatus.CANCELLED, cancelReason);
+  }
+
+  /** Client's own bookings (upcoming and past), newest first, with barber and service names. */
+  async getClientBookings(clientId: string, now: Date = new Date()) {
+    const rows = await this.prisma.booking.findMany({
+      where: { clientId },
+      include: { barber: { select: { displayName: true } } },
+      orderBy: [{ date: 'desc' }, { time: 'desc' }, { createdAt: 'desc' }],
+    });
+    const nowLocal = nowLocalMinutes(now);
+    const { cancelMinHours } = getBookingsConfig();
+
+    return rows.map((b) => {
+      const minutesToStart = this.startLocalMinutes(b) - nowLocal;
+      return {
+        id: b.id,
+        barberId: b.barberId,
+        barberName: b.barber.displayName,
+        serviceName: b.serviceName,
+        servicePriceBs: b.servicePriceBs,
+        durationMin: b.durationMin,
+        date: b.date,
+        time: b.time,
+        status: b.status,
+        notes: b.notes,
+        cancelReason: b.cancelReason,
+        createdAt: b.createdAt,
+        isUpcoming: minutesToStart > 0,
+        canCancel:
+          CLIENT_CANCELLABLE_FROM.includes(b.status) && minutesToStart >= cancelMinHours * 60,
+      };
+    });
+  }
+
+  private startLocalMinutes(b: { date: string; time: string }): number {
+    return localMinutes(b.date, parseTimeToMinutes(b.time));
+  }
+
+  private assertTransition(
+    booking: { status: BookingStatus; date: string; time: string },
+    target: BookingStatus,
+    now: Date
+  ) {
+    if (!canTransition(booking.status, target)) {
+      throw new AppError(
+        'INVALID_TRANSITION',
+        `No se puede pasar una reserva de ${booking.status} a ${target}`,
+        409
+      );
+    }
+    if (
+      REQUIRES_START_PASSED.includes(target) &&
+      this.startLocalMinutes(booking) > nowLocalMinutes(now)
+    ) {
+      throw new AppError(
+        'BOOKING_NOT_STARTED',
+        'Solo puedes marcar la reserva como completada o ausente después de su hora de inicio',
+        409
+      );
+    }
+  }
+
+  /** Compare-and-set on the current status so two racing updates cannot both apply. */
+  private async applyTransition(
+    id: string,
+    from: BookingStatus,
+    to: BookingStatus,
+    cancelReason?: string
+  ) {
+    const result = await this.prisma.booking.updateMany({
+      where: { id, status: from },
+      data: { status: to, ...(cancelReason ? { cancelReason } : {}) },
+    });
+    if (result.count === 0) {
+      throw new AppError('INVALID_TRANSITION', 'La reserva cambió de estado, vuelve a intentarlo', 409);
+    }
+    return this.prisma.booking.findUniqueOrThrow({ where: { id } });
   }
 
   /**
@@ -250,11 +537,7 @@ export class BookingsService {
 
   async updateBarberBookingSettings(
     barberId: string,
-    data: {
-      acceptsBookings?: boolean;
-      bookingNoticeMin?: number;
-      workingHours?: BarberWorkingHoursConfig;
-    }
+    data: UpdateBookingSettingsBody
   ) {
     const updateData: any = {};
     if (data.acceptsBookings !== undefined) {
@@ -286,9 +569,31 @@ export class BookingsService {
     };
   }
 
-  async getBarberAvailability(barberId: string, dateStr?: string, now: Date = new Date()) {
-    const targetDate = dateStr || toLaPazDateString(now);
+  /**
+   * Slot grid for one La Paz date. A slot is available only when a booking of
+   * the chosen services' total duration (or one grid interval when omitted) starting there would be
+   * accepted by createBooking: it must fit before closing, avoid the break, not overlap
+   * any PENDING/CONFIRMED booking (using each booking's real duration), and respect the
+   * barber's notice time, the past, and the advance window. `now` is injectable.
+   */
+  async getBarberAvailability(
+    barberId: string,
+    dateStr?: string,
+    now: Date = new Date(),
+    opts: { serviceIds?: string[] } = {}
+  ) {
+    const nowParts = getLaPazNowParts(now);
+    const targetDate = dateStr || nowParts.dateString;
+    if (!isRealCalendarDate(targetDate)) {
+      throw new AppError('INVALID_DATE', 'La fecha debe tener el formato YYYY-MM-DD', 400);
+    }
     const settings = await this.getBarberBookingSettings(barberId);
+
+    // Same rule as createBooking: unknown, inactive or foreign service ids are a 404.
+    let requestedDurationMin: number | null = null;
+    if (opts.serviceIds && opts.serviceIds.length > 0) {
+      requestedDurationMin = (await this.resolveServices(barberId, opts.serviceIds)).durationMin;
+    }
 
     if (!settings.acceptsBookings) {
       return {
@@ -302,26 +607,12 @@ export class BookingsService {
       };
     }
 
-    // Determine day of week
-    let dayOfWeek = 1;
-    const match = targetDate.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-    if (match) {
-      const y = parseInt(match[1], 10);
-      const m = parseInt(match[2], 10) - 1;
-      const d = parseInt(match[3], 10);
-      dayOfWeek = new Date(y, m, d).getDay();
-    } else {
-      const parsed = new Date(targetDate);
-      if (!isNaN(parsed.getTime())) {
-        dayOfWeek = parsed.getDay();
-      }
-    }
+    const daySchedule = Array.isArray(settings.workingHours?.days)
+      ? settings.workingHours.days.find((d) => d?.dayOfWeek === dayOfWeekOf(targetDate))
+      : undefined;
+    const window = resolveDayWindow(settings.workingHours, targetDate);
 
-    const daySchedule = settings.workingHours.days.find(
-      (d) => d.dayOfWeek === dayOfWeek
-    );
-
-    if (!daySchedule || !daySchedule.enabled) {
+    if (!window || !daySchedule) {
       return {
         acceptsBookings: true,
         isWorkingDay: false,
@@ -333,31 +624,24 @@ export class BookingsService {
       };
     }
 
-    const slotInterval = settings.workingHours.slotIntervalMin || 30;
-    const [openH, openM] = daySchedule.openTime.split(':').map(Number);
-    const [closeH, closeM] = daySchedule.closeTime.split(':').map(Number);
-    const openMin = (openH || 9) * 60 + (openM || 0);
-    const closeMin = (closeH || 20) * 60 + (closeM || 0);
+    const durationMin = requestedDurationMin ?? window.slotIntervalMin;
 
-    let breakStartMin = -1;
-    let breakEndMin = -1;
-    if (daySchedule.hasBreak && daySchedule.breakStart && daySchedule.breakEnd) {
-      const [bsh, bsm] = daySchedule.breakStart.split(':').map(Number);
-      const [beh, bem] = daySchedule.breakEnd.split(':').map(Number);
-      breakStartMin = (bsh || 13) * 60 + (bsm || 0);
-      breakEndMin = (beh || 14) * 60 + (bem || 0);
-    }
-
-    // Get existing bookings for this barber on targetDate
-    const existingBookings = await (this.prisma as any).booking.findMany({
+    const existingBookings = await this.prisma.booking.findMany({
       where: {
         barberId,
         date: targetDate,
-        status: { in: [BookingStatus.PENDING, BookingStatus.CONFIRMED] },
+        status: { in: ACTIVE_STATUSES },
       },
-      select: { time: true },
+      select: { time: true, durationMin: true },
     });
-    const bookedTimes = new Set<string>(existingBookings.map((b: any) => b.time));
+    const busy = existingBookings.map((b) => {
+      const start = parseTimeToMinutes(b.time);
+      return { start, end: start + b.durationMin };
+    });
+
+    const config = getBookingsConfig();
+    const nowLocal = nowLocalMinutes(now);
+    const tooFar = dayNumber(targetDate) - dayNumber(nowParts.dateString) > config.maxAdvanceDays;
 
     const allSlots: {
       time: string;
@@ -366,31 +650,29 @@ export class BookingsService {
     }[] = [];
     const availableSlots: string[] = [];
 
-    for (let m = openMin; m + slotInterval <= closeMin; m += slotInterval) {
-      // If within break window, skip slot
-      if (breakStartMin >= 0 && breakEndMin > breakStartMin) {
-        if (m >= breakStartMin && m < breakEndMin) {
-          continue;
-        }
+    for (let m = window.openMin; m + window.slotIntervalMin <= window.closeMin; m += window.slotIntervalMin) {
+      // Slots that start inside the break are not offered at all.
+      if (window.breakStartMin >= 0 && m >= window.breakStartMin && m < window.breakEndMin) {
+        continue;
       }
 
-      const hh = String(Math.floor(m / 60)).padStart(2, '0');
-      const mm = String(m % 60).padStart(2, '0');
-      const timeStr = `${hh}:${mm}`;
+      const end = m + durationMin;
+      const startLocal = localMinutes(targetDate, m);
+      const blocked =
+        tooFar ||
+        end > window.closeMin ||
+        (window.breakStartMin >= 0 &&
+          rangesOverlap(m, end, window.breakStartMin, window.breakEndMin)) ||
+        startLocal <= nowLocal ||
+        startLocal < nowLocal + settings.bookingNoticeMin ||
+        busy.some((b) => rangesOverlap(m, end, b.start, b.end));
 
-      const isBooked = bookedTimes.has(timeStr);
+      const timeStr = formatMinutes(m);
       const period: 'manana' | 'tarde' | 'noche' =
         m < 12 * 60 ? 'manana' : m < 18 * 60 ? 'tarde' : 'noche';
 
-      allSlots.push({
-        time: timeStr,
-        period,
-        available: !isBooked,
-      });
-
-      if (!isBooked) {
-        availableSlots.push(timeStr);
-      }
+      allSlots.push({ time: timeStr, period, available: !blocked });
+      if (!blocked) availableSlots.push(timeStr);
     }
 
     return {

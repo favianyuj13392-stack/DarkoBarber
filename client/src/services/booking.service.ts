@@ -1,6 +1,70 @@
 import { getStoredToken } from './auth.service';
 
-export type BookingStatus = 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
+export type BookingStatus =
+  | 'PENDING'
+  | 'CONFIRMED'
+  | 'COMPLETED'
+  | 'CANCELLED'
+  | 'REJECTED'
+  | 'NO_SHOW';
+
+/** Error returned by the bookings API: `code` is the server error code (e.g. SLOT_TAKEN). */
+export class BookingApiError extends Error {
+  code: string;
+  status: number;
+
+  constructor(code: string, message: string, status: number = 0) {
+    super(message);
+    this.name = 'BookingApiError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
+const BOOKING_ERROR_MESSAGES: Record<string, string> = {
+  VALIDATION_ERROR: 'Revisa los datos de la reserva e inténtalo de nuevo.',
+  UNAUTHORIZED: 'Inicia sesión con tu cuenta de cliente para reservar.',
+  FORBIDDEN: 'Solo las cuentas de cliente pueden reservar.',
+  PROFILE_INCOMPLETE: 'Completa tu nombre y teléfono en tu perfil para poder reservar.',
+  BOOKING_IN_PAST: 'Ese horario ya pasó. Elige otro turno.',
+  BOOKING_TOO_SOON: 'Ese turno es demasiado próximo. Elige uno con más anticipación.',
+  BOOKING_TOO_FAR: 'Esa fecha queda demasiado lejos para reservar. Elige una más cercana.',
+  BARBER_NOT_WORKING: 'El barbero no atiende ese día.',
+  OUTSIDE_WORKING_HOURS: 'Ese horario queda fuera del horario de atención del barbero.',
+  SLOT_TAKEN: 'Ese turno acaba de ser reservado por otra persona. Elige otro horario.',
+  TOO_MANY_ACTIVE_BOOKINGS:
+    'Ya tienes el máximo de reservas activas. Cancela alguna o espera a que se complete.',
+  SERVICE_NOT_FOUND: 'El servicio elegido ya no está disponible.',
+  BARBER_NOT_FOUND: 'No encontramos a este barbero.',
+  BOOKINGS_DISABLED: 'Este barbero no está aceptando reservas programadas.',
+  BOOKING_NOT_FOUND: 'No encontramos esa reserva.',
+  INVALID_TRANSITION: 'Esa reserva ya cambió de estado. Actualiza la bandeja.',
+  BOOKING_NOT_STARTED: 'Solo puedes marcar la cita como atendida o ausente después de su hora.',
+  TOO_LATE_TO_CANCEL: 'Ya no se puede cancelar: contacta directamente al barbero.',
+  NETWORK_ERROR: 'No pudimos conectar con el servidor. Revisa tu conexión.',
+};
+
+/** Human-readable (Spanish) message for any error thrown by the bookings API helpers. */
+export function bookingErrorMessage(err: unknown): string {
+  if (err instanceof BookingApiError) {
+    return BOOKING_ERROR_MESSAGES[err.code] ?? err.message ?? 'No se pudo completar la operación.';
+  }
+  return 'No se pudo completar la operación.';
+}
+
+async function toBookingApiError(res: Response): Promise<BookingApiError> {
+  let code = 'UNKNOWN';
+  let message = 'No se pudo completar la operación.';
+  try {
+    const body = await res.json();
+    if (body?.error) code = String(body.error);
+    if (body?.message) message = String(body.message);
+  } catch {
+    // non-JSON error body
+  }
+  return new BookingApiError(code, message, res.status);
+}
+
 
 export interface DaySchedule {
   dayOfWeek: number; // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
@@ -93,82 +157,20 @@ export function getDefaultWorkingHours(): BarberWorkingHoursConfig {
   };
 }
 
-const DEMO_BOOKINGS: BarberBooking[] = [
-  {
-    id: 'demo-bk-1',
-    barberId: 'barber-brian',
-    clientName: 'Carlos Mendizábal',
-    clientPhone: '+591 78945612',
-    serviceName: 'Low Fade Texturizado + Perfilado',
-    servicePriceBs: 75,
-    durationMin: 45,
-    date: 'Hoy',
-    time: '17:30',
-    status: 'CONFIRMED',
-    notes: 'Cliente puntual, prefiere tijera en la cúspide.',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'demo-bk-2',
-    barberId: 'barber-brian',
-    clientName: 'Andrés Villagómez',
-    clientPhone: '+591 76543210',
-    serviceName: 'Corte Clásico & Fade',
-    servicePriceBs: 50,
-    durationMin: 35,
-    date: 'Hoy',
-    time: '19:00',
-    status: 'PENDING',
-    notes: 'Primera vez en Fade Studio.',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'demo-bk-3',
-    barberId: 'barber-brian',
-    clientName: 'Rodrigo Torrico',
-    clientPhone: '+591 71239874',
-    serviceName: 'Combo Fade + Barba Spa',
-    servicePriceBs: 85,
-    durationMin: 50,
-    date: 'Mañana',
-    time: '11:00',
-    status: 'CONFIRMED',
-    notes: 'Piel sensible en cuello.',
-    createdAt: new Date().toISOString(),
-  },
-];
-
 export async function fetchBarberBookings(statusFilter?: BookingStatus): Promise<BarberBooking[]> {
   const token = getStoredToken();
-  if (token) {
-    try {
-      const url = statusFilter
-        ? `/api/barbers/me/bookings?status=${statusFilter}`
-        : '/api/barbers/me/bookings';
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch (err) {
-      console.warn('Could not fetch bookings from server:', err);
-    }
+  if (!token) return [];
+  const url = statusFilter
+    ? `/api/barbers/me/bookings?status=${statusFilter}`
+    : '/api/barbers/me/bookings';
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  } catch {
+    throw new BookingApiError('NETWORK_ERROR', 'Network error');
   }
-
-  // Fallback demo data
-  const stored = localStorage.getItem('fade_barber_bookings');
-  if (stored) {
-    try {
-      const parsed: BarberBooking[] = JSON.parse(stored);
-      return statusFilter ? parsed.filter((b) => b.status === statusFilter) : parsed;
-    } catch {
-      // ignore
-    }
-  }
-
-  localStorage.setItem('fade_barber_bookings', JSON.stringify(DEMO_BOOKINGS));
-  return statusFilter ? DEMO_BOOKINGS.filter((b) => b.status === statusFilter) : DEMO_BOOKINGS;
+  if (!res.ok) throw await toBookingApiError(res);
+  return res.json();
 }
 
 export async function updateBookingStatus(
@@ -177,56 +179,37 @@ export async function updateBookingStatus(
   cancelReason?: string
 ): Promise<BarberBooking> {
   const token = getStoredToken();
-  if (token) {
-    try {
-      const res = await fetch(`/api/barbers/me/bookings/${bookingId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ status, cancelReason }),
-      });
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch (err) {
-      console.warn('Could not update booking status on server:', err);
-    }
+  if (!token) throw new BookingApiError('UNAUTHORIZED', 'Sesión no iniciada', 401);
+  let res: Response;
+  try {
+    res = await fetch(`/api/barbers/me/bookings/${bookingId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ status, cancelReason }),
+    });
+  } catch {
+    throw new BookingApiError('NETWORK_ERROR', 'Network error');
   }
-
-  // Local optimistic update
-  const list = await fetchBarberBookings();
-  const index = list.findIndex((b) => b.id === bookingId);
-  if (index !== -1) {
-    list[index].status = status;
-    if (cancelReason) list[index].cancelReason = cancelReason;
-    localStorage.setItem('fade_barber_bookings', JSON.stringify(list));
-    return list[index];
-  }
-  throw new Error('Reserva no encontrada');
+  if (!res.ok) throw await toBookingApiError(res);
+  return res.json();
 }
 
 export async function fetchUpcomingBookingAlert(): Promise<UpcomingBookingAlert> {
+  const none: UpcomingBookingAlert = { hasUpcoming: false, minutesLeft: 0, booking: null };
   const token = getStoredToken();
-  if (token) {
-    try {
-      const res = await fetch('/api/barbers/me/bookings/upcoming-alert', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch (err) {
-      console.warn('Could not fetch upcoming booking alert:', err);
-    }
+  if (!token) return none;
+  try {
+    const res = await fetch('/api/barbers/me/bookings/upcoming-alert', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) return await res.json();
+  } catch (err) {
+    console.warn('Could not fetch upcoming booking alert:', err);
   }
-
-  return {
-    hasUpcoming: true,
-    minutesLeft: 14,
-    booking: DEMO_BOOKINGS[0],
-  };
+  return none;
 }
 
 export async function fetchBookingSettings(barberId?: string): Promise<BarberBookingSettings> {
@@ -256,115 +239,103 @@ export async function updateBookingSettings(
   settings: Partial<BarberBookingSettings>
 ): Promise<BarberBookingSettings> {
   const token = getStoredToken();
-  if (token) {
-    try {
-      const res = await fetch('/api/barbers/me/booking-settings', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(settings),
-      });
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch (err) {
-      console.warn('Could not update booking settings:', err);
-    }
+  if (!token) throw new BookingApiError('UNAUTHORIZED', 'Sesión no iniciada', 401);
+  let res: Response;
+  try {
+    res = await fetch('/api/barbers/me/booking-settings', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(settings),
+    });
+  } catch {
+    throw new BookingApiError('NETWORK_ERROR', 'Network error');
   }
-
-  return {
-    acceptsBookings: settings.acceptsBookings ?? true,
-    bookingNoticeMin: settings.bookingNoticeMin ?? 15,
-    workingHours: settings.workingHours ?? getDefaultWorkingHours(),
-  };
+  // Never pretend it saved: surface the server's reason (400 validation, 401, 5xx, ...).
+  if (!res.ok) throw await toBookingApiError(res);
+  return res.json();
 }
 
 export async function fetchBarberAvailability(
   barberId: string,
-  date?: string
+  date?: string,
+  serviceIds?: string[]
 ): Promise<BarberAvailabilityResponse> {
+  const params = new URLSearchParams();
+  if (date) params.set('date', date);
+  if (serviceIds && serviceIds.length > 0) params.set('serviceIds', serviceIds.join(','));
+  const qs = params.toString();
+  let res: Response;
   try {
-    const url = date
-      ? `/api/barbers/${barberId}/bookings/availability?date=${encodeURIComponent(date)}`
-      : `/api/barbers/${barberId}/bookings/availability`;
-    const res = await fetch(url);
-    if (res.ok) {
-      return await res.json();
-    }
-  } catch (err) {
-    console.warn('Could not fetch barber availability from server:', err);
+    res = await fetch(`/api/barbers/${barberId}/bookings/availability${qs ? `?${qs}` : ''}`);
+  } catch {
+    throw new BookingApiError('NETWORK_ERROR', 'Network error');
   }
-
-  return {
-    acceptsBookings: true,
-    isWorkingDay: true,
-    dayName: 'Hoy',
-    availableSlots: ['09:30', '11:30', '14:00', '16:00', '17:00', '18:30', '19:30'],
-    allSlots: [
-      { time: '09:30', period: 'manana', available: true },
-      { time: '10:30', period: 'manana', available: false },
-      { time: '11:30', period: 'manana', available: true },
-      { time: '14:00', period: 'tarde', available: true },
-      { time: '15:00', period: 'tarde', available: false },
-      { time: '16:00', period: 'tarde', available: true },
-      { time: '17:00', period: 'tarde', available: true },
-      { time: '17:45', period: 'tarde', available: false },
-      { time: '18:30', period: 'noche', available: true },
-      { time: '19:30', period: 'noche', available: true },
-    ],
-    workingHoursSummary: '09:00 - 20:00 (Descanso: 13:00 - 14:00)',
-    workingHours: getDefaultWorkingHours(),
-  };
+  if (!res.ok) throw await toBookingApiError(res);
+  return res.json();
 }
 
+const PENDING_BOOKING_STORAGE_KEY = 'fade_pending_booking_barber';
+
+/** Fired when an action needs a signed-in client; App.tsx listens and shows the login screen. */
+export const LOGIN_REQUIRED_EVENT = 'fade:login-required';
+
+/**
+ * Remembers which barber the user wanted to book, then asks the app to show the login screen.
+ * After a client signs in, `consumePendingBookingBarberId` resumes the booking flow.
+ */
+export function requestLoginForBooking(barberId: string): void {
+  try {
+    sessionStorage.setItem(PENDING_BOOKING_STORAGE_KEY, barberId);
+  } catch {
+    // storage unavailable: the user will have to pick the barber again after login
+  }
+  window.dispatchEvent(new Event(LOGIN_REQUIRED_EVENT));
+}
+
+/** Reads and clears the barber id saved by `requestLoginForBooking`, if any. */
+export function consumePendingBookingBarberId(): string | null {
+  try {
+    const id = sessionStorage.getItem(PENDING_BOOKING_STORAGE_KEY);
+    if (id) sessionStorage.removeItem(PENDING_BOOKING_STORAGE_KEY);
+    return id || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Max services per booking; keep in sync with the server (MAX_SERVICES_PER_BOOKING). */
+export const MAX_SERVICES_PER_BOOKING = 5;
+
+/**
+ * Creates a booking. Price and duration are decided by the server from `serviceIds`.
+ * Requires a signed-in client: name and phone come from the client profile on the server.
+ */
 export async function createClientBooking(data: {
   barberId: string;
-  clientName: string;
-  clientPhone: string;
-  serviceName: string;
-  servicePriceBs: number;
-  durationMin?: number;
-  date: string;
-  time: string;
+  serviceIds: string[];
+  date: string; // YYYY-MM-DD (La Paz)
+  time: string; // HH:mm (La Paz)
   notes?: string;
 }): Promise<BarberBooking> {
   const token = getStoredToken();
+  if (!token) throw new BookingApiError('UNAUTHORIZED', 'Sesión no iniciada', 401);
+  const { barberId, ...body } = data;
+  let res: Response;
   try {
-    const res = await fetch(`/api/barbers/${data.barberId}/bookings`, {
+    res = await fetch(`/api/barbers/${barberId}/bookings`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(data),
+      body: JSON.stringify(body),
     });
-    if (res.ok) {
-      return await res.json();
-    }
-  } catch (err) {
-    console.warn('Could not create booking on server:', err);
+  } catch {
+    throw new BookingApiError('NETWORK_ERROR', 'Network error');
   }
-
-  // Local optimistic creation
-  const newBooking: BarberBooking = {
-    id: `bk-${Date.now()}`,
-    barberId: data.barberId,
-    clientName: data.clientName,
-    clientPhone: data.clientPhone,
-    serviceName: data.serviceName,
-    servicePriceBs: data.servicePriceBs,
-    durationMin: data.durationMin || 30,
-    date: data.date,
-    time: data.time,
-    status: 'PENDING',
-    notes: data.notes,
-    createdAt: new Date().toISOString(),
-  };
-
-  const list = await fetchBarberBookings();
-  const updated = [newBooking, ...list];
-  localStorage.setItem('fade_barber_bookings', JSON.stringify(updated));
-  return newBooking;
+  if (!res.ok) throw await toBookingApiError(res);
+  return res.json();
 }

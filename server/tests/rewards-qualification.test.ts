@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import crypto from 'node:crypto';
 import { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app';
+import { toLaPazDateString } from '../src/utils/la-paz-date';
 import { cleanDatabase } from './helpers';
 import { ActivityService } from '../src/modules/rewards/activity.service';
 import { QualificationService } from '../src/modules/rewards/qualification.service';
@@ -15,6 +16,7 @@ const NEXT_DAY = new Date('2026-11-15T16:00:00Z');
 describe('Rewards: activity log and qualification', () => {
   let app: FastifyInstance;
   let barberId: string;
+  let serviceId: string;
   let activity: ActivityService;
   let qualification: QualificationService;
 
@@ -50,6 +52,11 @@ describe('Rewards: activity log and qualification', () => {
       data: { displayName: 'Rewards Barber', email: `rb-${crypto.randomUUID()}@example.com` },
     });
     barberId = barber.id;
+    serviceId = (
+      await app.prisma.barberService.create({
+        data: { barberId, name: 'Corte', priceBs: 50, durationMin: 30 },
+      })
+    ).id;
     activity = new ActivityService(app.prisma);
     qualification = new QualificationService(app.prisma);
   });
@@ -194,39 +201,62 @@ describe('Rewards: activity log and qualification', () => {
       expect(await app.prisma.clientActivity.count()).toBe(0);
     });
 
-    describe('public booking endpoint (optional client token)', () => {
+    describe('booking endpoint (client account required)', () => {
+      // Real clock (the route is not clock-injectable): book 3 La Paz days ahead, never a Sunday
+      // (default working hours are Mon-Sat 09:00-20:00, 30 min slots, break 13:00-14:00).
+      const futureDate = () => {
+        let date = toLaPazDateString(new Date(Date.now() + 3 * 86_400_000));
+        if (new Date(`${date}T12:00:00Z`).getUTCDay() === 0) {
+          date = toLaPazDateString(new Date(Date.now() + 4 * 86_400_000));
+        }
+        return date;
+      };
+      let slot = 0;
       const bookingPayload = () => ({
-        clientName: 'Walk In',
-        clientPhone: '70000000',
-        serviceName: 'Corte',
-        servicePriceBs: 50,
-        date: '2026-12-01',
-        time: '10:00',
+        serviceIds: [serviceId],
+        date: futureDate(),
+        // Distinct 30 min slots between 09:00 and 11:30 so calls never collide.
+        time: `${String(9 + Math.floor(slot / 2)).padStart(2, '0')}:${slot++ % 2 === 0 ? '00' : '30'}`,
       });
       const book = (headers: Record<string, string> = {}) =>
         app.inject({ method: 'POST', url: `/barbers/${barberId}/bookings`, headers, payload: bookingPayload() });
 
-      it('records BOOKING_CREATED for a client token', async () => {
+      beforeEach(async () => {
+        slot = 0;
+        await app.prisma.booking.deleteMany({});
+      });
+
+      // Booking identity comes from the profile, so the client needs a name and phone.
+      let phoneSeq = 0;
+      const makeBookingClient = async () => {
         const client = await makeClient();
+        return app.prisma.client.update({
+          where: { id: client.id },
+          data: { displayName: 'Booker', phone: `7100${String(1000 + phoneSeq++)}` },
+        });
+      };
+
+      it('records BOOKING_CREATED for a client token', async () => {
+        const client = await makeBookingClient();
         const res = await book({ authorization: `Bearer ${clientToken(client.id)}` });
         expect(res.statusCode).toBe(201);
         const rows = await app.prisma.clientActivity.findMany({ where: { clientId: client.id } });
         expect(rows.map((r) => r.type)).toEqual(['BOOKING_CREATED']);
       });
 
-      it('records nothing and still succeeds for anonymous, invalid or barber tokens', async () => {
-        const client = await makeClient();
-        const barberToken = app.jwt.sign({ userId: client.id, barberId, role: 'barbero' });
+      it('rejects anonymous, invalid and barber tokens and records nothing', async () => {
+        const barberToken = app.jwt.sign({ userId: barberId, barberId, role: 'barbero' });
 
-        expect((await book()).statusCode).toBe(201);
-        expect((await book({ authorization: 'Bearer not-a-real-token' })).statusCode).toBe(201);
-        expect((await book({ authorization: `Bearer ${barberToken}` })).statusCode).toBe(201);
+        expect((await book()).statusCode).toBe(401);
+        expect((await book({ authorization: 'Bearer not-a-real-token' })).statusCode).toBe(401);
+        expect((await book({ authorization: `Bearer ${barberToken}` })).statusCode).toBe(403);
 
+        expect(await app.prisma.booking.count()).toBe(0);
         expect(await app.prisma.clientActivity.count()).toBe(0);
       });
 
       it('a tracking failure never breaks the booking', async () => {
-        const client = await makeClient();
+        const client = await makeBookingClient();
         const spy = vi.spyOn(ActivityService.prototype, 'record').mockRejectedValue(new Error('boom'));
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         try {

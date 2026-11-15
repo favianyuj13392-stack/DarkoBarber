@@ -32,6 +32,8 @@ enum BookingStatus {
   CONFIRMED
   COMPLETED
   CANCELLED
+  REJECTED
+  NO_SHOW
 }
 
 enum AcquisitionStatus {

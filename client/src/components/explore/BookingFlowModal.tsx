@@ -7,20 +7,23 @@ import {
   CheckCircle2,
   Sparkles,
   AlertCircle,
-  Phone,
-  User as UserIcon,
 } from 'lucide-react';
 import type { ExploreBarber, BookingDay, BookingSlot } from '../../types/explore';
 import {
   fetchBarberAvailability,
+  createClientBooking,
+  bookingErrorMessage,
+  BookingApiError,
+  MAX_SERVICES_PER_BOOKING,
+  requestLoginForBooking,
   type BarberAvailabilityResponse,
 } from '../../services/booking.service';
-import { getStoredUser } from '../../services/auth.service';
+import { getLaPazDays } from '../../utils/la-paz-date';
+import { getStoredToken, getStoredUser } from '../../services/auth.service';
 
+/** Data of a booking that the server already accepted (it is PENDING until the barber confirms). */
 export interface BookingConfirmData {
   barberId: string;
-  clientName: string;
-  clientPhone: string;
   date: string;
   dateBadge: string;
   time: string;
@@ -48,14 +51,23 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [onlyAvailableSlots, setOnlyAvailableSlots] = useState(false);
   const [isConfirmed, setIsConfirmed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Bumped to force a fresh availability fetch (e.g. after a 409 SLOT_TAKEN).
+  const [availabilityRefresh, setAvailabilityRefresh] = useState(0);
 
-  // Client info state
-  const [clientName, setClientName] = useState(currentUser?.displayName || '');
-  const [clientPhone, setClientPhone] = useState(currentUser?.phone || '');
+  // Booking needs a signed-in client account: name and phone come from the profile.
+  const hasSession = Boolean(currentUser) && Boolean(getStoredToken());
+  const isClientSession = currentUser?.role === 'cliente' && hasSession;
+  // A signed-in barber (or other non-client role) must never be logged out by this flow.
+  const isNonClientSession = hasSession && !isClientSession;
 
   // Dynamic availability state
   const [availability, setAvailability] = useState<BarberAvailabilityResponse | null>(null);
   const [loadingSlots, setLoadingSlots] = useState(false);
+
+  // Stable dependency for the availability effect (the array identity changes every render).
+  const selectedServiceIdsKey = selectedServiceIds.join(',');
 
   // Real 7 days window starting from today
   const realDays = useMemo<BookingDay[]>(() => {
@@ -75,25 +87,25 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
       'NOV',
       'DIC',
     ];
-    const now = new Date();
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(now);
-      d.setDate(now.getDate() + i);
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      const fullDate = `${yyyy}-${mm}-${dd}`;
+    getLaPazDays(7).forEach((d, i) => {
       list.push({
         id: `day-${i}`,
-        dayName: dayNames[d.getDay()],
-        dayNumber: d.getDate(),
-        monthName: monthNames[d.getMonth()],
-        fullDate,
+        dayName: dayNames[d.weekday],
+        dayNumber: d.day,
+        monthName: monthNames[d.month - 1],
+        fullDate: d.fullDate,
         isToday: i === 0,
       });
-    }
+    });
     return list;
   }, []);
+
+  // Without any session, send the user to login and come back to this barber afterwards.
+  useEffect(() => {
+    if (isOpen && barber && !hasSession) {
+      requestLoginForBooking(barber.id);
+    }
+  }, [isOpen, barber, hasSession]);
 
   // Initialize day & services
   useEffect(() => {
@@ -101,6 +113,7 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
       if (barber.services && barber.services.length > 0) {
         setSelectedServiceIds([barber.services[0].id]);
       }
+      setErrorMsg(null);
       const initialDay = realDays[0];
       setSelectedDay(initialDay);
     }
@@ -113,7 +126,11 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
     let isMounted = true;
     setLoadingSlots(true);
 
-    fetchBarberAvailability(barber.id, selectedDay.fullDate)
+    fetchBarberAvailability(
+      barber.id,
+      selectedDay.fullDate,
+      selectedServiceIds.length > 0 ? selectedServiceIds : undefined
+    )
       .then((res) => {
         if (!isMounted) return;
         setAvailability(res);
@@ -126,6 +143,12 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
           setSelectedTime('');
         }
       })
+      .catch((err) => {
+        if (!isMounted) return;
+        setAvailability(null);
+        setSelectedTime('');
+        setErrorMsg(bookingErrorMessage(err));
+      })
       .finally(() => {
         if (isMounted) setLoadingSlots(false);
       });
@@ -133,7 +156,9 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [barber, selectedDay, isOpen]);
+    // selectedTime is intentionally not a dependency: it only validates the current choice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [barber, selectedDay, isOpen, selectedServiceIdsKey, availabilityRefresh]);
 
   const displayedSlots: BookingSlot[] = useMemo(() => {
     if (!availability || !availability.allSlots) return [];
@@ -148,36 +173,69 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
   if (!isOpen || !barber || !selectedDay) return null;
 
   const toggleService = (id: string) => {
-    if (selectedServiceIds.includes(id)) {
-      if (selectedServiceIds.length > 1) {
-        setSelectedServiceIds(selectedServiceIds.filter((s) => s !== id));
-      }
-    } else {
-      setSelectedServiceIds([...selectedServiceIds, id]);
-    }
+    setSelectedServiceIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= MAX_SERVICES_PER_BOOKING) return prev;
+      return [...prev, id];
+    });
+    setErrorMsg(null);
   };
 
-  const selectedServices = barber.services.filter((s) =>
-    selectedServiceIds.includes(s.id)
-  );
-  const totalBs = selectedServices.reduce((acc, curr) => acc + curr.priceBs, 0);
-  const totalDurationMin = selectedServices.reduce(
-    (acc, curr) => acc + curr.durationMin,
-    0
-  );
+  // Totals shown here are informative: the server recomputes price and duration from serviceIds.
+  const selectedServices = barber.services.filter((s) => selectedServiceIds.includes(s.id));
+  const totalBs = selectedServices.reduce((sum, s) => sum + s.priceBs, 0);
+  const totalDurationMin = selectedServices.reduce((sum, s) => sum + s.durationMin, 0);
 
   const morningSlots = displayedSlots.filter((s) => s.period === 'manana');
   const afternoonSlots = displayedSlots.filter((s) => s.period === 'tarde');
   const eveningSlots = displayedSlots.filter((s) => s.period === 'noche');
 
-  const handleConfirm = () => {
-    if (!selectedTime) return;
+  // Server error codes that mean "the chosen slot is no longer valid": refresh the grid.
+  const STALE_SLOT_CODES = [
+    'SLOT_TAKEN',
+    'OUTSIDE_WORKING_HOURS',
+    'BOOKING_IN_PAST',
+    'BOOKING_TOO_SOON',
+    'BARBER_NOT_WORKING',
+  ];
+
+  const handleConfirm = async () => {
+    if (!selectedTime || selectedServices.length === 0 || submitting) return;
+    if (isNonClientSession) return;
+    if (!isClientSession) {
+      requestLoginForBooking(barber.id);
+      return;
+    }
+
+    setSubmitting(true);
+    setErrorMsg(null);
+    try {
+      await createClientBooking({
+        barberId: barber.id,
+        serviceIds: selectedServices.map((s) => s.id),
+        date: selectedDay.fullDate,
+        time: selectedTime,
+      });
+    } catch (err) {
+      if (err instanceof BookingApiError && err.status === 401) {
+        requestLoginForBooking(barber.id);
+        setSubmitting(false);
+        return;
+      }
+      setErrorMsg(bookingErrorMessage(err));
+      if (err instanceof BookingApiError && STALE_SLOT_CODES.includes(err.code)) {
+        setSelectedTime('');
+        setAvailabilityRefresh((n) => n + 1);
+      }
+      setSubmitting(false);
+      return;
+    }
+
+    setSubmitting(false);
     setIsConfirmed(true);
     setTimeout(() => {
       onConfirmBooking({
         barberId: barber.id,
-        clientName: clientName.trim() || currentUser?.displayName || 'Cliente FADE',
-        clientPhone: clientPhone.trim() || currentUser?.phone || '+591 70000000',
         date: selectedDay.fullDate,
         dateBadge: `${selectedDay.dayName} ${selectedDay.dayNumber} ${selectedDay.monthName}`,
         time: selectedTime,
@@ -248,7 +306,7 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
               <h3 className="text-lg font-bold text-white">¡Reserva solicitada con éxito!</h3>
               <p className="text-xs text-white/60 max-w-xs mx-auto">
                 {selectedDay.dayName} {selectedDay.dayNumber} {selectedDay.monthName} a las{' '}
-                {selectedTime} con {barber.name}.
+                {selectedTime} con {barber.name}. Queda pendiente hasta que el barbero la confirme.
               </p>
             </motion.div>
           ) : (
@@ -475,35 +533,6 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                   )}
                 </div>
 
-                {/* 4. Datos del Cliente (Pre-cargados o editables) */}
-                <div className="space-y-2.5 pt-2 border-t border-white/10">
-                  <span className="text-xs font-mono uppercase tracking-wider text-[#B68F4E] font-semibold">
-                    4. Tus datos para la cita
-                  </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <div className="relative">
-                      <UserIcon className="w-4 h-4 text-white/40 absolute left-3 top-3" />
-                      <input
-                        type="text"
-                        placeholder="Tu nombre"
-                        value={clientName}
-                        onChange={(e) => setClientName(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder-white/35 focus:outline-none focus:border-[#B68F4E]"
-                      />
-                    </div>
-                    <div className="relative">
-                      <Phone className="w-4 h-4 text-white/40 absolute left-3 top-3" />
-                      <input
-                        type="tel"
-                        placeholder="WhatsApp / Teléfono"
-                        value={clientPhone}
-                        onChange={(e) => setClientPhone(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder-white/35 focus:outline-none focus:border-[#B68F4E]"
-                      />
-                    </div>
-                  </div>
-                </div>
-
                 {/* Resumen */}
                 <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between text-xs">
                   <div>
@@ -521,11 +550,27 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
               </div>
 
               {/* Sticky Submit Button */}
-              <div className="p-4 bg-black/80 border-t border-white/10 backdrop-blur-xl">
+              <div className="p-4 bg-black/80 border-t border-white/10 backdrop-blur-xl space-y-2">
+                {(errorMsg || isNonClientSession) && (
+                  <div
+                    role="alert"
+                    className="p-3 rounded-xl bg-red-950/40 border border-red-500/30 flex items-start gap-2 text-[11px] text-red-200"
+                  >
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-px" />
+                    <span>
+                      {isNonClientSession
+                        ? 'Solo las cuentas de cliente pueden reservar. Cierra sesión e ingresa como cliente.'
+                        : errorMsg}
+                    </span>
+                  </div>
+                )}
                 <button
                   type="button"
                   disabled={
+                    submitting ||
+                    isNonClientSession ||
                     !selectedTime ||
+                    selectedServices.length === 0 ||
                     Boolean(availability && (!availability.acceptsBookings || !availability.isWorkingDay))
                   }
                   onClick={handleConfirm}
@@ -533,7 +578,9 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                 >
                   <Sparkles className="w-4 h-4" />
                   <span>
-                    {!selectedTime
+                    {submitting
+                      ? 'Enviando...'
+                      : !selectedTime
                       ? 'Elige un horario'
                       : `Confirmar reserva (${totalBs} Bs)`}
                   </span>
