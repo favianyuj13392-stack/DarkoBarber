@@ -96,4 +96,106 @@ describe('Followers', () => {
       expect((await status(inactive.id)).statusCode).toBe(404);
     });
   });
+
+  describe('follow / unfollow', () => {
+    const call = (method: 'POST' | 'PUT' | 'DELETE', barberId: string, token?: string, payload?: object) =>
+      app.inject({
+        method,
+        url: `/barbers/${barberId}/follow`,
+        headers: token ? bearer(token) : {},
+        payload,
+      });
+
+    it('requires authentication', async () => {
+      const barber = await createBarber();
+      for (const m of ['POST', 'PUT', 'DELETE'] as const) {
+        expect((await call(m, barber.id)).statusCode).toBe(401);
+      }
+    });
+
+    it('forbids barbers from following', async () => {
+      const barber = await createBarber();
+      const other = await createBarber();
+      for (const m of ['POST', 'PUT', 'DELETE'] as const) {
+        expect((await call(m, barber.id, barberToken(other.id))).statusCode).toBe(403);
+      }
+      expect(await app.prisma.barberFollower.count()).toBe(0);
+    });
+
+    it('returns 404 for unknown barbers and for following an inactive one', async () => {
+      const client = await createClient();
+      const inactive = await createBarber(false);
+      const t = clientToken(client.id);
+      expect((await call('PUT', crypto.randomUUID(), t)).statusCode).toBe(404);
+      expect((await call('PUT', inactive.id, t)).statusCode).toBe(404);
+      expect((await call('POST', inactive.id, t)).statusCode).toBe(404);
+      expect((await call('DELETE', crypto.randomUUID(), t)).statusCode).toBe(404);
+    });
+
+    it('takes identity from the JWT and ignores any clientId in the body', async () => {
+      const barber = await createBarber();
+      const me = await createClient();
+      const victim = await createClient();
+      const res = await call('PUT', barber.id, clientToken(me.id), { clientId: victim.id });
+      expect(res.statusCode).toBe(200);
+      const rows = await app.prisma.barberFollower.findMany({ where: { barberId: barber.id } });
+      expect(rows.map((r) => r.clientId)).toEqual([me.id]);
+    });
+
+    it('PUT is idempotent and DELETE is idempotent', async () => {
+      const barber = await createBarber();
+      const client = await createClient();
+      const t = clientToken(client.id);
+
+      for (let i = 0; i < 2; i++) {
+        const res = await call('PUT', barber.id, t);
+        expect(res.statusCode).toBe(200);
+        expect(JSON.parse(res.body)).toEqual({ followerCount: 1, isFollowing: true });
+      }
+      for (let i = 0; i < 2; i++) {
+        const res = await call('DELETE', barber.id, t);
+        expect(res.statusCode).toBe(200);
+        expect(JSON.parse(res.body)).toEqual({ followerCount: 0, isFollowing: false });
+      }
+    });
+
+    it('legacy POST still toggles', async () => {
+      const barber = await createBarber();
+      const client = await createClient();
+      const t = clientToken(client.id);
+      expect(JSON.parse((await call('POST', barber.id, t)).body)).toEqual({ followerCount: 1, isFollowing: true });
+      expect(JSON.parse((await call('POST', barber.id, t)).body)).toEqual({ followerCount: 0, isFollowing: false });
+    });
+
+    it('concurrent double-follow never 500s and leaves exactly one row', async () => {
+      const barber = await createBarber();
+      const client = await createClient();
+      const t = clientToken(client.id);
+      const results = await Promise.all(Array.from({ length: 10 }, () => call('PUT', barber.id, t)));
+      expect(results.map((r) => r.statusCode)).toEqual(Array(10).fill(200));
+      expect(await app.prisma.barberFollower.count({ where: { barberId: barber.id } })).toBe(1);
+    });
+
+    it('concurrent toggles and unfollows never 500', async () => {
+      const barber = await createBarber();
+      const client = await createClient();
+      const t = clientToken(client.id);
+      const toggles = await Promise.all(Array.from({ length: 10 }, () => call('POST', barber.id, t)));
+      expect(toggles.every((r) => r.statusCode === 200)).toBe(true);
+      expect(await app.prisma.barberFollower.count({ where: { barberId: barber.id } })).toBeLessThanOrEqual(1);
+
+      await call('PUT', barber.id, t);
+      const dels = await Promise.all(Array.from({ length: 10 }, () => call('DELETE', barber.id, t)));
+      expect(dels.every((r) => r.statusCode === 200)).toBe(true);
+      expect(await app.prisma.barberFollower.count({ where: { barberId: barber.id } })).toBe(0);
+    });
+
+    it('counts followers from distinct clients', async () => {
+      const barber = await createBarber();
+      const clients = await Promise.all([createClient(), createClient(), createClient()]);
+      await Promise.all(clients.map((c) => call('PUT', barber.id, clientToken(c.id))));
+      const res = await status(barber.id);
+      expect(JSON.parse(res.body).followerCount).toBe(3);
+    });
+  });
 });
