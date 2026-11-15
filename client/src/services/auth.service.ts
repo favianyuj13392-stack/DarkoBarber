@@ -671,7 +671,13 @@ export async function deleteBarberPortfolioPhoto(photoUrl: string): Promise<User
   return deleteBarberPortfolioPhotos([photoUrl]);
 }
 
-export async function fetchBarberFollowStatus(barberId: string): Promise<{ followerCount: number; isFollowing: boolean }> {
+export interface BarberFollowState {
+  followerCount: number;
+  isFollowing: boolean;
+}
+
+/** Real follow state from the server, or null when it could not be fetched. */
+export async function fetchBarberFollowStatus(barberId: string): Promise<BarberFollowState | null> {
   const token = getStoredToken();
   try {
     const res = await fetch(`/api/barbers/${barberId}/follow`, {
@@ -685,19 +691,19 @@ export async function fetchBarberFollowStatus(barberId: string): Promise<{ follo
   } catch (err) {
     console.warn('Could not fetch follow status:', err);
   }
-  return { followerCount: 14, isFollowing: false };
+  return null;
 }
 
-export async function toggleFollowBarber(barberId: string): Promise<{ followerCount: number; isFollowing: boolean }> {
+/** Idempotent follow (PUT) / unfollow (DELETE); the server returns the resulting state. */
+export async function setBarberFollowing(barberId: string, follow: boolean): Promise<BarberFollowState> {
   const token = getStoredToken();
   if (!token) {
     throw new Error('Debes iniciar sesión para seguir a un barbero');
   }
 
   const res = await fetch(`/api/barbers/${barberId}/follow`, {
-    method: 'POST',
+    method: follow ? 'PUT' : 'DELETE',
     headers: {
-      'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
   });
