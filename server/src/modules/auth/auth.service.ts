@@ -935,12 +935,12 @@ export class AuthService {
       if (record.role === 'barbero') {
         await tx.barber.updateMany({
           where: { email: record.email },
-          data: { passwordHash: newPasswordHash },
+          data: { passwordHash: newPasswordHash, tokenVersion: { increment: 1 } },
         });
       } else {
         await tx.client.updateMany({
           where: { email: record.email },
-          data: { passwordHash: newPasswordHash },
+          data: { passwordHash: newPasswordHash, tokenVersion: { increment: 1 } },
         });
       }
     });

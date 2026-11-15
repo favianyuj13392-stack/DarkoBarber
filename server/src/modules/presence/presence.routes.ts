@@ -5,6 +5,7 @@ import { PresenceService } from './presence.service';
 import { presenceGateway } from './presence.gateway';
 import { clientPresenceMessageSchema } from './presence.schemas';
 import { z } from 'zod';
+import { isSessionCurrent } from '../../utils/session-version';
 import { BarberAuthPayload } from '../../types';
 import { checkChairBindRateLimit } from './chair-bind-rate-limit';
 
@@ -87,6 +88,11 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
       });
 
       if (!barber) {
+        socket.close(4401, 'Unauthorized');
+        return;
+      }
+
+      if (!isSessionCurrent(decoded.tv, barber.tokenVersion)) {
         socket.close(4401, 'Unauthorized');
         return;
       }

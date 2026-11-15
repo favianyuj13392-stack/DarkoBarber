@@ -3,6 +3,7 @@ import fastifyJwt from '@fastify/jwt';
 import { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import { AuthPayload, BarberAuthPayload } from '../types';
 import { resolveJwtSecret } from '../utils/jwt-secret';
+import { isSessionCurrent } from '../utils/session-version';
 
 const authPlugin: FastifyPluginAsync = async (fastify) => {
   await fastify.register(fastifyJwt, {
@@ -29,6 +30,13 @@ const authPlugin: FastifyPluginAsync = async (fastify) => {
         return reply.status(401).send({
           error: 'UNAUTHORIZED',
           message: 'Barber not found',
+        });
+      }
+
+      if (!isSessionCurrent(decoded.tv, barber.tokenVersion)) {
+        return reply.status(401).send({
+          error: 'UNAUTHORIZED',
+          message: 'Session expired, please sign in again',
         });
       }
 
@@ -93,6 +101,13 @@ const authPlugin: FastifyPluginAsync = async (fastify) => {
           });
         }
 
+        if (!isSessionCurrent(decoded.tv, client.tokenVersion)) {
+          return reply.status(401).send({
+            error: 'UNAUTHORIZED',
+            message: 'Session expired, please sign in again',
+          });
+        }
+
         request.user = {
           id: client.id,
           role: 'cliente',
@@ -115,6 +130,13 @@ const authPlugin: FastifyPluginAsync = async (fastify) => {
         return reply.status(401).send({
           error: 'UNAUTHORIZED',
           message: 'User not found',
+        });
+      }
+
+      if (!isSessionCurrent(decoded.tv, barber.tokenVersion)) {
+        return reply.status(401).send({
+          error: 'UNAUTHORIZED',
+          message: 'Session expired, please sign in again',
         });
       }
 

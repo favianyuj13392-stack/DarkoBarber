@@ -136,6 +136,76 @@ describe('Password reset', () => {
     expect((await reset(sha256(token))).statusCode).toBe(400);
   });
 
+  describe('session invalidation', () => {
+    it('rejects a client JWT issued before the reset and accepts a fresh login', async () => {
+      const client = await createClient();
+      const oldLogin = await app.inject({
+        method: 'POST',
+        url: '/auth/login',
+        payload: { identifier: client.email, secret: 'OldPassword1!', type: 'password', role: 'cliente' },
+      });
+      const oldToken = JSON.parse(oldLogin.body).token as string;
+      const me = (t: string) =>
+        app.inject({ method: 'GET', url: '/auth/me', headers: { authorization: `Bearer ${t}` } });
+      expect((await me(oldToken)).statusCode).toBe(200);
+
+      await forgot(client.email as string);
+      expect((await reset(lastToken())).statusCode).toBe(200);
+
+      expect((await me(oldToken)).statusCode).toBe(401);
+
+      const newLogin = await app.inject({
+        method: 'POST',
+        url: '/auth/login',
+        payload: { identifier: client.email, secret: 'NewPassword1!', type: 'password', role: 'cliente' },
+      });
+      expect(newLogin.statusCode).toBe(200);
+      expect((await me(JSON.parse(newLogin.body).token)).statusCode).toBe(200);
+    });
+
+    it('rejects a barber JWT issued before the reset on barber routes and accepts a fresh login', async () => {
+      const email = `b-${crypto.randomUUID()}@example.com`;
+      await app.prisma.barber.create({
+        data: {
+          email,
+          displayName: 'Reset Barber',
+          passwordHash: hashSecret('OldPassword1!'),
+          deviceId: 'dev-reset',
+        },
+      });
+      const loginWith = (secret: string) =>
+        app.inject({
+          method: 'POST',
+          url: '/auth/login',
+          payload: { identifier: email, secret, type: 'password', role: 'barbero', deviceId: 'dev-reset' },
+        });
+      const profile = (t: string) =>
+        app.inject({ method: 'GET', url: '/barbers/me', headers: { authorization: `Bearer ${t}` } });
+      const me = (t: string) =>
+        app.inject({ method: 'GET', url: '/auth/me', headers: { authorization: `Bearer ${t}` } });
+
+      const oldToken = JSON.parse((await loginWith('OldPassword1!')).body).token as string;
+      expect((await profile(oldToken)).statusCode).toBe(200);
+
+      await forgot(email);
+      expect((await reset(lastToken())).statusCode).toBe(200);
+
+      expect((await profile(oldToken)).statusCode).toBe(401);
+      expect((await me(oldToken)).statusCode).toBe(401);
+
+      const fresh = await loginWith('NewPassword1!');
+      expect(fresh.statusCode).toBe(200);
+      expect((await profile(JSON.parse(fresh.body).token)).statusCode).toBe(200);
+    });
+
+    it('keeps tokens without a tv claim valid for accounts that never changed password', async () => {
+      const client = await createClient();
+      const legacy = app.jwt.sign({ userId: client.id, role: 'cliente', deviceId: 'web-client' });
+      const res = await app.inject({ method: 'GET', url: '/auth/me', headers: { authorization: `Bearer ${legacy}` } });
+      expect(res.statusCode).toBe(200);
+    });
+  });
+
   it('honours PASSWORD_RESET_TTL_MINUTES with a 30 minute default', async () => {
     expect(getPasswordResetTtlMinutes({} as NodeJS.ProcessEnv)).toBe(30);
     expect(getPasswordResetTtlMinutes({ PASSWORD_RESET_TTL_MINUTES: 'abc' } as NodeJS.ProcessEnv)).toBe(30);

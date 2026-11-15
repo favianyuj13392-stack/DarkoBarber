@@ -1,5 +1,5 @@
 import { FastifyPluginAsync } from 'fastify';
-import { AuthService } from './auth.service';
+import { AuthService, AuthResult } from './auth.service';
 import {
   loginSchema,
   registerSchema,
@@ -9,6 +9,10 @@ import {
 } from './auth.schemas';
 import { uploadBodyLimit } from '../../utils/body-limits';
 import { RewardsService } from '../rewards/rewards.service';
+
+/** Password-change counter embedded in the JWT as `tv`. */
+const sessionVersion = (r: AuthResult): number =>
+  r.barber?.tokenVersion ?? r.client?.tokenVersion ?? 0;
 
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new AuthService(fastify.prisma);
@@ -36,6 +40,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       barberId: authResult.barber ? authResult.barber.id : undefined,
       role: authResult.role,
       shopId: authResult.user.shopId ?? null,
+      tv: sessionVersion(authResult),
       deviceId: authResult.barber?.deviceId ?? parseResult.data.deviceId ?? 'web-client',
     });
 
@@ -80,6 +85,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       barberId: result.barber ? result.barber.id : undefined,
       role: result.role,
       shopId: result.user.shopId ?? null,
+      tv: sessionVersion(result),
       deviceId: result.barber?.deviceId ?? parseResult.data.deviceId ?? 'web-client',
     });
 
@@ -118,6 +124,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       barberId: authResult.barber ? authResult.barber.id : undefined,
       role: authResult.role,
       shopId: authResult.user.shopId ?? null,
+      tv: sessionVersion(authResult),
       deviceId: authResult.barber?.deviceId ?? parseResult.data.deviceId ?? 'web-client',
     });
 

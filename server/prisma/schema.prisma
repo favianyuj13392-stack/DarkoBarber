@@ -83,6 +83,8 @@ model Barber {
   displayName   String
   pinHash       String?
   passwordHash  String?
+  // Bumped on every password change; JWTs carry it and stop working when it differs.
+  tokenVersion  Int       @default(0)
   googleId      String?   @unique
   avatarUrl     String?
   bio           String?
@@ -132,6 +134,8 @@ model Client {
   id           String          @id @default(uuid())
   email        String?         @unique
   passwordHash String?
+  // Bumped on every password change; JWTs carry it and stop working when it differs.
+  tokenVersion Int             @default(0)
   googleId     String?         @unique
   displayName  String?
   avatarUrl    String?
