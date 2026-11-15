@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { CutsService } from './cuts.service';
 import { startCutSchema, finalizeCutSchema } from './cuts.schemas';
 import { AppError } from '../../utils/errors';
+import { finalizeBodyLimit } from '../../utils/body-limits';
 
 export const cutsRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new CutsService(fastify.prisma, fastify.presenceService);
@@ -46,7 +47,7 @@ export const cutsRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post(
     '/cuts/:id/finalize',
-    { preHandler: [fastify.authenticateBarber] },
+    { bodyLimit: finalizeBodyLimit(), preHandler: [fastify.authenticateBarber] },
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const parseResult = finalizeCutSchema.safeParse(request.body);
@@ -79,7 +80,7 @@ export const cutsRoutes: FastifyPluginAsync = async (fastify) => {
   // Alias PATCH /cuts/:id for frontend Outbox UPDATE_CUT compatibility
   fastify.patch(
     '/cuts/:id',
-    { preHandler: [fastify.authenticateBarber] },
+    { bodyLimit: finalizeBodyLimit(), preHandler: [fastify.authenticateBarber] },
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const parseResult = finalizeCutSchema.safeParse(request.body);

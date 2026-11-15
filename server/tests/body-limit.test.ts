@@ -64,6 +64,22 @@ describe('Request body limits', () => {
     }
   });
 
+  it('allows the finalize limit on cut finalize routes (reaches auth, not 413)', async () => {
+    const photos = JSON.stringify({ photos: [{ url: 'data:image/jpeg;base64,' + 'A'.repeat(5000) }] });
+    for (const [method, url] of [
+      ['POST', '/cuts/abc/finalize'],
+      ['PATCH', '/cuts/abc'],
+    ] as const) {
+      const res = await app.inject({
+        method,
+        url,
+        headers: { 'content-type': 'application/json' },
+        payload: photos,
+      });
+      expect(res.statusCode, `${method} ${url}`).toBe(401);
+    }
+  });
+
   it('still caps upload routes at the upload limit', async () => {
     const res = await app.inject({
       method: 'POST',

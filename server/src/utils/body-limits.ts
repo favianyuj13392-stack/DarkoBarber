@@ -5,7 +5,10 @@
  *   UPLOAD_BODY_LIMIT_BYTES  only for routes that receive inline images as data URLs
  *                            (barber portfolio, barber profile avatar) (default 30 MiB)
  *
- * Photo uploads for cuts use presigned R2 URLs and never pass through the API body.
+ *   FINALIZE_BODY_LIMIT_BYTES  only for the cut finalize routes, which receive up to a few
+ *                              client-compressed photos as data URLs (default 5 MiB)
+ *
+ * Presigned R2 uploads exist for cut photos but the chair flow does not use them yet.
  */
 
 const MIB = 1024 * 1024;
@@ -17,6 +20,10 @@ function bytesFromEnv(name: string, fallback: number): number {
 
 export function defaultBodyLimit(): number {
   return bytesFromEnv('BODY_LIMIT_BYTES', MIB);
+}
+
+export function finalizeBodyLimit(): number {
+  return bytesFromEnv('FINALIZE_BODY_LIMIT_BYTES', 5 * MIB);
 }
 
 export function uploadBodyLimit(): number {
