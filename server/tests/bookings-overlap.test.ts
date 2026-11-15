@@ -173,6 +173,31 @@ describe('Bookings: overlap, availability and concurrency', () => {
       expect(slots['19:00']).toBe(false); // 19:00-20:15 passes closing
     });
 
+    it('rejects unknown, inactive and foreign service ids like booking creation', async () => {
+      const inactive = await app.prisma.barberService.create({
+        data: { barberId, name: 'Old', priceBs: 10, durationMin: 20, isActive: false },
+      });
+      const foreign = await app.prisma.barberService.create({
+        data: { barberId: otherBarberId, name: 'Other', priceBs: 10, durationMin: 20 },
+      });
+      for (const id of [crypto.randomUUID(), inactive.id, foreign.id]) {
+        const err = await errorOf(service.getBarberAvailability(barberId, DAY, NOW, { serviceIds: [id] }));
+        expect(err.code).toBe('SERVICE_NOT_FOUND');
+        expect(err.statusCode).toBe(404);
+      }
+      // One bad id among valid ones is still rejected.
+      const mixed = await errorOf(
+        service.getBarberAvailability(barberId, DAY, NOW, { serviceIds: [shortId, crypto.randomUUID()] })
+      );
+      expect(mixed.code).toBe('SERVICE_NOT_FOUND');
+    });
+
+    it('keeps the default grid when no serviceIds are sent', async () => {
+      const r = await service.getBarberAvailability(barberId, DAY, NOW, { serviceIds: [] });
+      expect(r.isWorkingDay).toBe(true);
+      expect(r.availableSlots.length).toBeGreaterThan(0);
+    });
+
     it('marks past and inside-notice slots as unavailable for today', async () => {
       await app.prisma.barber.update({ where: { id: barberId }, data: { bookingNoticeMin: 60 } });
       // NOW is Friday 10:00 La Paz; notice 60 min -> first bookable start is 11:00.

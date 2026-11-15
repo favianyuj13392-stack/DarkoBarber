@@ -568,6 +568,12 @@ export class BookingsService {
     }
     const settings = await this.getBarberBookingSettings(barberId);
 
+    // Same rule as createBooking: unknown, inactive or foreign service ids are a 404.
+    let requestedDurationMin: number | null = null;
+    if (opts.serviceIds && opts.serviceIds.length > 0) {
+      requestedDurationMin = (await this.resolveServices(barberId, opts.serviceIds)).durationMin;
+    }
+
     if (!settings.acceptsBookings) {
       return {
         acceptsBookings: false,
@@ -597,14 +603,7 @@ export class BookingsService {
       };
     }
 
-    let durationMin = window.slotIntervalMin;
-    if (opts.serviceIds && opts.serviceIds.length > 0) {
-      const svcs = await this.prisma.barberService.findMany({
-        where: { id: { in: [...new Set(opts.serviceIds)] }, barberId, isActive: true },
-        select: { durationMin: true },
-      });
-      if (svcs.length > 0) durationMin = svcs.reduce((sum, s) => sum + s.durationMin, 0);
-    }
+    const durationMin = requestedDurationMin ?? window.slotIntervalMin;
 
     const existingBookings = await this.prisma.booking.findMany({
       where: {
