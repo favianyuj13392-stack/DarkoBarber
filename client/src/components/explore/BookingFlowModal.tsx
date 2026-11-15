@@ -56,7 +56,10 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
   const [availabilityRefresh, setAvailabilityRefresh] = useState(0);
 
   // Booking needs a signed-in client account: name and phone come from the profile.
-  const isClientSession = currentUser?.role === 'cliente' && Boolean(getStoredToken());
+  const hasSession = Boolean(currentUser) && Boolean(getStoredToken());
+  const isClientSession = currentUser?.role === 'cliente' && hasSession;
+  // A signed-in barber (or other non-client role) must never be logged out by this flow.
+  const isNonClientSession = hasSession && !isClientSession;
 
   // Dynamic availability state
   const [availability, setAvailability] = useState<BarberAvailabilityResponse | null>(null);
@@ -103,12 +106,12 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
     return list;
   }, []);
 
-  // Without a client session, send the user to login and come back to this barber afterwards.
+  // Without any session, send the user to login and come back to this barber afterwards.
   useEffect(() => {
-    if (isOpen && barber && !isClientSession) {
+    if (isOpen && barber && !hasSession) {
       requestLoginForBooking(barber.id);
     }
-  }, [isOpen, barber, isClientSession]);
+  }, [isOpen, barber, hasSession]);
 
   // Initialize day & services
   useEffect(() => {
@@ -204,6 +207,7 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
 
   const handleConfirm = async () => {
     if (!selectedTime || selectedServices.length === 0 || submitting) return;
+    if (isNonClientSession) return;
     if (!isClientSession) {
       requestLoginForBooking(barber.id);
       return;
@@ -553,19 +557,24 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
 
               {/* Sticky Submit Button */}
               <div className="p-4 bg-black/80 border-t border-white/10 backdrop-blur-xl space-y-2">
-                {errorMsg && (
+                {(errorMsg || isNonClientSession) && (
                   <div
                     role="alert"
                     className="p-3 rounded-xl bg-red-950/40 border border-red-500/30 flex items-start gap-2 text-[11px] text-red-200"
                   >
                     <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-px" />
-                    <span>{errorMsg}</span>
+                    <span>
+                      {isNonClientSession
+                        ? 'Solo las cuentas de cliente pueden reservar. Cierra sesión e ingresa como cliente.'
+                        : errorMsg}
+                    </span>
                   </div>
                 )}
                 <button
                   type="button"
                   disabled={
                     submitting ||
+                    isNonClientSession ||
                     !selectedTime ||
                     selectedServices.length === 0 ||
                     Boolean(availability && (!availability.acceptsBookings || !availability.isWorkingDay))
