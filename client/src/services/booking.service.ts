@@ -239,32 +239,23 @@ export async function updateBookingSettings(
   settings: Partial<BarberBookingSettings>
 ): Promise<BarberBookingSettings> {
   const token = getStoredToken();
-  if (token) {
-    try {
-      const res = await fetch('/api/barbers/me/booking-settings', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(settings),
-      });
-      if (res.ok) {
-        return await res.json();
-      }
-      // The server validates the settings: surface its reason instead of pretending it saved.
-      if (res.status === 400) throw await toBookingApiError(res);
-    } catch (err) {
-      if (err instanceof BookingApiError) throw err;
-      console.warn('Could not update booking settings:', err);
-    }
+  if (!token) throw new BookingApiError('UNAUTHORIZED', 'Sesión no iniciada', 401);
+  let res: Response;
+  try {
+    res = await fetch('/api/barbers/me/booking-settings', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(settings),
+    });
+  } catch {
+    throw new BookingApiError('NETWORK_ERROR', 'Network error');
   }
-
-  return {
-    acceptsBookings: settings.acceptsBookings ?? true,
-    bookingNoticeMin: settings.bookingNoticeMin ?? 15,
-    workingHours: settings.workingHours ?? getDefaultWorkingHours(),
-  };
+  // Never pretend it saved: surface the server's reason (400 validation, 401, 5xx, ...).
+  if (!res.ok) throw await toBookingApiError(res);
+  return res.json();
 }
 
 export async function fetchBarberAvailability(

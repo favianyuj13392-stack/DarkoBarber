@@ -89,8 +89,10 @@ export const BarberBookingsView: FC = () => {
           ? 'Reservas programadas ACTIVADAS. Los clientes pueden solicitar turnos en tu perfil.'
           : 'Reservas programadas DESACTIVADAS. Tu puesto solo atenderá por orden de llegada (Walk-In).'
       );
-    } catch {
-      setToastMsg('Ajuste guardado localmente.');
+    } catch (err) {
+      // Roll back the optimistic change: it was not saved.
+      setSettings((prev) => ({ ...prev, acceptsBookings: !nextVal }));
+      setToastMsg(bookingErrorMessage(err));
     }
     setTimeout(() => setToastMsg(null), 3500);
   };
