@@ -456,19 +456,7 @@ export class AuthService {
 
     const publicPhotos = barber.cuts.flatMap((c) => c.photos.map((p) => p.r2Key));
 
-    const [followerCount, isFollowing] = await Promise.all([
-      (this.prisma as any).barberFollower.count({ where: { barberId } }).catch(() => 0),
-      clientId
-        ? (this.prisma as any).barberFollower
-            .findUnique({
-              where: {
-                barberId_clientId: { barberId, clientId },
-              },
-            })
-            .then((r: any) => Boolean(r))
-            .catch(() => false)
-        : Promise.resolve(false),
-    ]);
+    const { followerCount, isFollowing } = await this.readFollowState(barberId, clientId);
 
     return {
       id: barber.id,
@@ -490,8 +478,8 @@ export class AuthService {
       waitingCount: barber.presence?.waitingCount || 0,
       totalCuts: barber.cuts.length,
       portfolio: publicPhotos,
-      followerCount: followerCount || 12, // Base mínima visual atractiva
-      isFollowing: Boolean(isFollowing),
+      followerCount,
+      isFollowing,
     };
   }
 
@@ -794,25 +782,28 @@ export class AuthService {
     return this.getBarberSubscription(updated.id);
   }
 
+  /** Real follower count plus whether `clientId` (when given) follows the barber. */
+  private async readFollowState(barberId: string, clientId?: string) {
+    const [followerCount, existing] = await Promise.all([
+      this.prisma.barberFollower.count({ where: { barberId } }),
+      clientId
+        ? this.prisma.barberFollower.findUnique({
+            where: { barberId_clientId: { barberId, clientId } },
+            select: { id: true },
+          })
+        : Promise.resolve(null),
+    ]);
+    return { followerCount, isFollowing: Boolean(existing) };
+  }
+
+  /** Returns null when the barber does not exist or is inactive. */
   async getBarberFollowStatus(barberId: string, clientId?: string) {
-    const count = await (this.prisma as any).barberFollower.count({
-      where: { barberId },
-    }).catch(() => 0);
-
-    let isFollowing = false;
-    if (clientId) {
-      const existing = await (this.prisma as any).barberFollower.findUnique({
-        where: {
-          barberId_clientId: {
-            barberId,
-            clientId,
-          },
-        },
-      }).catch(() => null);
-      isFollowing = Boolean(existing);
-    }
-
-    return { followerCount: count || 12, isFollowing };
+    const barber = await this.prisma.barber.findUnique({
+      where: { id: barberId },
+      select: { id: true, isActive: true },
+    });
+    if (!barber || !barber.isActive) return null;
+    return this.readFollowState(barberId, clientId);
   }
 
   async toggleFollowBarber(barberId: string, clientId: string) {
@@ -845,11 +836,9 @@ export class AuthService {
       isFollowing = true;
     }
 
-    const followerCount = await (this.prisma as any).barberFollower.count({
-      where: { barberId },
-    }).catch(() => 0);
+    const { followerCount } = await this.readFollowState(barberId);
 
-    return { followerCount: followerCount || 12, isFollowing };
+    return { followerCount, isFollowing };
   }
 
   // --- PROGRAMA DE CRECIMIENTO FADE: GAMIFICACIÓN Y RECOMPENSAS ---

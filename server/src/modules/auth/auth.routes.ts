@@ -357,10 +357,19 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   // --- SISTEMA DE SEGUIDORES (FOLLOWERS) ---
-  fastify.get('/barbers/:barberId/follow', async (request: any, reply: any) => {
+  // Public read; when a bearer token is present it is validated so isFollowing
+  // reflects the authenticated client. Without a token isFollowing is false.
+  const optionalAuthUser = async (request: any, reply: any) => {
+    if (!request.headers.authorization) return;
+    return fastify.authenticateUser(request, reply);
+  };
+
+  fastify.get('/barbers/:barberId/follow', { preHandler: [optionalAuthUser] }, async (request: any, reply: any) => {
     const { barberId } = request.params as { barberId: string };
-    const clientId = (request as any).authUser?.id;
+    const authUser = request.authUser;
+    const clientId = authUser?.role === 'cliente' ? authUser.id : undefined;
     const status = await service.getBarberFollowStatus(barberId, clientId);
+    if (!status) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Barber not found' });
     return reply.status(200).send(status);
   });
 
