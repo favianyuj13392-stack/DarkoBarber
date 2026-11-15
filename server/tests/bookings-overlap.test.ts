@@ -338,4 +338,67 @@ describe('Bookings: overlap, availability and concurrency', () => {
       expect(await app.prisma.booking.count({ where: { clientId: client.id } })).toBe(3);
     });
   });
+
+  describe('malformed stored working hours', () => {
+    const setHours = (over: Record<string, unknown>, slotIntervalMin: unknown = 30) =>
+      app.prisma.barber.update({
+        where: { id: barberId },
+        data: {
+          workingHours: {
+            slotIntervalMin,
+            days: Array.from({ length: 7 }, (_, i) => ({
+              dayOfWeek: i,
+              dayName: `d${i}`,
+              enabled: true,
+              openTime: '09:00',
+              closeTime: '20:00',
+              hasBreak: false,
+              ...over,
+            })),
+          } as any,
+        },
+      });
+
+    it('treats a day with a malformed time as closed instead of bypassing the checks', async () => {
+      for (const over of [
+        { openTime: 'abc' },
+        { closeTime: '25:99' },
+        { openTime: '9am' },
+        { hasBreak: true, breakStart: 'x', breakEnd: '14:00' },
+        { openTime: '20:00', closeTime: '09:00' },
+      ]) {
+        await setHours(over);
+        const err = await errorOf(book());
+        expect(err.code).toBe('BARBER_NOT_WORKING');
+        const r = await service.getBarberAvailability(barberId, DAY, NOW);
+        expect(r.isWorkingDay).toBe(false);
+        expect(r.availableSlots).toEqual([]);
+      }
+    });
+
+    it('falls back to a 30 minute grid for a bad slot interval and always terminates', async () => {
+      for (const bad of [-30, 0, 7.5, 1, 1000, 'x', null]) {
+        await setHours({}, bad);
+        const r = await service.getBarberAvailability(barberId, DAY, NOW);
+        expect(r.allSlots[0].time).toBe('09:00');
+        expect(r.allSlots[1].time).toBe('09:30');
+      }
+    });
+
+    it('keeps a valid custom slot interval', async () => {
+      await setHours({}, 15);
+      const r = await service.getBarberAvailability(barberId, DAY, NOW);
+      expect(r.allSlots[1].time).toBe('09:15');
+    });
+
+    it('treats a non-array days value as closed', async () => {
+      await app.prisma.barber.update({
+        where: { id: barberId },
+        data: { workingHours: { days: 'nope', slotIntervalMin: 30 } as any },
+      });
+      const r = await service.getBarberAvailability(barberId, DAY, NOW);
+      expect(r.isWorkingDay).toBe(false);
+      expect((await errorOf(book())).code).toBe('BARBER_NOT_WORKING');
+    });
+  });
 });

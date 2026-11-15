@@ -93,16 +93,22 @@ export function resolveDayWindow(
   workingHours: BarberWorkingHoursConfig,
   date: string
 ): DayWindow | null {
-  const daySchedule = workingHours.days.find((d) => d.dayOfWeek === dayOfWeekOf(date));
+  // Stored rows predate the Zod validation, so nothing here can be trusted: anything malformed
+  // closes the day instead of letting NaN comparisons slip past the working-hours checks.
+  if (!workingHours || !Array.isArray(workingHours.days)) return null;
+  const daySchedule = workingHours.days.find((d) => d?.dayOfWeek === dayOfWeekOf(date));
   if (!daySchedule || !daySchedule.enabled) return null;
 
-  const openMin = parseTimeToMinutes(daySchedule.openTime);
-  const closeMin = parseTimeToMinutes(daySchedule.closeTime);
+  const openMin = parseStoredTime(daySchedule.openTime);
+  const closeMin = parseStoredTime(daySchedule.closeTime);
+  if (openMin === null || closeMin === null || closeMin <= openMin) return null;
+
   let breakStartMin = -1;
   let breakEndMin = -1;
   if (daySchedule.hasBreak && daySchedule.breakStart && daySchedule.breakEnd) {
-    const bs = parseTimeToMinutes(daySchedule.breakStart);
-    const be = parseTimeToMinutes(daySchedule.breakEnd);
+    const bs = parseStoredTime(daySchedule.breakStart);
+    const be = parseStoredTime(daySchedule.breakEnd);
+    if (bs === null || be === null) return null;
     if (be > bs) {
       breakStartMin = bs;
       breakEndMin = be;
@@ -114,8 +120,23 @@ export function resolveDayWindow(
     closeMin,
     breakStartMin,
     breakEndMin,
-    slotIntervalMin: workingHours.slotIntervalMin || 30,
+    slotIntervalMin: safeSlotInterval(workingHours.slotIntervalMin),
   };
+}
+
+const DEFAULT_SLOT_INTERVAL_MIN = 30;
+
+/** Strict 'HH:mm' -> minutes since midnight, or null when malformed. */
+function parseStoredTime(value: unknown): number | null {
+  if (typeof value !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return null;
+  return parseTimeToMinutes(value);
+}
+
+/** Integer in 5..240, otherwise the default; guarantees the slot loop always advances. */
+function safeSlotInterval(value: unknown): number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 5 && value <= 240
+    ? value
+    : DEFAULT_SLOT_INTERVAL_MIN;
 }
 
 export class BookingsService {
@@ -586,9 +607,9 @@ export class BookingsService {
       };
     }
 
-    const daySchedule = settings.workingHours.days.find(
-      (d) => d.dayOfWeek === dayOfWeekOf(targetDate)
-    );
+    const daySchedule = Array.isArray(settings.workingHours?.days)
+      ? settings.workingHours.days.find((d) => d?.dayOfWeek === dayOfWeekOf(targetDate))
+      : undefined;
     const window = resolveDayWindow(settings.workingHours, targetDate);
 
     if (!window || !daySchedule) {
