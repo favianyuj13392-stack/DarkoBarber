@@ -5,6 +5,7 @@ import websocketPlugin from './plugins/websocket.plugin';
 import prismaPlugin from './plugins/prisma.plugin';
 import authPlugin from './plugins/auth.plugin';
 import s3Plugin from './plugins/s3.plugin';
+import errorHandlerPlugin from './plugins/error-handler.plugin';
 import helmet from '@fastify/helmet';
 import rateLimitPlugin from './plugins/rate-limit.plugin';
 import { presenceRoutes } from './modules/presence/presence.routes';
@@ -60,6 +61,8 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
     },
     credentials: true,
   });
+
+  await app.register(errorHandlerPlugin);
 
   // Security headers. This server only returns JSON (no HTML), so instead of the
   // browser-page default CSP we ship the strictest one: nothing may load or frame
