@@ -136,6 +136,31 @@ describe('Password reset', () => {
     expect((await reset(sha256(token))).statusCode).toBe(400);
   });
 
+  describe('password policy', () => {
+    it('rejects too short and too long passwords on reset without consuming the token', async () => {
+      const client = await createClient();
+      await forgot(client.email as string);
+      const token = lastToken();
+
+      expect((await reset(token, 'short12')).statusCode).toBe(400);
+      expect((await reset(token, 'x'.repeat(129))).statusCode).toBe(400);
+      expect((await reset(token, 'x'.repeat(128))).statusCode).toBe(200);
+    });
+
+    it('rejects too short and too long passwords on register', async () => {
+      const register = (password: string) =>
+        app.inject({
+          method: 'POST',
+          url: '/auth/register',
+          payload: { email: `r-${crypto.randomUUID()}@example.com`, password, displayName: 'Policy', role: 'cliente' },
+        });
+
+      expect((await register('1234567')).statusCode).toBe(400);
+      expect((await register('x'.repeat(129))).statusCode).toBe(400);
+      expect((await register('12345678')).statusCode).toBe(201);
+    });
+  });
+
   describe('session invalidation', () => {
     it('rejects a client JWT issued before the reset and accepts a fresh login', async () => {
       const client = await createClient();

@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+/** Shared password policy for register and reset: 8 to 128 characters (the cap bounds scrypt cost). */
+export const passwordSchema = z
+  .string()
+  .min(8, 'La contraseña debe tener al menos 8 caracteres')
+  .max(128, 'La contraseña no puede superar los 128 caracteres');
+
 export const loginSchema = z.object({
   identifier: z.string().min(1, 'Identifier is required'),
   secret: z.string().min(1, 'Secret is required'),
@@ -12,7 +18,7 @@ export type LoginInput = z.infer<typeof loginSchema>;
 
 export const registerSchema = z.object({
   email: z.string().email('Email inválido'),
-  password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
+  password: passwordSchema,
   displayName: z.string().min(1, 'El nombre es obligatorio'),
   role: z.enum(['barbero', 'cliente']).default('cliente'),
   phone: z.string().optional(),
@@ -37,7 +43,7 @@ export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 
 export const resetPasswordSchema = z.object({
   token: z.string().min(1, 'El código o token es requerido'),
-  newPassword: z.string().min(6, 'La nueva contraseña debe tener al menos 6 caracteres'),
+  newPassword: passwordSchema,
 });
 
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
