@@ -18,6 +18,7 @@ import {
   requestLoginForBooking,
   type BarberAvailabilityResponse,
 } from '../../services/booking.service';
+import { getLaPazDays } from '../../utils/la-paz-date';
 import { getStoredToken, getStoredUser } from '../../services/auth.service';
 
 /** Data of a booking that the server already accepted (it is PENDING until the barber confirms). */
@@ -86,23 +87,16 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
       'NOV',
       'DIC',
     ];
-    const now = new Date();
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(now);
-      d.setDate(now.getDate() + i);
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      const fullDate = `${yyyy}-${mm}-${dd}`;
+    getLaPazDays(7).forEach((d, i) => {
       list.push({
         id: `day-${i}`,
-        dayName: dayNames[d.getDay()],
-        dayNumber: d.getDate(),
-        monthName: monthNames[d.getMonth()],
-        fullDate,
+        dayName: dayNames[d.weekday],
+        dayNumber: d.day,
+        monthName: monthNames[d.month - 1],
+        fullDate: d.fullDate,
         isToday: i === 0,
       });
-    }
+    });
     return list;
   }, []);
 
