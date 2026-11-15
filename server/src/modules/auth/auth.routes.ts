@@ -444,10 +444,11 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         parseResult.data.newPassword
       );
       return reply.status(200).send(result);
-    } catch (err: any) {
+    } catch {
+      // One generic answer for every failure so internals and causes never leak.
       return reply.status(400).send({
         error: 'INVALID_TOKEN',
-        message: err.message || 'No se pudo restablecer la contraseña',
+        message: 'El código o enlace de recuperación es inválido o ha expirado.',
       });
     }
   });

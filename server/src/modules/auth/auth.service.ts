@@ -2,7 +2,14 @@ import { PrismaClient, Barber, Client } from '@prisma/client';
 import { OAuth2Client } from 'google-auth-library';
 import crypto from 'node:crypto';
 import { LoginInput, RegisterInput, GoogleAuthInput } from './auth.schemas';
-import { hashSecret, verifySecret } from '../../utils/crypto';
+import { hashSecret, verifySecret, sha256Hex } from '../../utils/crypto';
+
+const DEFAULT_PASSWORD_RESET_TTL_MINUTES = 30;
+
+export function getPasswordResetTtlMinutes(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number.parseInt(env.PASSWORD_RESET_TTL_MINUTES ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_PASSWORD_RESET_TTL_MINUTES;
+}
 import { emailService } from '../../services/email/email.service';
 import { laPazMonthStartUtc } from '../../utils/la-paz-date';
 import { getMonthlyCutUsage, getPlanCutLimit } from '../cuts/cut-quota';
@@ -858,33 +865,42 @@ export class AuthService {
     const role = barber ? 'barbero' : 'cliente';
     const name = targetUser?.displayName || 'Usuario';
 
+    // Same CPU work for known and unknown emails so timing does not leak existence.
+    const ttlMinutes = getPasswordResetTtlMinutes();
+    const token = crypto.randomBytes(32).toString('base64url');
+    const tokenHash = sha256Hex(token);
+
     if (targetUser) {
-      await (this.prisma as any).passwordResetToken.updateMany({
+      const now = new Date();
+
+      // A new request invalidates every outstanding token for this account.
+      await this.prisma.passwordResetToken.updateMany({
         where: { email: normalizedEmail, usedAt: null },
-        data: { usedAt: new Date() },
-      }).catch(() => {});
+        data: { usedAt: now },
+      });
 
-      const token = crypto.randomBytes(16).toString('hex');
-      const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
-
-      await (this.prisma as any).passwordResetToken.create({
+      await this.prisma.passwordResetToken.create({
         data: {
           email: normalizedEmail,
-          token,
+          tokenHash,
           role,
-          expiresAt,
+          expiresAt: new Date(now.getTime() + ttlMinutes * 60 * 1000),
         },
       });
 
       const baseUrl = process.env.APP_PUBLIC_URL || 'https://fade.darkosync.com';
       const resetUrl = `${baseUrl}/?reset_token=${token}`;
 
-      await emailService.sendPasswordResetEmail(normalizedEmail, {
-        name,
-        resetUrl,
-        token,
-        expiresInMinutes: 30,
-      });
+      // Not awaited: the response must not wait on (or reveal the latency of) the mailer.
+      // Failures are swallowed without logging the token or the address.
+      void emailService
+        .sendPasswordResetEmail(normalizedEmail, {
+          name,
+          resetUrl,
+          token,
+          expiresInMinutes: ttlMinutes,
+        })
+        .catch(() => undefined);
     }
 
     return {
@@ -896,35 +912,37 @@ export class AuthService {
   async resetPassword(token: string, newPassword: string): Promise<{ success: boolean; message: string }> {
     const cleanToken = token.trim();
 
-    const record = await (this.prisma as any).passwordResetToken.findFirst({
-      where: {
-        token: cleanToken,
-        usedAt: null,
-        expiresAt: { gt: new Date() },
-      },
+    const invalid = () => new Error('El código o enlace de recuperación es inválido o ha expirado.');
+
+    const record = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash: sha256Hex(cleanToken) },
     });
 
-    if (!record) {
-      throw new Error('El código o enlace de recuperación es inválido o ha expirado.');
+    if (!record || record.usedAt || record.expiresAt <= new Date()) {
+      throw invalid();
     }
 
     const newPasswordHash = hashSecret(newPassword);
 
-    if (record.role === 'barbero') {
-      await this.prisma.barber.updateMany({
-        where: { email: record.email },
-        data: { passwordHash: newPasswordHash },
+    await this.prisma.$transaction(async (tx) => {
+      // Conditional update: only one concurrent request can consume the token.
+      const consumed = await tx.passwordResetToken.updateMany({
+        where: { id: record.id, usedAt: null, expiresAt: { gt: new Date() } },
+        data: { usedAt: new Date() },
       });
-    } else {
-      await this.prisma.client.updateMany({
-        where: { email: record.email },
-        data: { passwordHash: newPasswordHash },
-      });
-    }
+      if (consumed.count !== 1) throw invalid();
 
-    await (this.prisma as any).passwordResetToken.update({
-      where: { id: record.id },
-      data: { usedAt: new Date() },
+      if (record.role === 'barbero') {
+        await tx.barber.updateMany({
+          where: { email: record.email },
+          data: { passwordHash: newPasswordHash },
+        });
+      } else {
+        await tx.client.updateMany({
+          where: { email: record.email },
+          data: { passwordHash: newPasswordHash },
+        });
+      }
     });
 
     return {

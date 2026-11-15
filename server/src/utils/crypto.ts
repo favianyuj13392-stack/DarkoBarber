@@ -1,5 +1,10 @@
 import crypto from 'node:crypto';
 
+/** SHA-256 hex digest, for high-entropy random tokens (not for passwords). */
+export function sha256Hex(value: string): string {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
 export function hashSecret(secret: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
   const derivedKey = crypto.scryptSync(secret, salt, 64);
