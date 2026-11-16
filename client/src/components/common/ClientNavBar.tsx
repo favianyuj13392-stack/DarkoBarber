@@ -17,7 +17,7 @@ export const ClientNavBar: FC<ClientNavBarProps> = ({
   activeTab,
   onTabChange,
   onLogout,
-  userName = 'Ernesto Salinas',
+  userName = 'Cliente',
 }) => {
   const tabs = [
     { id: 'inicio' as ClientNavTab, label: 'Inicio', icon: Home },

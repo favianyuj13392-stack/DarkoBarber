@@ -49,9 +49,9 @@ export const ClientProfileView: FC<ClientProfileViewProps> = ({
 }) => {
   const user = currentUser || getStoredUser();
 
-  const [displayName, setDisplayName] = useState(user?.displayName || 'Ernesto Salinas');
-  const [phone, setPhone] = useState(user?.phone || '+591 712 34567');
-  const [email, setEmail] = useState(user?.email || 'ernesalinasro@gmail.com');
+  const [displayName, setDisplayName] = useState(user?.displayName || '');
+  const [phone, setPhone] = useState(user?.phone || '');
+  const [email, setEmail] = useState(user?.email || '');
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);

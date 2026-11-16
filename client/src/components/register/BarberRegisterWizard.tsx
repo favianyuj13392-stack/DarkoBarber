@@ -192,15 +192,16 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
       return;
     }
 
+    if (!form.email || !form.password || !form.displayName.trim()) {
+      setErrorMessage('Completa tu correo, contraseña y nombre para crear la cuenta');
+      return;
+    }
+
     setLoading(true);
     setErrorMessage(null);
 
     try {
-      const session = await registerBarber(
-        form.email || 'brian.barber@fade.bo',
-        form.password || 'Password123!',
-        form.displayName || 'Brian López'
-      );
+      const session = await registerBarber(form.email, form.password, form.displayName);
       setRegisteredSession(session);
       await saveChosenServices();
       onRegisterSuccess(session);
@@ -613,7 +614,8 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
                 whileTap={{ scale: 0.98 }}
                 transition={SPRING_TOUCH}
                 onClick={() => setStep(4)}
-                className="w-full py-3.5 rounded-2xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-bold text-sm tracking-wide shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_4px_16px_rgba(217,201,176,0.3)] cursor-pointer"
+                disabled={!form.displayName.trim()}
+                className="disabled:opacity-40 disabled:cursor-not-allowed w-full py-3.5 rounded-2xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-bold text-sm tracking-wide shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_4px_16px_rgba(217,201,176,0.3)] cursor-pointer"
               >
                 Continuar
               </motion.button>

@@ -33,7 +33,7 @@ import {
   type PhotoConsentRequestPayload,
 } from '../../services/chair.service';
 import { useBackoffPolling } from '../../hooks/useBackoffPolling';
-import { MOCK_HAIRCUTS, INITIAL_PREFERENCES } from '../../data/mockHistory';
+import { INITIAL_PREFERENCES } from '../../data/mockHistory';
 import type { HaircutItem, ClientPreferences } from '../../types/history';
 import { SPRING_TOUCH } from '../../constants/springs';
 import { getStoredUser, getStoredToken, type UserProfile } from '../../services/auth.service';
@@ -91,7 +91,7 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
   }, [initialScannedBarber]);
 
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => getStoredUser());
-  const userName = currentUser?.displayName || 'Ernesto Salinas';
+  const userName = currentUser?.displayName || 'Cliente';
 
   // Pending consent requests come from the server (works across devices). The poll backs
   // off while idle, pauses on hidden tabs and is cleaned up on unmount. The server stops
@@ -127,15 +127,8 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
     setTimeout(() => setConsentToastMsg(null), 4000);
   };
 
-  const [cutsList, setCutsList] = useState<HaircutItem[]>(() => {
-    try {
-      const stored = localStorage.getItem('fade_completed_cuts');
-      const local = stored ? JSON.parse(stored) : [];
-      return [...local, ...MOCK_HAIRCUTS];
-    } catch {
-      return MOCK_HAIRCUTS;
-    }
-  });
+  // Only real cuts from the server; no demo history is mixed in.
+  const [cutsList, setCutsList] = useState<HaircutItem[]>([]);
 
   const loadCutsFromDb = async () => {
     try {
@@ -167,8 +160,8 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
     if (typeof BroadcastChannel !== 'undefined') {
       const bc = new BroadcastChannel(CHAIR_SYNC_CHANNEL_NAME);
       const onMsg = (event: MessageEvent) => {
-        if (event.data?.type === 'CUT_FINALIZED' && event.data.cut) {
-          setCutsList((prev) => [event.data.cut, ...prev.filter((c) => c.id !== event.data.cut.id)]);
+        if (event.data?.type === 'CUT_FINALIZED') {
+          loadCutsFromDb();
         }
       };
       bc.addEventListener('message', onMsg);
@@ -195,7 +188,7 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
     return true;
   });
 
-  const latestCut = filteredCuts[0] || cutsList[0] || MOCK_HAIRCUTS[0];
+  const latestCut: HaircutItem | undefined = filteredCuts[0] || cutsList[0];
 
   // Grouping remaining cuts by month
   const monthGroups = Array.from(new Set(filteredCuts.map((c) => c.monthGroup)));
@@ -319,8 +312,9 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
               type="button"
               whileTap={{ scale: 0.92 }}
               transition={SPRING_TOUCH}
-              onClick={() => setActiveCutDetail(latestCut)}
-              className="h-9 px-3.5 sm:px-4 rounded-full bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black flex items-center gap-1.5 font-bold text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_4px_12px_rgba(217,201,176,0.4)] cursor-pointer"
+              onClick={() => latestCut && setActiveCutDetail(latestCut)}
+              disabled={!latestCut}
+              className="disabled:opacity-40 disabled:cursor-not-allowed h-9 px-3.5 sm:px-4 rounded-full bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black flex items-center gap-1.5 font-bold text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_4px_12px_rgba(217,201,176,0.4)] cursor-pointer"
               aria-label="Registrar nuevo corte"
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -528,6 +522,11 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
             GALERÍA MENSUAL AGRUPADA (Cuadrículas Responsivas: 3 cols móvil, 4-6 en desktop)
             ========================================================================= */}
         <div className="space-y-8 text-left">
+          {cutsList.length === 0 && (
+            <p className="text-center text-xs text-white/50 py-10">
+              Aún no tienes cortes registrados. Aparecerán aquí cuando un barbero finalice tu primer corte.
+            </p>
+          )}
           {monthGroups.map((month) => {
             const cutsInMonth = filteredCuts.filter((c) => c.monthGroup === month);
 

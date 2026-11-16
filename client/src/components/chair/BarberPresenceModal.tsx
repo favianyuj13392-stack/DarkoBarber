@@ -17,8 +17,8 @@ interface BarberPresenceModalProps {
 export const BarberPresenceModal: FC<BarberPresenceModalProps> = ({
   isOpen,
   onClose,
-  barberName = 'Brian López',
-  shopName = 'Fade Studio — Sopocachi',
+  barberName = '',
+  shopName = '',
   initialStatus,
 }) => {
   const [selectedStatus, setSelectedStatus] = useState<BarberPresenceStatus>(
@@ -81,7 +81,7 @@ export const BarberPresenceModal: FC<BarberPresenceModalProps> = ({
                 Estado de tu Sillón
               </h2>
               <p className="text-xs text-[#D9C9B0]/60 mt-0.5">
-                {barberName} · {shopName}
+                {[barberName, shopName].filter(Boolean).join(' · ')}
               </p>
             </div>
 

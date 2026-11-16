@@ -134,15 +134,16 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
       return;
     }
 
+    if (!form.displayName.trim()) {
+      setErrorMessage('Ingresa tu nombre para crear la cuenta');
+      return;
+    }
+
     setLoading(true);
     setErrorMessage(null);
 
     try {
-      const session = await registerClient(
-        form.email,
-        form.password,
-        form.displayName || 'Cliente FADE'
-      );
+      const session = await registerClient(form.email, form.password, form.displayName);
       setRegisteredSession(session);
       onRegisterSuccess(session);
     } catch (err: unknown) {
@@ -523,6 +524,7 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
                 <motion.button
                   type="button"
                   onClick={() => setStep(4)}
+                  disabled={!form.displayName.trim()}
                   whileTap={{ scale: 0.98 }}
                   transition={SPRING_TOUCH}
                   className="fade-btn-primary w-full py-4 rounded-2xl flex items-center justify-center gap-2 text-xs md:text-sm tracking-[0.12em] font-black cursor-pointer shadow-[0_8px_24px_-4px_rgba(217,201,176,0.35)] mt-2"

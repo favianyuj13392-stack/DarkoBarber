@@ -538,7 +538,7 @@ export function App() {
                 }
               }}
               onLogout={handleLogout}
-              userName={authData?.user.displayName || 'Ernesto Salinas'}
+              userName={authData?.user.displayName || 'Cliente'}
             />
           </motion.div>
         )}

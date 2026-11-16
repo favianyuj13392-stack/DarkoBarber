@@ -25,9 +25,9 @@ interface BarberQrModalProps {
 export const BarberQrModal: FC<BarberQrModalProps> = ({
   isOpen,
   onClose,
-  barberId = 'barber-diego',
-  barberName = 'Diego Armando',
-  shopName = 'Fade Studio — Sopocachi',
+  barberId = '',
+  barberName = '',
+  shopName = '',
 }) => {
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
@@ -155,7 +155,7 @@ export const BarberQrModal: FC<BarberQrModalProps> = ({
       ctx.fillStyle = '#D9C9B0';
       ctx.font = '500 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
       ctx.letterSpacing = '1px';
-      ctx.fillText(shopName, 500, 360);
+      if (shopName) ctx.fillText(shopName, 500, 360);
 
       // 5. Cargar e Insertar Imagen del QR
       const img = new Image();
@@ -228,7 +228,7 @@ export const BarberQrModal: FC<BarberQrModalProps> = ({
       try {
         await navigator.share({
           title: `Sillón de ${barberName} - FADE`,
-          text: `Escaneá este código o abrí el enlace para sentarte en el sillón de ${barberName} (${shopName}) en FADE.`,
+          text: `Escaneá este código o abrí el enlace para sentarte en el sillón de ${barberName}${shopName ? ` (${shopName})` : ''} en FADE.`,
           url: qrLink,
         });
       } catch {
@@ -293,7 +293,7 @@ export const BarberQrModal: FC<BarberQrModalProps> = ({
                 <h3 className="text-xl font-bold text-white tracking-tight font-serif">
                   {barberName}
                 </h3>
-                <p className="text-xs text-[#D9C9B0]/80">{shopName}</p>
+                {shopName ? <p className="text-xs text-[#D9C9B0]/80">{shopName}</p> : null}
               </div>
 
               {/* QR Code Container */}

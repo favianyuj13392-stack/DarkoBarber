@@ -433,22 +433,8 @@ export async function fetchBarberSubscription(): Promise<SubscriptionInfo | null
     console.warn('Could not fetch barber subscription:', err);
   }
 
-  const currentUser = getStoredUser();
-  const plan = (currentUser?.plan as any) || 'AUTONOMO';
-  const priceBs = plan === 'BARBERIA_BASE' ? 110 : plan === 'ALTO_FLUJO' ? 190 : 45;
-  const maxCuts = plan === 'BARBERIA_BASE' ? 200 : plan === 'ALTO_FLUJO' ? 9999 : 60;
-
-  return {
-    barberId: currentUser?.id || 'barber-diego',
-    plan,
-    priceBs,
-    monthlyCutsCount: currentUser?.totalCuts || 1,
-    maxCuts,
-    percentage: Math.min(100, Math.round(((currentUser?.totalCuts || 1) / maxCuts) * 100)),
-    nextBillingDate: new Date(Date.now() + 25 * 86400000).toISOString(),
-    status: 'ACTIVE',
-    graceDaysRemaining: 5,
-  };
+  // No server answer: report no subscription rather than inventing plan, billing date or usage.
+  return null;
 }
 
 export async function updateBarberPlan(

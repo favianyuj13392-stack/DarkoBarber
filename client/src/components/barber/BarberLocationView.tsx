@@ -36,7 +36,7 @@ export const BarberLocationView: FC<BarberLocationViewProps> = ({
   );
 
   // Custom shop state
-  const [customName, setCustomName] = useState(barber?.shopName || 'Estudio Brian López');
+  const [customName, setCustomName] = useState(barber?.shopName || '');
   const [customAddress, setCustomAddress] = useState(barber?.shopAddress || 'Av. 20 de Octubre #2140');
   const [customZone, setCustomZone] = useState(barber?.shopZone || 'Sopocachi');
   const [latitude, setLatitude] = useState<number>(-16.5113);

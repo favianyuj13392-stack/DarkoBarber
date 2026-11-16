@@ -267,39 +267,9 @@ export const BarberDetailView: FC<BarberDetailViewProps> = ({
         {/* TAB RESEÑAS */}
         {activeTab === 'resenas' && (
           <div className="space-y-3">
-            {[
-              {
-                author: 'Ernesto Salinas',
-                rating: 5,
-                date: 'Hace 3 días',
-                comment: 'Excelente degradado, muy meticuloso con los detalles y la navaja. Recomendadísimo.',
-              },
-              {
-                author: 'Gabriel Mendoza',
-                rating: 5,
-                date: 'Hace 1 semana',
-                comment: 'Puntual, el local impecable y el perfilado de barba quedó perfecto.',
-              },
-              {
-                author: 'Carlos Paz',
-                rating: 4.8,
-                date: 'Hace 2 semanas',
-                comment: 'Muy buen asesoramiento para el tipo de rostro. Volveré sin duda.',
-              },
-            ].map((rev, idx) => (
-              <div key={idx} className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-white">{rev.author}</span>
-                  <span className="text-[10px] text-white/40">{rev.date}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  {[...Array(5)].map((_, i) => (
-                    <Star key={i} className="w-3 h-3 text-[#B68F4E] fill-current" />
-                  ))}
-                </div>
-                <p className="text-xs text-white/80">{rev.comment}</p>
-              </div>
-            ))}
+            <p className="text-center text-xs text-white/50 py-8">
+              Aún no hay reseñas para este barbero.
+            </p>
           </div>
         )}
 

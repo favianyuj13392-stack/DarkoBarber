@@ -82,8 +82,8 @@ export const BarberSubscriptionView: FC<BarberSubscriptionViewProps> = ({
   const [copied, setCopied] = useState(false);
 
   // Billing form state
-  const [billingName, setBillingName] = useState(barber?.displayName || 'Brian López');
-  const [billingDoc, setBillingDoc] = useState('10909536');
+  const [billingName, setBillingName] = useState(barber?.displayName || '');
+  const [billingDoc, setBillingDoc] = useState('');
   const [updatingPlan, setUpdatingPlan] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
@@ -95,7 +95,7 @@ export const BarberSubscriptionView: FC<BarberSubscriptionViewProps> = ({
   const currentPlanMeta =
     AVAILABLE_PLANS.find((p) => p.id === activePlanId) || AVAILABLE_PLANS[0];
 
-  const qrPayload = `FADE-BOLIVIA|SUBSCRIPTION|PLAN:${activePlanId}|AMOUNT:${currentPlanMeta.priceBs}BS|BARBER:${barber?.id || 'barber-brian'}|TIMESTAMP:${Date.now()}`;
+  const qrPayload = `FADE-BOLIVIA|SUBSCRIPTION|PLAN:${activePlanId}|AMOUNT:${currentPlanMeta.priceBs}BS|BARBER:${barber?.id || ''}|TIMESTAMP:${Date.now()}`;
 
   useEffect(() => {
     if (isQrModalOpen) {

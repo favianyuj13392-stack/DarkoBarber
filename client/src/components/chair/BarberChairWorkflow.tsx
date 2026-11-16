@@ -33,9 +33,9 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
   const [presenceStatus, setPresenceStatus] = useState<BarberPresenceStatus>('GREEN');
 
   const currentUser = getStoredUser();
-  const barberName = currentUser?.displayName || 'Diego Armando';
-  const barberId = currentUser?.id || 'barber-diego';
-  const shopName = 'Fade Studio — Sopocachi';
+  const barberName = currentUser?.displayName || '';
+  const barberId = currentUser?.id || '';
+  const shopName = currentUser?.shopName || '';
 
   // 1. Presence status (WebSocket) for the status pill.
   useEffect(() => {

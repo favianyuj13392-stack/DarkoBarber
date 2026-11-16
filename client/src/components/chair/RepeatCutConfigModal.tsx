@@ -81,7 +81,6 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
   isOpen,
   onClose,
   onCutFinalized,
-  barberName = '',
   clientId,
   clientPhone = '',
   clientName = '',
@@ -228,10 +227,6 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
       .filter((p) => p.img)
       .map((p) => ({ url: p.img, angle: p.angle }));
 
-    const validPhotos = uploadedPhotos.length > 0
-      ? uploadedPhotos
-      : [{ url: '/assets/images/1.png', angle: 'Frontal' }];
-
     const isPublic = Boolean(consentReceived?.isPublic);
 
     try {
@@ -241,50 +236,17 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
         cutIdToFinalize = startRes.cut.id;
         setActiveCutId(cutIdToFinalize);
       }
-      await finalizeCut(cutIdToFinalize, chips, validPhotos, isPublic);
+      await finalizeCut(cutIdToFinalize, chips, uploadedPhotos, isPublic);
 
-      // Sincronizar corte terminado para que el feed del cliente lo muestre de inmediato
-      const newCutItem = {
-        id: cutIdToFinalize || `cut-${Date.now()}`,
-        date: 'Hoy',
-        rawDate: new Date().toISOString(),
-        monthGroup: 'Noviembre 2026',
-        styleName: `${tipoDegradado} · ${parteSuperior}`,
-        barberName,
-        shopName: 'Fade Studio — Sopocachi',
-        durationMinutes: 35,
-        priceBs: 60,
-        barberNotes: cutNotes || 'Corte finalizado en sillón.',
-        photos: validPhotos.map((p, idx) => ({
-          id: `photo-${idx}`,
-          url: p.url,
-          angle: (p.angle as any) || 'Frontal',
-          isPublic,
-        })),
-        coverPhoto: validPhotos[0]?.url || '/assets/images/1.png',
-        category: (barbaOption !== 'No' ? 'combo' : 'corte') as any,
-        isVerified: true,
-        specs: {
-          degradedNumber: baseLateral,
-          fadeType: tipoDegradado,
-          upperTreatment: parteSuperior,
-          beardTreatment: barbaOption !== 'No' ? barbaOption : 'Sin barba',
-        },
-      };
-
+      // Tell other tabs (e.g. the client's history feed) to reload the real cut from the server.
       try {
-        const stored = localStorage.getItem('fade_completed_cuts');
-        const list = stored ? JSON.parse(stored) : [];
-        list.unshift(newCutItem);
-        localStorage.setItem('fade_completed_cuts', JSON.stringify(list));
-
         if (typeof BroadcastChannel !== 'undefined') {
           const bc = new BroadcastChannel(CHAIR_SYNC_CHANNEL_NAME);
-          bc.postMessage({ type: 'CUT_FINALIZED', cut: newCutItem });
+          bc.postMessage({ type: 'CUT_FINALIZED', cutId: cutIdToFinalize });
           bc.close();
         }
       } catch (err) {
-        console.warn('Error saving local completed cut:', err);
+        console.warn('Could not broadcast finalized cut:', err);
       }
 
       setIsCutActive(false);
