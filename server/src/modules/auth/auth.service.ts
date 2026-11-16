@@ -589,29 +589,6 @@ export class AuthService {
       orderBy: { priceBs: 'asc' },
     });
 
-    if (services.length === 0) {
-      const defaults = [
-        { name: 'Corte Clásico', priceBs: 45, durationMin: 30, category: 'corte' },
-        { name: 'Mid / Low Fade', priceBs: 55, durationMin: 40, category: 'corte' },
-        { name: 'Perfilado de Barba', priceBs: 30, durationMin: 20, category: 'barba' },
-        { name: 'Combo Fade + Barba Navaja', priceBs: 75, durationMin: 50, category: 'combo' },
-      ];
-
-      for (const def of defaults) {
-        await (this.prisma as any).barberService.create({
-          data: {
-            barberId,
-            ...def,
-          },
-        });
-      }
-
-      return (this.prisma as any).barberService.findMany({
-        where: { barberId, isActive: true },
-        orderBy: { priceBs: 'asc' },
-      });
-    }
-
     return services;
   }
 

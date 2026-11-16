@@ -354,6 +354,11 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                         </div>
                       );
                     })}
+                    {barber.services.length === 0 && (
+                      <p className="text-xs text-white/50 text-center py-3">
+                        Este barbero aún no tiene servicios disponibles para reservar.
+                      </p>
+                    )}
                   </div>
                 </div>
 

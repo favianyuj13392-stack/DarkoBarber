@@ -25,7 +25,7 @@ import type {
   BarberServiceItem,
 } from '../../types/register';
 import { INITIAL_BARBER_REGISTER_STATE } from '../../types/register';
-import { registerBarber, loginWithGoogle, type LoginResponse } from '../../services/auth.service';
+import { registerBarber, loginWithGoogle, createBarberService, type LoginResponse } from '../../services/auth.service';
 import { GoogleSignInButton } from '../auth/GoogleSignInButton';
 
 interface BarberRegisterWizardProps {
@@ -171,8 +171,23 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
   };
 
   // Finalizar registro Paso 7
+  // Services are created explicitly from what the barber enabled in step 4; nothing is seeded implicitly.
+  const servicesSavedRef = useRef(false);
+  const saveChosenServices = async () => {
+    if (servicesSavedRef.current) return;
+    servicesSavedRef.current = true;
+    const chosen = form.services.filter((s) => s.enabled);
+    const results = await Promise.allSettled(
+      chosen.map((s) => createBarberService({ name: s.name, priceBs: s.priceBs }))
+    );
+    if (results.some((r) => r.status === 'rejected')) {
+      console.warn('Some services could not be saved; the barber can add them from the profile.');
+    }
+  };
+
   const handleFinish = async () => {
     if (registeredSession) {
+      await saveChosenServices();
       onRegisterSuccess(registeredSession);
       return;
     }
@@ -187,6 +202,7 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
         form.displayName || 'Brian López'
       );
       setRegisteredSession(session);
+      await saveChosenServices();
       onRegisterSuccess(session);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al crear la cuenta de barbero';

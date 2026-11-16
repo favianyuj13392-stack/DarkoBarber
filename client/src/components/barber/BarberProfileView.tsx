@@ -227,7 +227,10 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
     setLoadingServices(true);
     fetchBarberServices()
       .then((res) => setServices(res))
-      .catch((err) => console.warn('Could not load services:', err))
+      .catch((err) => {
+        console.warn('Could not load services:', err);
+        setServices([]);
+      })
       .finally(() => setLoadingServices(false));
   }, []);
 
@@ -369,7 +372,7 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
       setToastMsg('¡Servicio agregado con éxito!');
     } catch (err) {
       console.error('Error creando servicio:', err);
-      setToastMsg('Servicio guardado localmente.');
+      setToastMsg('No se pudo guardar el servicio. Intenta de nuevo.');
     }
     setTimeout(() => setToastMsg(null), 3000);
   };
@@ -727,6 +730,20 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
 
             {/* Lista actual de servicios */}
             <div className="space-y-2">
+              {!loadingServices && services.length === 0 && !isAddingService && (
+                <div className="p-4 rounded-xl border border-dashed border-white/15 text-center space-y-2">
+                  <p className="text-xs text-white/60">
+                    Aún no tienes servicios. Sin servicios los clientes no pueden reservar contigo.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingService(true)}
+                    className="text-xs font-semibold text-[#B68F4E] hover:underline cursor-pointer"
+                  >
+                    Agregar tu primer servicio
+                  </button>
+                </div>
+              )}
               {services.map((srv) => (
                 <div
                   key={srv.id}
@@ -954,7 +971,9 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
                 <button
                   type="button"
                   onClick={() => setIsBookingModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3.5 py-1 rounded-xl text-xs font-bold bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black shadow-md hover:brightness-105 transition-all cursor-pointer"
+                  disabled={loadingServices || services.length === 0}
+                  title={services.length === 0 ? 'Aún no hay servicios disponibles para reservar' : undefined}
+                  className="disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 px-3.5 py-1 rounded-xl text-xs font-bold bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black shadow-md hover:brightness-105 transition-all cursor-pointer"
                 >
                   <Calendar className="w-3.5 h-3.5" />
                   <span>Reservar Turno</span>

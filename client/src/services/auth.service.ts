@@ -495,28 +495,14 @@ export interface BarberServiceItem {
 
 export async function fetchBarberServices(): Promise<BarberServiceItem[]> {
   const token = getStoredToken();
-  const defaultServices: BarberServiceItem[] = [
-    { id: 'srv-1', name: 'Corte Clásico', priceBs: 45, durationMin: 30, category: 'corte', isActive: true },
-    { id: 'srv-2', name: 'Mid / Low Fade', priceBs: 55, durationMin: 40, category: 'corte', isActive: true },
-    { id: 'srv-3', name: 'Perfilado de Barba', priceBs: 30, durationMin: 20, category: 'barba', isActive: true },
-    { id: 'srv-4', name: 'Combo Fade + Barba', priceBs: 75, durationMin: 50, category: 'combo', isActive: true },
-  ];
+  if (!token) return [];
 
-  if (!token) return defaultServices;
-
-  try {
-    const res = await fetch('/api/barbers/me/services', {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) return data;
-    }
-  } catch (err) {
-    console.warn('Could not fetch barber services:', err);
-  }
-
-  return defaultServices;
+  const res = await fetch('/api/barbers/me/services', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('No se pudieron cargar los servicios');
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
 }
 
 export async function createBarberService(service: {
@@ -526,32 +512,18 @@ export async function createBarberService(service: {
   category?: string;
 }): Promise<BarberServiceItem> {
   const token = getStoredToken();
-  if (token) {
-    try {
-      const res = await fetch('/api/barbers/me/services', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(service),
-      });
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch (err) {
-      console.warn('Could not create service on server:', err);
-    }
-  }
+  if (!token) throw new Error('Sesión requerida para crear servicios');
 
-  return {
-    id: `local-srv-${Date.now()}`,
-    name: service.name,
-    priceBs: service.priceBs,
-    durationMin: service.durationMin || 30,
-    category: service.category || 'corte',
-    isActive: true,
-  };
+  const res = await fetch('/api/barbers/me/services', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(service),
+  });
+  if (!res.ok) throw new Error('No se pudo guardar el servicio');
+  return (await res.json()) as BarberServiceItem;
 }
 
 export async function updateBarberService(
