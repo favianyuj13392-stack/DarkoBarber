@@ -357,24 +357,41 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   // --- SISTEMA DE SEGUIDORES (FOLLOWERS) ---
-  fastify.get('/barbers/:barberId/follow', async (request: any, reply: any) => {
+  // Public read; when a bearer token is present it is validated so isFollowing
+  // reflects the authenticated client. Without a token isFollowing is false.
+  const optionalAuthUser = async (request: any, reply: any) => {
+    if (!request.headers.authorization) return;
+    return fastify.authenticateUser(request, reply);
+  };
+
+  fastify.get('/barbers/:barberId/follow', { preHandler: [optionalAuthUser] }, async (request: any, reply: any) => {
     const { barberId } = request.params as { barberId: string };
-    const clientId = (request as any).authUser?.id;
+    const authUser = request.authUser;
+    const clientId = authUser?.role === 'cliente' ? authUser.id : undefined;
     const status = await service.getBarberFollowStatus(barberId, clientId);
+    if (!status) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Barber not found' });
     return reply.status(200).send(status);
   });
 
-  fastify.post(
-    '/barbers/:barberId/follow',
-    { preHandler: [fastify.authenticateUser] },
-    async (request: any, reply: any) => {
+  // Only authenticated clients follow; identity always comes from the JWT.
+  const followHandler =
+    (action: 'toggleFollowBarber' | 'followBarber' | 'unfollowBarber') => async (request: any, reply: any) => {
       const { barberId } = request.params as { barberId: string };
-      const clientId = request.authUser?.id || request.barber?.id;
-      if (!clientId) return reply.status(401).send({ error: 'UNAUTHORIZED' });
-      const status = await service.toggleFollowBarber(barberId, clientId);
+      const authUser = request.authUser;
+      if (!authUser) return reply.status(401).send({ error: 'UNAUTHORIZED' });
+      if (authUser.role !== 'cliente') {
+        return reply.status(403).send({ error: 'FORBIDDEN', message: 'Only clients can follow barbers' });
+      }
+      const status = await service[action](barberId, authUser.id);
+      if (!status) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Barber not found' });
       return reply.status(200).send(status);
-    }
-  );
+    };
+
+  // POST is the legacy toggle; PUT/DELETE are the idempotent operations.
+  const followAuth = { preHandler: [fastify.authenticateUser] };
+  fastify.post('/barbers/:barberId/follow', followAuth, followHandler('toggleFollowBarber'));
+  fastify.put('/barbers/:barberId/follow', followAuth, followHandler('followBarber'));
+  fastify.delete('/barbers/:barberId/follow', followAuth, followHandler('unfollowBarber'));
 
   // --- PROGRAMA DE CRECIMIENTO: GAMIFICACIÓN & ADQUISICIÓN ---
   fastify.get(

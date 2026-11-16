@@ -34,7 +34,7 @@ import {
   deleteBarberPortfolioPhoto,
   deleteBarberPortfolioPhotos,
   fetchBarberFollowStatus,
-  toggleFollowBarber,
+  setBarberFollowing,
   getStoredUser,
 } from '../../services/auth.service';
 import {
@@ -42,6 +42,7 @@ import {
   MAX_SERVICES_PER_BOOKING,
   fetchBarberAvailability,
   bookingErrorMessage,
+  LOGIN_REQUIRED_EVENT,
 } from '../../services/booking.service';
 import { FadeConfirmModal } from '../common/FadeConfirmModal';
 
@@ -133,7 +134,7 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
   const [isAddingService, setIsAddingService] = useState(false);
 
   // Followers State
-  const [followerCount, setFollowerCount] = useState<number>(barber?.followerCount || 14);
+  const [followerCount, setFollowerCount] = useState<number>(barber?.followerCount ?? 0);
   const [isFollowing, setIsFollowing] = useState<boolean>(Boolean(barber?.isFollowing));
   const [togglingFollow, setTogglingFollow] = useState(false);
 
@@ -202,6 +203,7 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
   useEffect(() => {
     if (barber?.id) {
       fetchBarberFollowStatus(barber.id).then((res) => {
+        if (!res) return;
         setFollowerCount(res.followerCount);
         setIsFollowing(res.isFollowing);
       });
@@ -393,10 +395,27 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
   };
 
   const handleToggleFollow = async () => {
-    if (!barber?.id) return;
+    if (!barber?.id || togglingFollow) return;
+    const user = getStoredUser();
+    if (!user) {
+      // Same login-required flow the booking uses: App.tsx shows the login screen.
+      window.dispatchEvent(new Event(LOGIN_REQUIRED_EVENT));
+      return;
+    }
+    if (user.role !== 'cliente') {
+      setToastMsg('Inicia sesión con una cuenta de cliente para seguir a un barbero.');
+      setTimeout(() => setToastMsg(null), 3000);
+      return;
+    }
+
+    const previous = { isFollowing, followerCount };
+    const nextFollow = !isFollowing;
+    // Optimistic update; rolled back below if the server rejects it.
     setTogglingFollow(true);
+    setIsFollowing(nextFollow);
+    setFollowerCount(Math.max(0, followerCount + (nextFollow ? 1 : -1)));
     try {
-      const res = await toggleFollowBarber(barber.id);
+      const res = await setBarberFollowing(barber.id, nextFollow);
       setIsFollowing(res.isFollowing);
       setFollowerCount(res.followerCount);
       setToastMsg(
@@ -405,15 +424,9 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
           : 'Dejaste de seguir a este barbero.'
       );
     } catch {
-      // Optimistic demo toggle
-      const nextFollow = !isFollowing;
-      setIsFollowing(nextFollow);
-      setFollowerCount((prev) => (nextFollow ? prev + 1 : Math.max(0, prev - 1)));
-      setToastMsg(
-        nextFollow
-          ? '¡Ahora sigues a este barbero!'
-          : 'Dejaste de seguir a este barbero.'
-      );
+      setIsFollowing(previous.isFollowing);
+      setFollowerCount(previous.followerCount);
+      setToastMsg('No se pudo actualizar el seguimiento. Intenta de nuevo.');
     } finally {
       setTogglingFollow(false);
       setTimeout(() => setToastMsg(null), 3000);
