@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import type { FC, ChangeEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -21,8 +21,8 @@ import {
   requestPhotoConsent,
   pollPhotoConsentResponse,
   CHAIR_SYNC_CHANNEL_NAME,
-  PHOTO_CONSENT_RESPONSE_STORAGE_KEY,
 } from '../../services/chair.service';
+import { useBackoffPolling } from '../../hooks/useBackoffPolling';
 
 interface RepeatCutConfigModalProps {
   isOpen: boolean;
@@ -31,6 +31,7 @@ interface RepeatCutConfigModalProps {
   onCapturePhoto?: () => void;
   barberName?: string;
   barberId?: string;
+  clientId?: string;
   clientPhone?: string;
   clientName?: string;
 }
@@ -80,10 +81,10 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
   isOpen,
   onClose,
   onCutFinalized,
-  barberName = 'Brian López',
-  barberId = 'barber-brian',
-  clientPhone = '+591 712 34567',
-  clientName = 'Ernesto Salinas',
+  barberName = '',
+  clientId,
+  clientPhone = '',
+  clientName = '',
 }) => {
   const [step, setStep] = useState<ModalStep>('config');
 
@@ -111,60 +112,31 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
   const [requestPortfolio, setRequestPortfolio] = useState(true);
   const [isWaitingConsent, setIsWaitingConsent] = useState(false);
   const [consentReceived, setConsentReceived] = useState<{ isPublic: boolean } | null>(null);
+  const [consentRequestId, setConsentRequestId] = useState<string | null>(null);
+  const [consentError, setConsentError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activeAngleSlotRef = useRef<number>(0);
 
-  // Escuchar respuestas de consentimiento del cliente
-  useEffect(() => {
-    if (!isOpen || !isWaitingConsent) return;
-
-    // 1. WebSocket listener
-    const unsubWs = presenceService.onPhotoConsentResponse((resp) => {
-      setIsWaitingConsent(false);
-      setConsentReceived({ isPublic: resp.isPublic });
-    });
-
-    // 2. BroadcastChannel
-    let bc: BroadcastChannel | null = null;
-    if (typeof BroadcastChannel !== 'undefined') {
-      bc = new BroadcastChannel(CHAIR_SYNC_CHANNEL_NAME);
-      bc.onmessage = (event) => {
-        if (event.data?.type === 'PHOTO_CONSENT_RESPONSE') {
-          setIsWaitingConsent(false);
-          setConsentReceived({ isPublic: Boolean(event.data.isPublic) });
-        }
-      };
-    }
-
-    // 3. Storage event
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === PHOTO_CONSENT_RESPONSE_STORAGE_KEY && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue);
-          setIsWaitingConsent(false);
-          setConsentReceived({ isPublic: Boolean(parsed.isPublic) });
-        } catch {}
-      }
-    };
-    window.addEventListener('storage', onStorage);
-
-    // 4. Polling rápido cada 1s con barberId, barberName, clientPhone y clientName
-    const pollInterval = setInterval(async () => {
-      const resp = await pollPhotoConsentResponse(barberId, barberName, clientPhone, clientName);
-      if (resp) {
+  // The client's answer comes from the server (works across devices). Backs off while
+  // waiting, pauses on hidden tabs, and stops when answered, expired or unmounted.
+  useBackoffPolling(
+    async () => {
+      if (!consentRequestId) return false;
+      const { response, status } = await pollPhotoConsentResponse(consentRequestId);
+      if (response) {
         setIsWaitingConsent(false);
-        setConsentReceived({ isPublic: resp.isPublic });
+        setConsentReceived({ isPublic: response.isPublic });
+        return true;
       }
-    }, 1000);
-
-    return () => {
-      unsubWs();
-      if (bc) bc.close();
-      window.removeEventListener('storage', onStorage);
-      clearInterval(pollInterval);
-    };
-  }, [isOpen, isWaitingConsent, barberId, barberName, clientPhone, clientName]);
+      if (status === 'EXPIRED') {
+        setIsWaitingConsent(false);
+        setConsentError('La solicitud expiro. Envia una nueva solicitud al cliente.');
+      }
+      return false;
+    },
+    { enabled: isOpen && isWaitingConsent && consentRequestId !== null, baseMs: 1500, maxMs: 6000 }
+  );
 
   if (!isOpen) return null;
 
@@ -216,29 +188,22 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
   };
 
   const handleSendConsentRequest = async () => {
-    const mainPhoto = newPhotos.find((p) => p.img)?.img || '/assets/images/1.png';
-
-    setIsWaitingConsent(true);
     setConsentReceived(null);
+    setConsentError(null);
     try {
-      localStorage.removeItem(PHOTO_CONSENT_RESPONSE_STORAGE_KEY);
-    } catch {}
-
-    await requestPhotoConsent({
-      barberId,
-      barberName,
-      clientPhone,
-      clientName,
-      photoUrl: mainPhoto,
-      styleName: `${tipoDegradado} · ${parteSuperior}`,
-      chips: {
-        baseLateral,
-        tipoDegradado,
-        parteSuperior,
-        barba: barbaOption,
-      },
-      notes: cutNotes,
-    });
+      const requestId = await requestPhotoConsent({
+        clientId,
+        clientPhone: clientId ? undefined : clientPhone || undefined,
+        cutId: activeCutId && /^[0-9a-f-]{36}$/i.test(activeCutId) ? activeCutId : undefined,
+        styleName: `${tipoDegradado} · ${parteSuperior}`,
+        notes: cutNotes,
+      });
+      setConsentRequestId(requestId);
+      setIsWaitingConsent(true);
+    } catch (err) {
+      setIsWaitingConsent(false);
+      setConsentError(err instanceof Error ? err.message : 'No se pudo enviar la solicitud.');
+    }
   };
 
   const handleCompleteAndFinalize = async () => {
@@ -708,6 +673,12 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
                     <Globe className="w-4 h-4 text-black" />
                     <span>Solicitar autorización de portafolio al cliente</span>
                   </motion.button>
+                ) : null}
+
+                {consentError ? (
+                  <p role="alert" className="text-[11px] text-red-400 text-center">
+                    {consentError}
+                  </p>
                 ) : null}
 
                 {/* Botón para finalizar y pasar al micro-tap de sala de espera */}

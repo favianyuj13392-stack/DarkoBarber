@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import type { FC } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -30,9 +30,9 @@ import {
   respondPhotoConsent,
   pollPhotoConsentRequest,
   CHAIR_SYNC_CHANNEL_NAME,
-  PHOTO_CONSENT_REQUEST_STORAGE_KEY,
   type PhotoConsentRequestPayload,
 } from '../../services/chair.service';
+import { useBackoffPolling } from '../../hooks/useBackoffPolling';
 import { MOCK_HAIRCUTS, INITIAL_PREFERENCES } from '../../data/mockHistory';
 import type { HaircutItem, ClientPreferences } from '../../types/history';
 import { SPRING_TOUCH } from '../../constants/springs';
@@ -93,90 +93,38 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => getStoredUser());
   const userName = currentUser?.displayName || 'Ernesto Salinas';
 
-  // Evitar re-aperturas en bucle de solicitudes ya respondidas
-  const answeredRequestsRef = useRef<Set<string>>(new Set());
-
-  const isRequestAnswered = (req: PhotoConsentRequestPayload | null | undefined): boolean => {
-    if (!req) return false;
-    const reqId = `${req.barberId}_${req.timestamp}`;
-    return answeredRequestsRef.current.has(reqId);
-  };
-
-  useEffect(() => {
-    // 1. Escuchar solicitudes de consentimiento vía BroadcastChannel
-    if (typeof BroadcastChannel !== 'undefined') {
-      const bc = new BroadcastChannel(CHAIR_SYNC_CHANNEL_NAME);
-      bc.onmessage = (event) => {
-        if (event.data?.type === 'PHOTO_CONSENT_REQUEST') {
-          if (!isRequestAnswered(event.data)) {
-            setIncomingConsentReq(event.data);
-          }
-        }
-      };
-      return () => bc.close();
-    }
-  }, []);
-
-  useEffect(() => {
-    // 2. Escuchar solicitudes vía Storage Event (Cross-window)
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === PHOTO_CONSENT_REQUEST_STORAGE_KEY && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue);
-          if (!isRequestAnswered(parsed)) {
-            setIncomingConsentReq(parsed);
-          }
-        } catch {
-          // ignore
-        }
-      }
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
-
-  useEffect(() => {
-    // 3. Polling rápido cada 1s al backend por si el barbero mandó desde otro dispositivo
-    const phone = currentUser?.phone || '+591 712 34567';
-    const barberId = scannedBarber?.barberId;
-    const barberName = scannedBarber?.barberName;
-
-    const interval = setInterval(async () => {
-      const req = await pollPhotoConsentRequest(phone, barberId, barberName, userName);
-      if (req && !isRequestAnswered(req)) {
-        setIncomingConsentReq(req);
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [currentUser, scannedBarber, userName]);
+  // Pending consent requests come from the server (works across devices). The poll backs
+  // off while idle, pauses on hidden tabs and is cleaned up on unmount. The server stops
+  // returning a request once it is answered or expired, so no local de-duplication is needed.
+  useBackoffPolling(
+    async () => {
+      if (incomingConsentReq || !getStoredToken()) return false;
+      const req = await pollPhotoConsentRequest();
+      if (!req) return false;
+      setIncomingConsentReq(req);
+      return true;
+    },
+    { enabled: Boolean(currentUser), baseMs: 2000, maxMs: 10000 }
+  );
 
   const handleClientConsent = async (isPublic: boolean) => {
-    if (incomingConsentReq) {
-      const req = incomingConsentReq;
-      const reqId = `${req.barberId}_${req.timestamp}`;
-      answeredRequestsRef.current.add(reqId);
-      setIncomingConsentReq(null);
+    if (!incomingConsentReq) return;
+    const req = incomingConsentReq;
+    setIncomingConsentReq(null);
 
-      // Limpiar de localStorage para evitar re-aperturas locales
-      try {
-        localStorage.removeItem(PHOTO_CONSENT_REQUEST_STORAGE_KEY);
-      } catch {}
-
-      await respondPhotoConsent(
-        req.barberId,
-        req.clientPhone,
-        isPublic,
-        scannedBarber?.barberName || req.barberName,
-        userName
-      );
-      loadCutsFromDb();
-      setConsentToastMsg(
-        isPublic
-          ? '¡Corte autorizado con éxito para el portafolio público de tu barbero!'
-          : 'Corte guardado con éxito en tu historial privado.'
-      );
+    const saved = await respondPhotoConsent(req.requestId, isPublic);
+    if (!saved) {
+      setConsentToastMsg('No pudimos registrar tu respuesta. Intenta de nuevo en unos segundos.');
       setTimeout(() => setConsentToastMsg(null), 4000);
+      return;
     }
+    loadCutsFromDb();
+    setConsentToastMsg(
+      isPublic
+        ? '¡Corte autorizado con éxito para el portafolio público de tu barbero!'
+        : 'Corte guardado con éxito en tu historial privado.'
+    );
+    setTimeout(() => setConsentToastMsg(null), 4000);
   };
 
   const [cutsList, setCutsList] = useState<HaircutItem[]>(() => {
