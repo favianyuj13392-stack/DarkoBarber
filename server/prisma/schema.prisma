@@ -42,6 +42,13 @@ enum AcquisitionStatus {
   REVOKED
 }
 
+enum ChairBindingStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+}
+
 enum ClientActivityType {
   HISTORY_VIEW
   CONSENT_UPDATE
@@ -103,6 +110,7 @@ model Barber {
   freeMonthsEarned Int             @default(0)
   acquiredClients Client[]        @relation("BarberAcquisitions")
   rewardClaims  RewardClaim[]
+  chairBindingRequests ChairBindingRequest[]
   acceptsBookings Boolean         @default(true)
   bookingNoticeMin Int            @default(15)
   workingHours  Json?
@@ -156,6 +164,7 @@ model Client {
   bookings     Booking[]
   activities   ClientActivity[]
   emailVerificationTokens EmailVerificationToken[]
+  chairBindingRequests ChairBindingRequest[]
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
@@ -163,6 +172,28 @@ model Client {
   @@index([phone])
   @@index([firstScanBarberId])
   @@index([firstScanBarberId, acquisitionStatus])
+}
+
+// Chair handshake: a client scans a barber's QR and the barber picks the request up.
+// activeKey is "<barberId>:<clientId>" while the row is PENDING and NULL afterwards, so the
+// unique index enforces a single active pending request per (barber, client) race-free.
+model ChairBindingRequest {
+  id            String                 @id @default(uuid())
+  barberId      String
+  barber        Barber                 @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  clientId      String
+  client        Client                 @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  status        ChairBindingStatus     @default(PENDING)
+  activeKey     String?                @unique
+  isFirstScan   Boolean                @default(false)
+  acquiredCount Int                    @default(0)
+  deliveredAt   DateTime?
+  createdAt     DateTime               @default(now())
+  expiresAt     DateTime
+  respondedAt   DateTime?
+
+  @@index([barberId, status, expiresAt])
+  @@index([clientId])
 }
 
 model ClientProfile {

@@ -225,6 +225,7 @@ export async function pollPendingChairSession(
   barberName?: string
 ): Promise<IncomingClientHandshake | null> {
   try {
+    const token = getStoredToken();
     const query = new URLSearchParams({
       barberId: barberId || '',
       name: barberName || '',
@@ -237,7 +238,7 @@ export async function pollPendingChairSession(
 
     for (const url of endpoints) {
       try {
-        const res = await fetch(url);
+        const res = await fetch(url, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
         if (res.ok) {
           const data = await res.json();
           if (data.hasPending && data.client) {
