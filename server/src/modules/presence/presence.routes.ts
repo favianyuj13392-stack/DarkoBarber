@@ -9,11 +9,25 @@ import { isSessionCurrent } from '../../utils/session-version';
 import { BarberAuthPayload } from '../../types';
 import { checkChairBindRateLimit } from './chair-bind-rate-limit';
 import { ChairBindingService } from './chair-binding.service';
+import { PhotoConsentService } from './photo-consent.service';
 
 const chairBindBodySchema = z.object({
   barberId: z.string().trim().min(1).max(64),
   barberName: z.string().trim().max(120).optional(),
   deviceId: z.string().trim().min(1).max(128).optional(),
+});
+
+const consentRequestSchema = z.object({
+  clientId: z.string().trim().min(1).max(64).optional(),
+  clientPhone: z.string().trim().max(32).optional(),
+  cutId: z.string().trim().min(1).max(64).optional(),
+  styleName: z.string().trim().max(120).optional(),
+  notes: z.string().trim().max(500).optional(),
+});
+
+const consentResponseSchema = z.object({
+  requestId: z.string().trim().min(1).max(64),
+  isPublic: z.boolean(),
 });
 
 const chairRespondSchema = z.object({ action: z.enum(['accept', 'decline']) });
@@ -23,29 +37,7 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
 
   const chairBindings = new ChairBindingService(fastify.prisma);
 
-  interface ConsentRequestPayload {
-    barberId: string;
-    barberName: string;
-    clientPhone: string;
-    clientName?: string;
-    photoUrl: string;
-    photos?: Array<{ id: string; url: string; angle: string }>;
-    styleName: string;
-    chips?: Record<string, unknown>;
-    notes?: string;
-    timestamp: number;
-  }
-
-  interface ConsentResponsePayload {
-    barberId: string;
-    clientPhone: string;
-    clientName?: string;
-    isPublic: boolean;
-    timestamp: number;
-  }
-
-  const pendingConsentRequests = new Map<string, ConsentRequestPayload>();
-  const pendingConsentResponses = new Map<string, ConsentResponsePayload>();
+  const photoConsents = new PhotoConsentService(fastify.prisma);
 
   // Expose service on root fastify instance for watchdog and cut hooks
   fastify.decorate('presenceService', service);
@@ -411,190 +403,143 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
     }
   );
 
-  // 6. Barber sends Photo Consent Request to Client: POST /presence/chair/consent-request
-  fastify.post('/presence/chair/consent-request', async (request, reply) => {
-    reply.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    const body = request.body as ConsentRequestPayload;
-    if (!body || !body.barberId) {
-      return reply.status(400).send({ error: 'INVALID_PAYLOAD', message: 'barberId is required' });
-    }
-    const cleanPhone = (body.clientPhone || '').replace(/\D/g, '');
-    const normClient = body.clientName?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
-    const payload: ConsentRequestPayload = {
-      ...body,
-      timestamp: Date.now(),
-    };
-
-    // Limpiar respuestas residuales previas para esta vinculación
-    if (body.barberId) pendingConsentResponses.delete(body.barberId.toLowerCase());
-    if (body.barberName) pendingConsentResponses.delete(body.barberName.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    if (normClient) pendingConsentResponses.delete(normClient);
-    if (cleanPhone) {
-      pendingConsentResponses.delete(cleanPhone);
-      if (cleanPhone.length >= 8) pendingConsentResponses.delete(cleanPhone.slice(-8));
-    }
-
-    // Store under all potential keys so client query never misses
-    if (cleanPhone) {
-      pendingConsentRequests.set(cleanPhone, payload);
-      if (cleanPhone.length >= 8) {
-        pendingConsentRequests.set(cleanPhone.slice(-8), payload);
-      }
-    }
-    if (normClient) {
-      pendingConsentRequests.set(normClient, payload);
-    }
-    if (body.barberId) {
-      pendingConsentRequests.set(body.barberId.toLowerCase(), payload);
-    }
-    if (body.barberName) {
-      const normName = body.barberName.toLowerCase().replace(/[^a-z0-9]/g, '');
-      pendingConsentRequests.set(normName, payload);
-    }
-
-    return reply.status(200).send({ success: true, message: 'Consent request stored' });
-  });
-
-  // 7. Client polls for Photo Consent Request: GET /presence/chair/consent-request
-  fastify.get('/presence/chair/consent-request', async (request, reply) => {
+  const noStore = (reply: { header: (k: string, v: string) => unknown }) => {
     reply.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     reply.header('Pragma', 'no-cache');
     reply.header('Expires', '0');
+  };
 
-    const query = (request.query as { phone?: string; barberId?: string; name?: string; clientName?: string }) || {};
-    const cleanPhone = (query.phone || '').replace(/\D/g, '');
-    const barberId = (query.barberId || '').toLowerCase();
-    const normName = (query.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const normClient = (query.clientName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
-    let req: ConsentRequestPayload | undefined;
-
-    if (cleanPhone) {
-      req = pendingConsentRequests.get(cleanPhone);
-      if (!req && cleanPhone.length >= 8) {
-        req = pendingConsentRequests.get(cleanPhone.slice(-8));
+  // 6. Barber sends a photo consent request to the client: POST /presence/chair/consent-request
+  // Only ids and short text are stored; photos travel through the regular photo endpoints.
+  fastify.post(
+    '/presence/chair/consent-request',
+    { preHandler: [fastify.authenticateBarber] },
+    async (request, reply) => {
+      noStore(reply);
+      const parsed = consentRequestSchema.safeParse(request.body ?? {});
+      if (!parsed.success || (!parsed.data.clientId && !parsed.data.clientPhone)) {
+        return reply
+          .status(400)
+          .send({ error: 'INVALID_PAYLOAD', message: 'clientId or clientPhone is required' });
       }
-    }
-    if (!req && normClient) {
-      req = pendingConsentRequests.get(normClient);
-    }
-    if (!req && barberId) {
-      req = pendingConsentRequests.get(barberId);
-    }
-    if (!req && normName) {
-      req = pendingConsentRequests.get(normName);
-    }
-
-    if (req && Date.now() - req.timestamp < 180000) {
-      return reply.status(200).send({ hasPending: true, request: req });
-    }
-    return reply.status(200).send({ hasPending: false, request: null });
-  });
-
-  // 8. Client sends Photo Consent Response: POST /presence/chair/consent-response
-  fastify.post('/presence/chair/consent-response', async (request, reply) => {
-    reply.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    const body = request.body as ConsentResponsePayload & { barberName?: string; clientName?: string };
-    if (!body || !body.barberId) {
-      return reply.status(400).send({ error: 'INVALID_PAYLOAD', message: 'barberId is required' });
-    }
-    const normClient = body.clientName?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
-    const payload: ConsentResponsePayload = {
-      ...body,
-      timestamp: Date.now(),
-    };
-
-    // 1. Consumir y ELIMINAR la solicitud pendiente de inmediato para cortar el bucle del cliente
-    pendingConsentRequests.delete(body.barberId.toLowerCase());
-    if (body.barberName) {
-      const normName = body.barberName.toLowerCase().replace(/[^a-z0-9]/g, '');
-      pendingConsentRequests.delete(normName);
-    }
-    if (normClient) {
-      pendingConsentRequests.delete(normClient);
-    }
-    if (body.clientPhone) {
-      const cleanPhone = body.clientPhone.replace(/\D/g, '');
-      pendingConsentRequests.delete(cleanPhone);
-      if (cleanPhone.length >= 8) {
-        pendingConsentRequests.delete(cleanPhone.slice(-8));
+      const result = await photoConsents.create({ barberId: request.barber.id, ...parsed.data });
+      if (!result.ok) {
+        if (result.error === 'NOT_SERVING_CLIENT') {
+          return reply.status(403).send({
+            error: 'FORBIDDEN',
+            message: 'You can only request consent from a client you are serving',
+          });
+        }
+        return reply.status(404).send({ error: result.error, message: 'Client or cut not found' });
       }
+      return reply.status(200).send({
+        success: true,
+        message: 'Consent request stored',
+        requestId: result.request.id,
+        expiresAt: result.request.expiresAt.toISOString(),
+      });
     }
+  );
 
-    pendingConsentResponses.set(body.barberId.toLowerCase(), payload);
-    if (body.barberName) {
-      const normName = body.barberName.toLowerCase().replace(/[^a-z0-9]/g, '');
-      pendingConsentResponses.set(normName, payload);
-    }
-    if (normClient) {
-      pendingConsentResponses.set(normClient, payload);
-    }
-    if (body.clientPhone) {
-      const cleanPhone = body.clientPhone.replace(/\D/g, '');
-      pendingConsentResponses.set(cleanPhone, payload);
-      if (cleanPhone.length >= 8) {
-        pendingConsentResponses.set(cleanPhone.slice(-8), payload);
+  // 7. Client polls for their pending photo consent request: GET /presence/chair/consent-request
+  fastify.get(
+    '/presence/chair/consent-request',
+    { preHandler: [fastify.authenticateUser] },
+    async (request, reply) => {
+      noStore(reply);
+      const authUser = request.authUser;
+      if (!authUser || authUser.role !== 'cliente') {
+        return reply.status(403).send({ error: 'FORBIDDEN', message: 'A client account is required' });
       }
-    }
-
-    // Notify active Barber WebSocket
-    for (const entry of presenceGateway.getAllSockets()) {
-      if (
-        (entry.barberId.toLowerCase() === body.barberId.toLowerCase()) &&
-        entry.socket.readyState === WebSocket.OPEN
-      ) {
-        entry.socket.send(
-          JSON.stringify({
-            type: 'PHOTO_CONSENT_RESPONSE',
-            isPublic: body.isPublic,
-            clientPhone: body.clientPhone,
-            timestamp: payload.timestamp,
-          })
-        );
+      const row = await photoConsents.getPendingForClient(authUser.id);
+      if (!row) {
+        return reply.status(200).send({ hasPending: false, request: null });
       }
+      return reply.status(200).send({
+        hasPending: true,
+        request: {
+          requestId: row.id,
+          barberId: row.barber.id,
+          barberName: row.barber.displayName,
+          clientPhone: row.client.phone ?? '',
+          styleName: row.styleName ?? '',
+          notes: row.notes ?? undefined,
+          timestamp: row.createdAt.getTime(),
+          expiresAt: row.expiresAt.toISOString(),
+        },
+      });
     }
+  );
 
-    return reply.status(200).send({ success: true, message: 'Consent response recorded' });
-  });
-
-  // 9. Barber polls for Photo Consent Response: GET /presence/chair/consent-response
-  fastify.get('/presence/chair/consent-response', async (request, reply) => {
-    reply.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    reply.header('Pragma', 'no-cache');
-    reply.header('Expires', '0');
-
-    const query = (request.query as { barberId?: string; name?: string; phone?: string; clientName?: string }) || {};
-    const barberId = (query.barberId || '').toLowerCase();
-    const normName = (query.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const cleanPhone = (query.phone || '').replace(/\D/g, '');
-    const normClient = (query.clientName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
-    let resp: ConsentResponsePayload | undefined;
-    if (barberId) resp = pendingConsentResponses.get(barberId);
-    if (!resp && normName) resp = pendingConsentResponses.get(normName);
-    if (!resp && normClient) resp = pendingConsentResponses.get(normClient);
-    if (!resp && cleanPhone) {
-      resp = pendingConsentResponses.get(cleanPhone);
-      if (!resp && cleanPhone.length >= 8) {
-        resp = pendingConsentResponses.get(cleanPhone.slice(-8));
+  // 8. Client answers their photo consent request: POST /presence/chair/consent-response
+  fastify.post(
+    '/presence/chair/consent-response',
+    { preHandler: [fastify.authenticateUser] },
+    async (request, reply) => {
+      noStore(reply);
+      const authUser = request.authUser;
+      if (!authUser || authUser.role !== 'cliente') {
+        return reply.status(403).send({ error: 'FORBIDDEN', message: 'A client account is required' });
       }
-    }
+      const parsed = consentResponseSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply
+          .status(400)
+          .send({ error: 'INVALID_PAYLOAD', message: 'requestId and isPublic are required' });
+      }
+      const row = await photoConsents.respond(authUser.id, parsed.data.requestId, parsed.data.isPublic);
+      if (!row) {
+        return reply
+          .status(404)
+          .send({ error: 'NOT_FOUND', message: 'Pending consent request not found' });
+      }
 
-    if (resp && Date.now() - resp.timestamp < 180000) {
-      // Consumir la respuesta para que no interfiera en cortes futuros
-      if (barberId) pendingConsentResponses.delete(barberId);
-      if (normName) pendingConsentResponses.delete(normName);
-      if (normClient) pendingConsentResponses.delete(normClient);
-      if (cleanPhone) {
-        pendingConsentResponses.delete(cleanPhone);
-        if (cleanPhone.length >= 8) {
-          pendingConsentResponses.delete(cleanPhone.slice(-8));
+      // Notify the active barber WebSocket (best effort; polling is the source of truth).
+      for (const entry of presenceGateway.getAllSockets()) {
+        if (entry.barberId === row.barberId && entry.socket.readyState === WebSocket.OPEN) {
+          entry.socket.send(
+            JSON.stringify({
+              type: 'PHOTO_CONSENT_RESPONSE',
+              requestId: row.id,
+              isPublic: row.isPublic,
+              clientPhone: authUser.phone ?? '',
+              timestamp: row.respondedAt?.getTime() ?? Date.now(),
+            })
+          );
         }
       }
-      return reply.status(200).send({ hasResponse: true, response: resp });
+
+      return reply.status(200).send({ success: true, message: 'Consent response recorded', status: row.status });
     }
-    return reply.status(200).send({ hasResponse: false, response: null });
-  });
+  );
+
+  // 9. Barber polls for the client's answer: GET /presence/chair/consent-response
+  fastify.get(
+    '/presence/chair/consent-response',
+    { preHandler: [fastify.authenticateBarber] },
+    async (request, reply) => {
+      noStore(reply);
+      const { requestId } = (request.query as { requestId?: string }) || {};
+      const { answered, status } = await photoConsents.consumeResponseForBarber(
+        request.barber.id,
+        requestId || undefined
+      );
+      if (!answered) {
+        return reply.status(200).send({ hasResponse: false, response: null, status });
+      }
+      return reply.status(200).send({
+        hasResponse: true,
+        status,
+        response: {
+          requestId: answered.id,
+          barberId: answered.barberId,
+          clientPhone: answered.client.phone ?? '',
+          isPublic: answered.isPublic,
+          timestamp: answered.respondedAt?.getTime() ?? Date.now(),
+        },
+      });
+    }
+  );
 
   // 10. Update Barber Presence: PUT /presence/:barberId
   fastify.put(

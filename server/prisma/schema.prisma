@@ -49,6 +49,13 @@ enum ChairBindingStatus {
   CANCELLED
 }
 
+enum PhotoConsentStatus {
+  PENDING
+  GRANTED
+  DENIED
+  EXPIRED
+}
+
 enum ClientActivityType {
   HISTORY_VIEW
   CONSENT_UPDATE
@@ -111,6 +118,7 @@ model Barber {
   acquiredClients Client[]        @relation("BarberAcquisitions")
   rewardClaims  RewardClaim[]
   chairBindingRequests ChairBindingRequest[]
+  photoConsentRequests PhotoConsentRequest[]
   acceptsBookings Boolean         @default(true)
   bookingNoticeMin Int            @default(15)
   workingHours  Json?
@@ -165,6 +173,7 @@ model Client {
   activities   ClientActivity[]
   emailVerificationTokens EmailVerificationToken[]
   chairBindingRequests ChairBindingRequest[]
+  photoConsentRequests PhotoConsentRequest[]
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
@@ -196,6 +205,32 @@ model ChairBindingRequest {
   @@index([clientId])
 }
 
+// In-chair photo consent: the barber asks the client (authenticated, on their own device)
+// whether a cut may be published. No image data is stored here, only ids and short text.
+// activeKey ("<barberId>:<clientId>" while PENDING, NULL afterwards) keeps one open request
+// per pair. isPublic is only meaningful once the client answered.
+model PhotoConsentRequest {
+  id                 String               @id @default(uuid())
+  barberId           String
+  barber             Barber               @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  clientId           String
+  client             Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  cutId              String?
+  cut                Cut?                 @relation(fields: [cutId], references: [id], onDelete: SetNull)
+  status             PhotoConsentStatus   @default(PENDING)
+  activeKey          String?              @unique
+  isPublic           Boolean              @default(false)
+  styleName          String?
+  notes              String?
+  responseConsumedAt DateTime?
+  createdAt          DateTime             @default(now())
+  expiresAt          DateTime
+  respondedAt        DateTime?
+
+  @@index([clientId, status, expiresAt])
+  @@index([barberId, status, respondedAt])
+}
+
 model ClientProfile {
   id          String   @id @default(uuid())
   clientId    String
@@ -221,6 +256,7 @@ model Cut {
   finishedAt        DateTime?
   rapidClosure      Boolean       @default(false)
   photos            CutPhoto[]
+  photoConsentRequests PhotoConsentRequest[]
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
