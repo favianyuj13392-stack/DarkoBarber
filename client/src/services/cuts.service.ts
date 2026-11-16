@@ -53,66 +53,57 @@ export interface ClientHistoryResponse {
   }>;
 }
 
-/**
- * Iniciar corte en sillón (POST /api/cuts)
- */
-export async function startCut(
-  clientProfileId: string,
-  clientRequestId?: string,
-  clientPhone?: string,
-  clientName?: string
-): Promise<{ cut: CutRecord }> {
-  const token = getStoredToken();
-  const reqId = clientRequestId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `cut-${Date.now()}`);
+export interface StartCutParams {
+  /** Registered client id from the chair handshake. Preferred when known. */
+  clientId?: string;
+  clientProfileId?: string;
+  clientPhone?: string;
+  clientName?: string;
+  clientRequestId?: string;
+}
 
-  try {
-    const response = await fetch('/api/cuts', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Client-Request-Id': reqId,
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({
-        clientProfileId,
-        clientPhone,
-        clientName,
-        clientRequestId: reqId,
-        startedAt: new Date().toISOString(),
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      console.warn('Backend startCut returned error, using offline cut session:', err);
-      return {
-        cut: {
-          id: reqId,
-          barberId: 'barber-diego',
-          clientProfileId,
-          status: 'IN_PROGRESS',
-          startedAt: new Date().toISOString(),
-        },
-      };
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.warn('Network error calling startCut, continuing offline:', error);
-    return {
-      cut: {
-        id: reqId,
-        barberId: 'barber-diego',
-        clientProfileId,
-        status: 'IN_PROGRESS',
-        startedAt: new Date().toISOString(),
-      },
-    };
-  }
+async function readApiError(response: Response, fallback: string): Promise<string> {
+  const body = (await response.json().catch(() => ({}))) as { message?: string };
+  return body.message || fallback;
 }
 
 /**
- * Finalizar corte y registrar ficha técnica (POST /api/cuts/:id/finalize)
+ * Starts a cut on the chair (POST /api/cuts). The server needs a real client identification
+ * (client id, profile id or phone). Throws when the cut was not created so the UI never
+ * shows a cut that does not exist.
+ */
+export async function startCut(params: StartCutParams): Promise<{ cut: CutRecord }> {
+  const token = getStoredToken();
+  const reqId =
+    params.clientRequestId ||
+    (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `cut-${Date.now()}`);
+
+  const response = await fetch('/api/cuts', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Client-Request-Id': reqId,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      clientId: params.clientId || undefined,
+      clientProfileId: params.clientProfileId || undefined,
+      clientPhone: params.clientPhone || undefined,
+      clientName: params.clientName || undefined,
+      clientRequestId: reqId,
+      startedAt: new Date().toISOString(),
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response, 'No se pudo iniciar el corte'));
+  }
+  return await response.json();
+}
+
+/**
+ * Finalizes a cut and stores its technical sheet (POST /api/cuts/:id/finalize).
+ * Throws when the server did not confirm, instead of pretending the cut was saved.
  */
 export async function finalizeCut(
   cutId: string,
@@ -122,41 +113,25 @@ export async function finalizeCut(
 ): Promise<{ cut: CutRecord }> {
   const token = getStoredToken();
 
-  try {
-    const response = await fetch(`/api/cuts/${cutId}/finalize`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({
-        chips,
-        photos,
-        isPublic,
-        finishedAt: new Date().toISOString(),
-      }),
-    });
-
-    if (response.ok) {
-      return await response.json();
-    }
-  } catch (error) {
-    console.warn('Network error finalizeCut, using local completion:', error);
-  }
-
-  return {
-    cut: {
-      id: cutId,
-      barberId: 'barber-diego',
-      clientProfileId: 'client-active',
-      status: 'COMPLETED',
-      startedAt: new Date(Date.now() - 30 * 60000).toISOString(),
-      finishedAt: new Date().toISOString(),
-      chips,
+  const response = await fetch(`/api/cuts/${cutId}/finalize`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-  };
-}
+    body: JSON.stringify({
+      chips,
+      photos,
+      isPublic,
+      finishedAt: new Date().toISOString(),
+    }),
+  });
 
+  if (!response.ok) {
+    throw new Error(await readApiError(response, 'No se pudo finalizar el corte'));
+  }
+  return await response.json();
+}
 
 /**
  * Fetches a client's history by phone (GET /api/clients/:phone/history).

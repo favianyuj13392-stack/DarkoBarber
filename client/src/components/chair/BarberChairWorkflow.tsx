@@ -64,15 +64,8 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
 
   const handleConnectClient = (phone: string, clientInfo?: IncomingClientHandshake) => {
     setActiveClientPhone(phone);
-    if (clientInfo) {
-      setActiveClient(clientInfo);
-    } else {
-      setActiveClient({
-        displayName: 'Ernesto Salinas',
-        phone,
-        avatarUrl: '/assets/images/1.png',
-      });
-    }
+    // A phone typed by the barber has no known profile: do not invent a name for it.
+    setActiveClient(clientInfo ?? null);
     presenceService.setStatus('RED');
   };
 

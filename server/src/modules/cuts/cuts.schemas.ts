@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export const startCutSchema = z.object({
   clientProfileId: z.string().optional(),
+  clientId: z.string().optional(),
   clientPhone: z.string().optional(),
   clientName: z.string().optional(),
   clientRequestId: z.string().min(1, 'Client request ID is required'),

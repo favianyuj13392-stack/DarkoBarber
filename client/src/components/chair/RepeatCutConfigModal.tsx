@@ -99,6 +99,7 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
   const [isCutActive, setIsCutActive] = useState(false);
   const [activeCutId, setActiveCutId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [cutError, setCutError] = useState<string | null>(null);
 
   // New Cut Photos State
   const [newPhotos, setNewPhotos] = useState<Array<{ angle: string; img: string }>>([
@@ -142,11 +143,14 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
 
   const handleStartCut = async () => {
     setLoading(true);
+    setCutError(null);
     try {
-      const res = await startCut('client-active', undefined, clientPhone, clientName);
+      const res = await startCut({ clientId, clientPhone, clientName });
       setActiveCutId(res.cut.id);
       setIsCutActive(true);
       presenceService.setStatus('RED');
+    } catch (err) {
+      setCutError(err instanceof Error ? err.message : 'No se pudo iniciar el corte');
     } finally {
       setLoading(false);
     }
@@ -208,6 +212,7 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
 
   const handleCompleteAndFinalize = async () => {
     setLoading(true);
+    setCutError(null);
     const chips: CutChips = {
       baseLateral,
       tipoDegradado,
@@ -232,7 +237,7 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
     try {
       let cutIdToFinalize = activeCutId;
       if (!cutIdToFinalize) {
-        const startRes = await startCut('client-active', undefined, clientPhone, clientName);
+        const startRes = await startCut({ clientId, clientPhone, clientName });
         cutIdToFinalize = startRes.cut.id;
         setActiveCutId(cutIdToFinalize);
       }
@@ -285,6 +290,8 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
       setIsCutActive(false);
       setStep('config');
       onCutFinalized();
+    } catch (err) {
+      setCutError(err instanceof Error ? err.message : 'No se pudo finalizar el corte');
     } finally {
       setLoading(false);
     }
@@ -500,6 +507,11 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
 
               {/* Botón de Iniciar o Finalizar */}
               <div className="pt-2">
+                {cutError ? (
+                  <p role="alert" className="text-[11px] text-red-400 text-center pb-2">
+                    {cutError}
+                  </p>
+                ) : null}
                 {!isCutActive ? (
                   <motion.button
                     type="button"
@@ -678,6 +690,11 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
                 {consentError ? (
                   <p role="alert" className="text-[11px] text-red-400 text-center">
                     {consentError}
+                  </p>
+                ) : null}
+                {cutError ? (
+                  <p role="alert" className="text-[11px] text-red-400 text-center">
+                    {cutError}
                   </p>
                 ) : null}
 

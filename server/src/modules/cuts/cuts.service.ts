@@ -1,10 +1,17 @@
 import { PrismaClient } from '@prisma/client';
 import { StartCutInput, FinalizeCutInput } from './cuts.schemas';
-import { ConflictError, ForbiddenError, NotFoundError } from '../../utils/errors';
+import { AppError, ForbiddenError, NotFoundError } from '../../utils/errors';
 import { AuthenticatedBarber } from '../../types';
 import { PresenceService } from '../presence/presence.service';
 import { getMonthlyCutUsage, getPlanCutLimit } from './cut-quota';
 import { laPazMonthStartUtc } from '../../utils/la-paz-date';
+import { ClientsService } from '../clients/clients.service';
+import { normalizePhone } from '../bookings/bookings.schemas';
+
+type ResolvedClient =
+  | { kind: 'profile'; profileId: string }
+  | { kind: 'client'; clientId: string }
+  | { kind: 'new-by-phone'; phone: string; name: string | null };
 
 export class CutsService {
   private presenceService: PresenceService;
@@ -21,6 +28,10 @@ export class CutsService {
     if (existingCut) {
       return { cut: existingCut, isDuplicate: true };
     }
+
+    // 1b. Identify the client before any side effect. A cut always belongs to a real,
+    // identifiable client; nothing is invented when the request does not identify one.
+    const resolved = await this.identifyClient(input);
 
     // 2. Si ya hay un corte activo para este barbero, lo cerramos para permitir reiniciar sin trabas
     const activeCut = await this.prisma.cut.findFirst({
@@ -51,66 +62,9 @@ export class CutsService {
       }
     }
 
-    // 4. Asegurar que existe un ClientProfile válido en PostgreSQL asociado al cliente correcto
-    let profile = input.clientProfileId && input.clientProfileId !== 'client-active'
-      ? await this.prisma.clientProfile.findUnique({
-          where: { id: input.clientProfileId },
-        })
-      : null;
-
-    if (!profile) {
-      const cleanPhone = (input.clientPhone || '').replace(/\D/g, '');
-      let client = cleanPhone
-        ? await this.prisma.client.findFirst({
-            where: {
-              OR: [
-                { phone: input.clientPhone },
-                { phone: cleanPhone },
-                { phone: `+591${cleanPhone.slice(-8)}` },
-                { phone: cleanPhone.slice(-8) },
-              ],
-            },
-            include: { profiles: true },
-          })
-        : null;
-
-      if (!client && input.clientName) {
-        client = await this.prisma.client.findFirst({
-          where: {
-            displayName: { contains: input.clientName, mode: 'insensitive' },
-          },
-          include: { profiles: true },
-        });
-      }
-
-      if (!client) {
-        client = await this.prisma.client.create({
-          data: {
-            displayName: input.clientName || 'Ernesto Salinas',
-            phone: input.clientPhone || '+591 712 34567',
-            email: `cliente-${cleanPhone || Date.now()}@fade.bo`,
-            profiles: {
-              create: [{ name: input.clientName || 'Ernesto Salinas' }],
-            },
-          },
-          include: { profiles: true },
-        });
-      } else if (!client.phone && input.clientPhone) {
-        await this.prisma.client.update({
-          where: { id: client.id },
-          data: { phone: input.clientPhone },
-        });
-      }
-
-      profile =
-        client.profiles[0] ||
-        (await this.prisma.clientProfile.create({
-          data: {
-            clientId: client.id,
-            name: client.displayName || 'Perfil Principal',
-          },
-        }));
-    }
+    // 4. Resolve the ClientProfile the cut is attached to (creating a phone-identified
+    // client only now, after the quota check, so a rejected start leaves no stray rows).
+    const profileId = await this.materializeProfile(resolved);
 
     // 5. Create cut record en PostgreSQL
     // startedAt is client-supplied (offline sync). Clamp it to the current La Paz month so a
@@ -122,7 +76,7 @@ export class CutsService {
       data: {
         clientRequestId: input.clientRequestId,
         barberId: barber.id,
-        clientProfileId: profile.id,
+        clientProfileId: profileId,
         status: 'IN_PROGRESS',
         startedAt,
       },
@@ -132,6 +86,80 @@ export class CutsService {
     await this.presenceService.setCutting(barber.id, cut.id, barber.shopId);
 
     return { cut, isDuplicate: false };
+  }
+
+  /**
+   * Decides which real client a cut is for, without writing anything.
+   * Accepts, in order: an existing clientProfileId, an existing clientId, or a valid phone
+   * (matched exactly on its normalized forms; never by name). Anything else is rejected.
+   */
+  private async identifyClient(input: StartCutInput): Promise<ResolvedClient> {
+    if (input.clientProfileId) {
+      const profile = await this.prisma.clientProfile.findUnique({
+        where: { id: input.clientProfileId },
+        select: { id: true },
+      });
+      if (!profile) {
+        throw new NotFoundError('CLIENT_PROFILE_NOT_FOUND', 'Client profile not found');
+      }
+      return { kind: 'profile', profileId: profile.id };
+    }
+
+    if (input.clientId) {
+      const client = await this.prisma.client.findUnique({
+        where: { id: input.clientId },
+        select: { id: true },
+      });
+      if (!client) {
+        throw new NotFoundError('CLIENT_NOT_FOUND', 'Client not found');
+      }
+      return { kind: 'client', clientId: client.id };
+    }
+
+    if (!input.clientPhone) {
+      throw new AppError(
+        'CLIENT_REQUIRED',
+        'A client profile, client id or phone number is required to start a cut',
+        400
+      );
+    }
+    const phone = normalizePhone(input.clientPhone);
+    if (!phone) {
+      throw new AppError('INVALID_PHONE', 'The client phone number is not valid', 400);
+    }
+    const existing = await new ClientsService(this.prisma).findClientByPhone(phone);
+    if (existing) return { kind: 'client', clientId: existing.id };
+    return { kind: 'new-by-phone', phone, name: input.clientName?.trim() || null };
+  }
+
+  private async materializeProfile(resolved: ResolvedClient): Promise<string> {
+    if (resolved.kind === 'profile') return resolved.profileId;
+
+    let clientId: string;
+    let displayName: string | null;
+    if (resolved.kind === 'client') {
+      clientId = resolved.clientId;
+      const existing = await this.prisma.client.findUniqueOrThrow({
+        where: { id: clientId },
+        select: { displayName: true, profiles: { orderBy: { createdAt: 'asc' }, take: 1 } },
+      });
+      if (existing.profiles[0]) return existing.profiles[0].id;
+      displayName = existing.displayName;
+    } else {
+      // Walk-in with a real phone: only what the barber provided. No email, no invented name.
+      const created = await this.prisma.client.create({
+        data: { phone: resolved.phone, displayName: resolved.name },
+        select: { id: true },
+      });
+      clientId = created.id;
+      displayName = resolved.name;
+    }
+
+    const profile = await this.prisma.clientProfile.create({
+      data: { clientId, name: displayName || 'Perfil Principal' },
+      select: { id: true },
+    });
+    return profile.id;
   }
 
   async finalizeCut(barberId: string, cutId: string, input: FinalizeCutInput) {
