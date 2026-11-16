@@ -2,38 +2,30 @@ import type { IncomingClientHandshake } from './presence.service';
 import { getStoredToken } from './auth.service';
 import { getDeviceId } from '../utils/device-id';
 
+/** Same-browser channel still used to refresh the client's cut feed (not for handshakes or consent). */
 export const CHAIR_SYNC_CHANNEL_NAME = 'fade_chair_sync';
-export const CHAIR_PENDING_STORAGE_KEY = 'fade_pending_chair_handshake';
-export const PHOTO_CONSENT_REQUEST_STORAGE_KEY = 'fade_photo_consent_request';
-export const PHOTO_CONSENT_RESPONSE_STORAGE_KEY = 'fade_photo_consent_response';
 
-export interface ChairHandshakePayload {
-  barberId: string;
-  barberName?: string;
-  client: IncomingClientHandshake;
-  timestamp: number;
-}
-
+/** A photo consent request as seen by the addressed client. Server-driven. */
 export interface PhotoConsentRequestPayload {
+  requestId: string;
   barberId: string;
   barberName: string;
   clientPhone: string;
-  clientName?: string;
-  photoUrl: string;
-  photos?: Array<{ id: string; url: string; angle: string }>;
   styleName: string;
-  chips?: Record<string, unknown>;
   notes?: string;
   timestamp: number;
+  expiresAt: string;
 }
 
 export interface PhotoConsentResponsePayload {
+  requestId: string;
   barberId: string;
   clientPhone: string;
-  clientName?: string;
   isPublic: boolean;
   timestamp: number;
 }
+
+export type PhotoConsentRequestStatus = 'PENDING' | 'GRANTED' | 'DENIED' | 'EXPIRED';
 
 export const PENDING_CHAIR_BIND_STORAGE_KEY = 'fade_pending_chair_bind';
 
@@ -67,6 +59,7 @@ export class ChairBindError extends Error {
 }
 
 export interface ChairBindResult {
+  requestId?: string;
   client: IncomingClientHandshake;
   isFirstScan: boolean;
   acquiredCount: number;
@@ -178,11 +171,13 @@ export async function sendChairHandshake(
   }
 
   const data = (await res.json()) as {
+    requestId?: string;
     client: IncomingClientHandshake;
     isFirstScan?: boolean;
     acquiredCount?: number;
   };
   const result: ChairBindResult = {
+    requestId: data.requestId,
     client: {
       ...data.client,
       isFirstScan: data.isFirstScan,
@@ -192,265 +187,143 @@ export async function sendChairHandshake(
     acquiredCount: data.acquiredCount ?? 0,
   };
 
-  // Same-browser sync for the barber view, only after the server confirmed the bind.
-  const payload: ChairHandshakePayload = {
-    barberId,
-    barberName,
-    client: result.client,
-    timestamp: Date.now(),
-  };
-  if (typeof BroadcastChannel !== 'undefined') {
-    try {
-      const bc = new BroadcastChannel(CHAIR_SYNC_CHANNEL_NAME);
-      bc.postMessage(payload);
-      bc.close();
-    } catch (err) {
-      console.warn('BroadcastChannel error:', err);
-    }
-  }
-  try {
-    localStorage.setItem(CHAIR_PENDING_STORAGE_KEY, JSON.stringify(payload));
-  } catch (err) {
-    console.warn('LocalStorage error:', err);
-  }
-
   return result;
 }
 
+function authHeaders(json = false): Record<string, string> | null {
+  const token = getStoredToken();
+  if (!token) return null;
+  return json
+    ? { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+    : { Authorization: `Bearer ${token}` };
+}
+
 /**
- * Consulta al backend si hay un cliente pendiente esperando en el sillón del barbero.
+ * Barber side: asks the server whether a client is waiting at this barber's chair.
+ * The barber is identified by the session token; each handshake is returned once.
+ * Resolves to null when nothing is pending or the request failed.
  */
-export async function pollPendingChairSession(
-  barberId: string,
-  barberName?: string
-): Promise<IncomingClientHandshake | null> {
+export async function pollPendingChairSession(): Promise<IncomingClientHandshake | null> {
+  const headers = authHeaders();
+  if (!headers) return null;
   try {
-    const query = new URLSearchParams({
-      barberId: barberId || '',
-      name: barberName || '',
+    const res = await fetch('/api/presence/chair/session', { headers });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      hasPending?: boolean;
+      requestId?: string;
+      client?: IncomingClientHandshake;
+    };
+    if (data.hasPending && data.client) {
+      return { ...data.client, requestId: data.requestId };
+    }
+  } catch {
+    // transient network error: the next poll retries
+  }
+  return null;
+}
+
+/** Barber side: accept or dismiss a handshake received through the poll. */
+export async function respondChairRequest(
+  requestId: string,
+  action: 'accept' | 'decline'
+): Promise<boolean> {
+  const headers = authHeaders(true);
+  if (!headers) return false;
+  try {
+    const res = await fetch(`/api/presence/chair/session/${encodeURIComponent(requestId)}/respond`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ action }),
     });
-
-    const endpoints = [
-      `/api/presence/chair/session?${query.toString()}`,
-      `/presence/chair/session?${query.toString()}`,
-    ];
-
-    for (const url of endpoints) {
-      try {
-        const res = await fetch(url);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.hasPending && data.client) {
-            return data.client as IncomingClientHandshake;
-          }
-        }
-      } catch {
-        // try fallback
-      }
-    }
-  } catch (err) {
-    console.warn('Poll chair session error:', err);
+    return res.ok;
+  } catch {
+    return false;
   }
-  return null;
 }
 
 /**
- * El barbero envía la solicitud de publicación al celular del cliente.
+ * Barber side: asks the addressed client for photo publication consent.
+ * Only ids and short text are sent; photos use the regular photo endpoints.
+ * Returns the request id, or throws when the server refuses.
  */
-export async function requestPhotoConsent(
-  payload: Omit<PhotoConsentRequestPayload, 'timestamp'>
-): Promise<void> {
-  const fullPayload: PhotoConsentRequestPayload = {
-    ...payload,
-    timestamp: Date.now(),
-  };
-
-  // 1. BroadcastChannel
-  if (typeof BroadcastChannel !== 'undefined') {
-    try {
-      const bc = new BroadcastChannel(CHAIR_SYNC_CHANNEL_NAME);
-      bc.postMessage({
-        type: 'PHOTO_CONSENT_REQUEST',
-        ...fullPayload,
-      });
-      bc.close();
-    } catch (err) {
-      console.warn('BroadcastChannel error:', err);
-    }
+export async function requestPhotoConsent(payload: {
+  clientId?: string;
+  clientPhone?: string;
+  cutId?: string;
+  styleName?: string;
+  notes?: string;
+}): Promise<string> {
+  const headers = authHeaders(true);
+  if (!headers) throw new Error('Barber session missing');
+  const res = await fetch('/api/presence/chair/consent-request', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message || `Consent request failed (${res.status})`);
   }
+  const data = (await res.json()) as { requestId: string };
+  return data.requestId;
+}
 
-  // 2. LocalStorage
+/** Client side: fetches the pending consent request addressed to the signed-in client. */
+export async function pollPhotoConsentRequest(): Promise<PhotoConsentRequestPayload | null> {
+  const headers = authHeaders();
+  if (!headers) return null;
   try {
-    localStorage.setItem(PHOTO_CONSENT_REQUEST_STORAGE_KEY, JSON.stringify(fullPayload));
-  } catch (err) {
-    console.warn('LocalStorage error:', err);
+    const res = await fetch('/api/presence/chair/consent-request', { headers });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { hasPending?: boolean; request?: PhotoConsentRequestPayload };
+    return data.hasPending && data.request ? data.request : null;
+  } catch {
+    return null;
   }
+}
 
-  // 3. Backend REST API
+/** Client side: answers a consent request. Returns false when the server did not record it. */
+export async function respondPhotoConsent(requestId: string, isPublic: boolean): Promise<boolean> {
+  const headers = authHeaders(true);
+  if (!headers) return false;
   try {
-    const endpoints = ['/api/presence/chair/consent-request', '/presence/chair/consent-request'];
-    for (const url of endpoints) {
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(fullPayload),
-        });
-        if (res.ok) {
-          break;
-        } else {
-          console.warn(`POST consent-request to ${url} returned status: ${res.status}`);
-        }
-      } catch (err) {
-        console.warn(`Fetch error for ${url}:`, err);
-      }
-    }
-  } catch (err) {
-    console.warn('Request photo consent error:', err);
+    const res = await fetch('/api/presence/chair/consent-response', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ requestId, isPublic }),
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 
 /**
- * El cliente consulta si su barbero le mandó solicitud de publicación de fotos.
- */
-export async function pollPhotoConsentRequest(
-  clientPhone?: string,
-  barberId?: string,
-  barberName?: string,
-  clientName?: string
-): Promise<PhotoConsentRequestPayload | null> {
-  try {
-    const params = new URLSearchParams();
-    if (clientPhone) params.append('phone', clientPhone.replace(/\D/g, ''));
-    if (barberId) params.append('barberId', barberId);
-    if (barberName) params.append('name', barberName);
-    if (clientName) params.append('clientName', clientName);
-
-    const endpoints = [
-      `/api/presence/chair/consent-request?${params.toString()}`,
-      `/presence/chair/consent-request?${params.toString()}`,
-    ];
-
-    for (const url of endpoints) {
-      try {
-        const res = await fetch(url, {
-          headers: { 'Cache-Control': 'no-cache' },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.hasPending && data.request) {
-            return data.request as PhotoConsentRequestPayload;
-          }
-        }
-      } catch {
-        // fallback
-      }
-    }
-  } catch (err) {
-    console.warn('Poll photo consent request error:', err);
-  }
-  return null;
-}
-
-/**
- * El cliente responde si autoriza publicación pública o solo privado.
- */
-export async function respondPhotoConsent(
-  barberId: string,
-  clientPhone: string,
-  isPublic: boolean,
-  barberName?: string,
-  clientName?: string
-): Promise<void> {
-  const payload: PhotoConsentResponsePayload & { barberName?: string; clientName?: string } = {
-    barberId,
-    barberName,
-    clientPhone,
-    clientName,
-    isPublic,
-    timestamp: Date.now(),
-  };
-
-  // 1. BroadcastChannel
-  if (typeof BroadcastChannel !== 'undefined') {
-    try {
-      const bc = new BroadcastChannel(CHAIR_SYNC_CHANNEL_NAME);
-      bc.postMessage({
-        type: 'PHOTO_CONSENT_RESPONSE',
-        ...payload,
-      });
-      bc.close();
-    } catch (err) {
-      console.warn('BroadcastChannel error:', err);
-    }
-  }
-
-  // 2. LocalStorage: Registrar respuesta y limpiar solicitud previa
-  try {
-    localStorage.removeItem(PHOTO_CONSENT_REQUEST_STORAGE_KEY);
-    localStorage.setItem(PHOTO_CONSENT_RESPONSE_STORAGE_KEY, JSON.stringify(payload));
-  } catch (err) {
-    console.warn('LocalStorage error:', err);
-  }
-
-  // 3. Backend REST API
-  try {
-    const endpoints = ['/api/presence/chair/consent-response', '/presence/chair/consent-response'];
-    for (const url of endpoints) {
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (res.ok) break;
-      } catch {
-        // fallback
-      }
-    }
-  } catch (err) {
-    console.warn('Respond photo consent error:', err);
-  }
-}
-
-/**
- * El barbero consulta si el cliente ya respondió a la solicitud de consentimiento.
+ * Barber side: checks the answer to a consent request. `response` is set once when the
+ * client answered; `status` tells the UI whether the request is still open or expired.
  */
 export async function pollPhotoConsentResponse(
-  barberId?: string,
-  barberName?: string,
-  clientPhone?: string,
-  clientName?: string
-): Promise<PhotoConsentResponsePayload | null> {
+  requestId: string
+): Promise<{ response: PhotoConsentResponsePayload | null; status: PhotoConsentRequestStatus | null }> {
+  const headers = authHeaders();
+  if (!headers) return { response: null, status: null };
   try {
-    const params = new URLSearchParams();
-    if (barberId) params.append('barberId', barberId);
-    if (barberName) params.append('name', barberName);
-    if (clientPhone) params.append('phone', clientPhone.replace(/\D/g, ''));
-    if (clientName) params.append('clientName', clientName);
-
-    const endpoints = [
-      `/api/presence/chair/consent-response?${params.toString()}`,
-      `/presence/chair/consent-response?${params.toString()}`,
-    ];
-
-    for (const url of endpoints) {
-      try {
-        const res = await fetch(url, {
-          headers: { 'Cache-Control': 'no-cache' },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.hasResponse && data.response) {
-            return data.response as PhotoConsentResponsePayload;
-          }
-        }
-      } catch {
-        // fallback
-      }
-    }
-  } catch (err) {
-    console.warn('Poll photo consent response error:', err);
+    const res = await fetch(
+      `/api/presence/chair/consent-response?requestId=${encodeURIComponent(requestId)}`,
+      { headers }
+    );
+    if (!res.ok) return { response: null, status: null };
+    const data = (await res.json()) as {
+      hasResponse?: boolean;
+      response?: PhotoConsentResponsePayload;
+      status?: PhotoConsentRequestStatus | null;
+    };
+    return {
+      response: data.hasResponse && data.response ? data.response : null,
+      status: data.status ?? null,
+    };
+  } catch {
+    return { response: null, status: null };
   }
-  return null;
 }

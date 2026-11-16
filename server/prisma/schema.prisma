@@ -42,6 +42,20 @@ enum AcquisitionStatus {
   REVOKED
 }
 
+enum ChairBindingStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+}
+
+enum PhotoConsentStatus {
+  PENDING
+  GRANTED
+  DENIED
+  EXPIRED
+}
+
 enum ClientActivityType {
   HISTORY_VIEW
   CONSENT_UPDATE
@@ -103,6 +117,8 @@ model Barber {
   freeMonthsEarned Int             @default(0)
   acquiredClients Client[]        @relation("BarberAcquisitions")
   rewardClaims  RewardClaim[]
+  chairBindingRequests ChairBindingRequest[]
+  photoConsentRequests PhotoConsentRequest[]
   acceptsBookings Boolean         @default(true)
   bookingNoticeMin Int            @default(15)
   workingHours  Json?
@@ -156,6 +172,8 @@ model Client {
   bookings     Booking[]
   activities   ClientActivity[]
   emailVerificationTokens EmailVerificationToken[]
+  chairBindingRequests ChairBindingRequest[]
+  photoConsentRequests PhotoConsentRequest[]
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
@@ -163,6 +181,54 @@ model Client {
   @@index([phone])
   @@index([firstScanBarberId])
   @@index([firstScanBarberId, acquisitionStatus])
+}
+
+// Chair handshake: a client scans a barber's QR and the barber picks the request up.
+// activeKey is "<barberId>:<clientId>" while the row is PENDING and NULL afterwards, so the
+// unique index enforces a single active pending request per (barber, client) race-free.
+model ChairBindingRequest {
+  id            String                 @id @default(uuid())
+  barberId      String
+  barber        Barber                 @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  clientId      String
+  client        Client                 @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  status        ChairBindingStatus     @default(PENDING)
+  activeKey     String?                @unique
+  isFirstScan   Boolean                @default(false)
+  acquiredCount Int                    @default(0)
+  deliveredAt   DateTime?
+  createdAt     DateTime               @default(now())
+  expiresAt     DateTime
+  respondedAt   DateTime?
+
+  @@index([barberId, status, expiresAt])
+  @@index([clientId])
+}
+
+// In-chair photo consent: the barber asks the client (authenticated, on their own device)
+// whether a cut may be published. No image data is stored here, only ids and short text.
+// activeKey ("<barberId>:<clientId>" while PENDING, NULL afterwards) keeps one open request
+// per pair. isPublic is only meaningful once the client answered.
+model PhotoConsentRequest {
+  id                 String               @id @default(uuid())
+  barberId           String
+  barber             Barber               @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  clientId           String
+  client             Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  cutId              String?
+  cut                Cut?                 @relation(fields: [cutId], references: [id], onDelete: SetNull)
+  status             PhotoConsentStatus   @default(PENDING)
+  activeKey          String?              @unique
+  isPublic           Boolean              @default(false)
+  styleName          String?
+  notes              String?
+  responseConsumedAt DateTime?
+  createdAt          DateTime             @default(now())
+  expiresAt          DateTime
+  respondedAt        DateTime?
+
+  @@index([clientId, status, expiresAt])
+  @@index([barberId, status, respondedAt])
 }
 
 model ClientProfile {
@@ -190,6 +256,7 @@ model Cut {
   finishedAt        DateTime?
   rapidClosure      Boolean       @default(false)
   photos            CutPhoto[]
+  photoConsentRequests PhotoConsentRequest[]
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 

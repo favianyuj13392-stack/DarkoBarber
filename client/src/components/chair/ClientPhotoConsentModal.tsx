@@ -42,23 +42,14 @@ export const ClientPhotoConsentModal: FC<ClientPhotoConsentModalProps> = ({
             </span>
           </div>
 
-          {/* Foto de Evidencia Subida por el Barbero */}
-          <div className="relative aspect-4/3 rounded-2xl overflow-hidden border-2 border-[#B68F4E]/40 shadow-xl bg-black">
-            <img
-              src={request.photoUrl || '/assets/images/1.png'}
-              alt="Nuevo corte realizado"
-              className="w-full h-full object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-3">
-              <div className="text-left space-y-0.5">
-                <span className="text-[10px] font-mono text-[#B68F4E] uppercase tracking-wider">
-                  Estilo realizado
-                </span>
-                <p className="text-sm font-bold text-white tracking-tight">
-                  {request.styleName || 'Fade Clásico · Texturizado'}
-                </p>
-              </div>
-            </div>
+          {/* Estilo realizado (the photo itself is never sent through the consent request) */}
+          <div className="rounded-2xl border-2 border-[#B68F4E]/40 bg-black px-4 py-5 text-left space-y-0.5">
+            <span className="text-[10px] font-mono text-[#B68F4E] uppercase tracking-wider">
+              Estilo realizado
+            </span>
+            <p className="text-sm font-bold text-white tracking-tight">
+              {request.styleName || 'Corte reciente'}
+            </p>
           </div>
 
           {/* Pregunta y Descripción */}

@@ -12,11 +12,8 @@ import {
   type BarberPresenceStatus,
   type IncomingClientHandshake,
 } from '../../services/presence.service';
-import {
-  CHAIR_SYNC_CHANNEL_NAME,
-  CHAIR_PENDING_STORAGE_KEY,
-  pollPendingChairSession,
-} from '../../services/chair.service';
+import { pollPendingChairSession, respondChairRequest } from '../../services/chair.service';
+import { useBackoffPolling } from '../../hooks/useBackoffPolling';
 import type { ClientHistoryResponse } from '../../services/cuts.service';
 import { getStoredUser } from '../../services/auth.service';
 
@@ -40,73 +37,30 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
   const barberId = currentUser?.id || 'barber-diego';
   const shopName = 'Fade Studio — Sopocachi';
 
-  // 1. Suscribirse a cambios de presencia y conectar WebSocket
+  // 1. Presence status (WebSocket) for the status pill.
   useEffect(() => {
     presenceService.connect();
-
     const unsubPresence = presenceService.subscribe((status) => {
       setPresenceStatus(status);
     });
-
-    // Escuchar solicitudes de clientes entrantes vía WebSocket
-    const unsubHandshake = presenceService.onClientHandshake((client) => {
-      setIncomingClient(client);
-    });
-
     return () => {
       unsubPresence();
-      unsubHandshake();
     };
   }, []);
 
-  // 2. Escuchar solicitudes vía BroadcastChannel (Cross-tab instantáneo en el mismo navegador)
-  useEffect(() => {
-    if (typeof BroadcastChannel !== 'undefined') {
-      const bc = new BroadcastChannel(CHAIR_SYNC_CHANNEL_NAME);
-      bc.onmessage = (event) => {
-        if (event.data?.client) {
-          setIncomingClient(event.data.client);
-        }
-      };
-      return () => {
-        bc.close();
-      };
-    }
-  }, []);
-
-  // 3. Escuchar solicitudes vía localStorage (Cross-window)
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === CHAIR_PENDING_STORAGE_KEY && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue);
-          if (parsed?.client) {
-            setIncomingClient(parsed.client);
-          }
-        } catch {
-          // ignore
-        }
-      }
-    };
-    window.addEventListener('storage', onStorage);
-    return () => {
-      window.removeEventListener('storage', onStorage);
-    };
-  }, []);
-
-  // 4. Polling periódico al servidor para clientes que escaneen desde otro dispositivo
-  useEffect(() => {
-    if (activeClientPhone) return;
-
-    const interval = setInterval(async () => {
-      const client = await pollPendingChairSession(barberId, barberName);
-      if (client) {
-        setIncomingClient(client);
-      }
-    }, 2500);
-
-    return () => clearInterval(interval);
-  }, [activeClientPhone, barberId, barberName]);
+  // 2. Incoming clients come from the server (works across devices). The poll backs off
+  // while idle, pauses on hidden tabs and stops once a client is seated or on unmount.
+  useBackoffPolling(
+    async () => {
+      const client = await pollPendingChairSession();
+      if (!client) return false;
+      setIncomingClient(client);
+      // Lets the standby view show the first-scan celebration.
+      presenceService.notifyHandshake(client);
+      return true;
+    },
+    { enabled: !activeClientPhone && !incomingClient, baseMs: 2000, maxMs: 8000 }
+  );
 
   const handleConnectClient = (phone: string, clientInfo?: IncomingClientHandshake) => {
     setActiveClientPhone(phone);
@@ -130,6 +84,7 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
 
   const handleAcceptIncomingClient = (client: IncomingClientHandshake) => {
     setIncomingClient(null);
+    if (client.requestId) void respondChairRequest(client.requestId, 'accept');
     handleConnectClient(client.phone, client);
   };
 
@@ -219,7 +174,10 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
       <IncomingClientChairModal
         client={incomingClient}
         onAccept={handleAcceptIncomingClient}
-        onDismiss={() => setIncomingClient(null)}
+        onDismiss={() => {
+          if (incomingClient?.requestId) void respondChairRequest(incomingClient.requestId, 'decline');
+          setIncomingClient(null);
+        }}
       />
 
       {/* Modal de Configuración de Chips y Fotos del Corte */}
@@ -230,8 +188,9 @@ export const BarberChairWorkflow: FC<BarberChairWorkflowProps> = ({ onExit }) =>
         onCapturePhoto={handleCapturePhoto}
         barberName={barberName}
         barberId={barberId}
-        clientPhone={activeClient?.phone || activeClientPhone || '+591 712 34567'}
-        clientName={activeClient?.displayName || 'Ernesto Salinas'}
+        clientId={activeClient?.id}
+        clientPhone={activeClient?.phone || activeClientPhone || ''}
+        clientName={activeClient?.displayName || ''}
       />
 
       {/* Modal de Consentimiento de Privacidad de Foto */}

@@ -3,17 +3,14 @@ import { getStoredToken } from './auth.service';
 export type BarberPresenceStatus = 'GREEN' | 'YELLOW' | 'RED' | 'OFFLINE';
 
 export interface IncomingClientHandshake {
+  id?: string;
+  requestId?: string;
   displayName: string;
   phone: string;
   avatarUrl?: string;
   notes?: string;
   isFirstScan?: boolean;
   acquiredCount?: number;
-}
-
-export interface IncomingConsentResponse {
-  isPublic: boolean;
-  clientPhone: string;
 }
 
 export interface PresenceMessage {
@@ -30,7 +27,6 @@ class PresenceClient {
   private waitingCount: number = 0;
   private listeners: Set<(status: BarberPresenceStatus, waitingCount: number) => void> = new Set();
   private handshakeListeners: Set<(client: IncomingClientHandshake) => void> = new Set();
-  private consentResponseListeners: Set<(response: IncomingConsentResponse) => void> = new Set();
 
   connect(): void {
     const token = getStoredToken();
@@ -60,10 +56,6 @@ class PresenceClient {
             this.notify();
           } else if (data.type === 'CLIENT_CHAIR_HANDSHAKE' && data.client) {
             this.notifyHandshake(data.client);
-          } else if (data.type === 'PHOTO_CONSENT_RESPONSE') {
-            this.consentResponseListeners.forEach((l) =>
-              l({ isPublic: Boolean(data.isPublic), clientPhone: data.clientPhone })
-            );
           }
         } catch {
           // ignore non-json
@@ -178,13 +170,6 @@ class PresenceClient {
     this.handshakeListeners.add(listener);
     return () => {
       this.handshakeListeners.delete(listener);
-    };
-  }
-
-  onPhotoConsentResponse(listener: (response: IncomingConsentResponse) => void): () => void {
-    this.consentResponseListeners.add(listener);
-    return () => {
-      this.consentResponseListeners.delete(listener);
     };
   }
 
