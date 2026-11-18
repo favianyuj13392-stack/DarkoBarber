@@ -150,11 +150,3 @@ export const MOCK_HAIRCUTS: HaircutItem[] = [
     },
   },
 ];
-
-export const MOCK_BARBER_FILTERS = [
-  { id: 'all', name: 'Todos los profesionales', shop: 'Todas las sedes', count: 18 },
-  { id: 'brian', name: 'Brian López', shop: 'Estudio 16', count: 8 },
-  { id: 'matias', name: 'Matias Rojas', shop: 'The Barber Club', count: 5 },
-  { id: 'diego', name: 'Diego Arce', shop: 'Barbería Central', count: 4 },
-  { id: 'luis', name: 'Luis Fernández', shop: 'Mid Fade Studio', count: 2 },
-];

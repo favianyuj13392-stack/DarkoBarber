@@ -242,25 +242,33 @@ export const BarberDetailView: FC<BarberDetailViewProps> = ({
         {/* TAB SERVICIOS */}
         {activeTab === 'servicios' && (
           <div className="space-y-2.5">
-            {barber.services.map((srv) => (
-              <div
-                key={srv.id}
-                className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between"
-              >
-                <div className="space-y-1">
-                  <h4 className="text-sm font-bold text-white">{srv.name}</h4>
-                  <p className="text-xs text-white/60 max-w-md">{srv.description}</p>
-                  <span className="text-[11px] text-[#D9C9B0]/70 flex items-center gap-1">
-                    <Clock className="w-3 h-3" /> {srv.durationMin} min
-                  </span>
+            {barber.services.length === 0 ? (
+              <p className="text-center text-xs text-white/50 py-8">
+                Este barbero aún no tiene servicios disponibles.
+              </p>
+            ) : (
+              barber.services.map((srv) => (
+                <div
+                  key={srv.id}
+                  className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between"
+                >
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-bold text-white">{srv.name}</h4>
+                    {srv.description && (
+                      <p className="text-xs text-white/60 max-w-md">{srv.description}</p>
+                    )}
+                    <span className="text-[11px] text-[#D9C9B0]/70 flex items-center gap-1">
+                      <Clock className="w-3 h-3" /> {srv.durationMin} min
+                    </span>
+                  </div>
+                  <div className="text-right flex-shrink-0 pl-4">
+                    <span className="text-sm font-mono font-bold text-[#B68F4E]">
+                      {srv.priceBs} Bs
+                    </span>
+                  </div>
                 </div>
-                <div className="text-right flex-shrink-0 pl-4">
-                  <span className="text-sm font-mono font-bold text-[#B68F4E]">
-                    {srv.priceBs} Bs
-                  </span>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         )}
 
@@ -319,24 +327,32 @@ export const BarberDetailView: FC<BarberDetailViewProps> = ({
       {/* 6. Sticky Bottom Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-black/90 border-t border-white/10 backdrop-blur-2xl z-30">
         <div className="max-w-md mx-auto flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => {
-              window.open(`https://wa.me/59177212345?text=Hola%20${encodeURIComponent(barber.name)}`, '_blank');
-            }}
-            className="p-3.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/15 text-white/80 hover:text-white transition-all cursor-pointer"
-            title="Enviar mensaje por WhatsApp"
-          >
-            <MessageCircle className="w-5 h-5 text-[#B68F4E]" />
-          </button>
+          {barber.phone && (
+            <button
+              type="button"
+              onClick={() => {
+                const cleanPhone = barber.phone?.replace(/[^0-9]/g, '');
+                window.open(`https://wa.me/${cleanPhone}?text=Hola%20${encodeURIComponent(barber.name)}`, '_blank');
+              }}
+              className="p-3.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/15 text-white/80 hover:text-white transition-all cursor-pointer"
+              title="Enviar mensaje por WhatsApp"
+            >
+              <MessageCircle className="w-5 h-5 text-[#B68F4E]" />
+            </button>
+          )}
 
           <button
             type="button"
+            disabled={barber.services.length === 0}
             onClick={() => onOpenBooking(barber)}
-            className="flex-1 py-3.5 rounded-2xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-extrabold text-xs uppercase tracking-wider shadow-[0_8px_24px_rgba(217,201,176,0.35),inset_0_1px_0_rgba(255,255,255,0.8)] hover:brightness-105 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2"
+            className={`flex-1 py-3.5 rounded-2xl font-extrabold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
+              barber.services.length === 0
+                ? 'bg-white/10 text-white/30 cursor-not-allowed border border-white/10'
+                : 'bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black shadow-[0_8px_24px_rgba(217,201,176,0.35),inset_0_1px_0_rgba(255,255,255,0.8)] hover:brightness-105 active:scale-[0.99] cursor-pointer'
+            }`}
           >
             <Sparkles className="w-4 h-4" />
-            <span>Solicitar reserva</span>
+            <span>{barber.services.length === 0 ? 'Sin servicios disponibles' : 'Solicitar reserva'}</span>
           </button>
         </div>
       </div>

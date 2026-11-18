@@ -2,12 +2,19 @@ import { useState } from 'react';
 import type { FC } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, ChevronRight, User, Store, Check } from 'lucide-react';
-import { MOCK_BARBER_FILTERS } from '../../data/mockHistory';
 import { SPRING_TOUCH, SPRING_MODAL } from '../../constants/springs';
+
+export interface BarberFilterOption {
+  id: string;
+  name: string;
+  shop: string;
+  count: number;
+}
 
 interface HistorialFilterModalProps {
   isOpen: boolean;
   selectedBarberId: string;
+  barbers?: BarberFilterOption[];
   onSelectBarber: (barberId: string) => void;
   onClose: () => void;
 }
@@ -15,6 +22,7 @@ interface HistorialFilterModalProps {
 export const HistorialFilterModal: FC<HistorialFilterModalProps> = ({
   isOpen,
   selectedBarberId,
+  barbers = [{ id: 'all', name: 'Todos los profesionales', shop: 'Todas las sedes', count: 0 }],
   onSelectBarber,
   onClose,
 }) => {
@@ -93,7 +101,7 @@ export const HistorialFilterModal: FC<HistorialFilterModalProps> = ({
 
           {/* Lista de Barberos */}
           <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
-            {MOCK_BARBER_FILTERS.map((item) => {
+            {barbers.map((item) => {
               const isSelected = selectedBarberId === item.id;
 
               return (

@@ -3,15 +3,16 @@ export type BarberPresenceStatus = 'GREEN' | 'YELLOW' | 'RED' | 'GRAY';
 export interface BarberServiceItem {
   id: string;
   name: string;
-  description: string;
+  description?: string;
   priceBs: number;
   durationMin: number;
-  category: 'fade' | 'barba' | 'combo' | 'spa' | 'clasico';
+  category?: string;
 }
 
 export interface ExploreBarber {
   id: string;
   name: string;
+  phone?: string | null;
   avatar: string;
   shopId: string;
   shopName: string;

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { FC } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -172,6 +172,25 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
     }
   }, [currentUser, userName]);
 
+  // Barber filter options derived from real cut history
+  const barberFilterOptions = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; shop: string; count: number }>();
+    for (const cut of cutsList) {
+      const bName = cut.barberName || 'Barbero';
+      const bShop = cut.shopName || 'FADE Studio';
+      const existing = map.get(bName);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        map.set(bName, { id: bName, name: bName, shop: bShop, count: 1 });
+      }
+    }
+    return [
+      { id: 'all', name: 'Todos los profesionales', shop: 'Todas las sedes', count: cutsList.length },
+      ...Array.from(map.values()),
+    ];
+  }, [cutsList]);
+
   // Filtering cuts
   const filteredCuts = cutsList.filter((cut) => {
     // Category filter
@@ -180,10 +199,7 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
     if (categoryFilter === 'favoritos' && !cut.isFavorite) return false;
 
     // Barber filter
-    if (selectedBarberId === 'brian' && !cut.barberName.toLowerCase().includes('brian')) return false;
-    if (selectedBarberId === 'matias' && !cut.barberName.toLowerCase().includes('matias')) return false;
-    if (selectedBarberId === 'diego' && !cut.barberName.toLowerCase().includes('diego')) return false;
-    if (selectedBarberId === 'luis' && !cut.barberName.toLowerCase().includes('luis')) return false;
+    if (selectedBarberId !== 'all' && cut.barberName !== selectedBarberId) return false;
 
     return true;
   });
@@ -613,6 +629,7 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
       <HistorialFilterModal
         isOpen={isFilterModalOpen}
         selectedBarberId={selectedBarberId}
+        barbers={barberFilterOptions}
         onSelectBarber={setSelectedBarberId}
         onClose={() => setIsFilterModalOpen(false)}
       />
