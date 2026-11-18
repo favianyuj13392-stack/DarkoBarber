@@ -64,8 +64,8 @@ describe('Cuts Module Integration Tests', () => {
     expect(body.cut.barberId).toBe(barberId);
   });
 
-  it('should enforce RN-06: 409 Conflict if active cut already exists for barber', async () => {
-    // We already have an IN_PROGRESS cut from previous test
+  it('should auto-cancel previous active cut if new cut is started for barber', async () => {
+    // We already have an IN_PROGRESS cut from previous test; starting a new one cancels it
     const res = await app.inject({
       method: 'POST',
       url: '/cuts',
@@ -76,9 +76,17 @@ describe('Cuts Module Integration Tests', () => {
       },
     });
 
-    expect(res.statusCode).toBe(409);
+    expect(res.statusCode).toBe(201);
     const body = JSON.parse(res.body);
-    expect(body.error).toBe('ACTIVE_CUT_EXISTS');
+    expect(body.cut).toBeDefined();
+    expect(body.cut.status).toBe('IN_PROGRESS');
+    expect(body.isDuplicate).toBe(false);
+
+    // Verify the previous cut was cancelled
+    const previousCut = await prisma.cut.findUnique({
+      where: { clientRequestId: 'cut-req-unique-1' },
+    });
+    expect(previousCut?.status).toBe('CANCELLED');
   });
 
   it('should guarantee idempotency for duplicate clientRequestId (200 OK, no duplicate)', async () => {

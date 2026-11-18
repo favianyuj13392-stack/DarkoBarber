@@ -60,7 +60,7 @@ export class AuthService {
 
       const updatedBarber = await this.prisma.barber.update({
         where: { id: barber.id },
-        data: { deviceId: input.deviceId ?? barber.deviceId ?? 'web-barber' },
+        data: { deviceId: input.deviceId ?? barber.deviceId ?? null },
       });
 
       return {
@@ -298,7 +298,7 @@ export class AuthService {
           data: {
             googleId,
             avatarUrl: barber.avatarUrl || avatarUrl,
-            deviceId: input.deviceId ?? barber.deviceId ?? 'web-barber',
+            deviceId: input.deviceId ?? barber.deviceId ?? null,
           },
         });
       } else {
@@ -551,6 +551,8 @@ export class AuthService {
           barberId,
           clientProfileId: dummyClient.profiles[0].id,
           status: 'FINISHED',
+          startedAt: new Date(0),
+          finishedAt: new Date(0),
         },
       });
     }
