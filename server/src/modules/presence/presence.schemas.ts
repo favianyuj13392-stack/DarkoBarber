@@ -88,9 +88,18 @@ export type ServerPresenceMessage =
   | PresenceChangedMessage
   | PresenceErrorMessage;
 
+export interface ChairServiceItem {
+  id: string;
+  name: string;
+  priceBs: number;
+  durationMin: number;
+  category: string | null;
+}
+
 export interface ChairMapItem {
   barberId: string;
   displayName: string;
+  phone: string | null;
   avatarUrl: string | null;
   bio: string | null;
   linkedin: string | null;
@@ -105,5 +114,6 @@ export interface ChairMapItem {
   status: PresenceStatus;
   waitingCount: number;
   portfolio?: string[];
+  services?: ChairServiceItem[];
   updatedAt: string;
 }

@@ -280,6 +280,16 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/auth/barber/subscription/plan', { preHandler: [fastify.authenticateBarber] }, updatePlanHandler);
 
   // --- SERVICIOS & TARIFAS DEL BARBERO ---
+  // GET /barbers/:barberId/services (Público: servicios activos del barbero para catálogo y reservas)
+  fastify.get(
+    '/barbers/:barberId/services',
+    async (request: any, reply: any) => {
+      const { barberId } = request.params as { barberId: string };
+      const services = await service.getBarberServices(barberId);
+      return reply.status(200).send(services);
+    }
+  );
+
   fastify.get(
     '/barbers/me/services',
     { preHandler: [fastify.authenticateBarber] },

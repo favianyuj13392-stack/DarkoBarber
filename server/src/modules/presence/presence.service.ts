@@ -399,6 +399,10 @@ export class PresenceService {
       include: {
         presence: true,
         shop: true,
+        services: {
+          where: { isActive: true },
+          orderBy: { priceBs: 'asc' },
+        },
         cuts: {
           where: { status: 'FINISHED' },
           include: {
@@ -420,6 +424,7 @@ export class PresenceService {
       return {
         barberId: barber.id,
         displayName: barber.displayName,
+        phone: barber.phone,
         avatarUrl: barber.avatarUrl,
         bio: barber.bio,
         linkedin: barber.linkedin,
@@ -434,6 +439,13 @@ export class PresenceService {
         status: barber.presence?.status ?? PresenceStatus.GRAY,
         waitingCount: barber.presence?.waitingCount ?? 0,
         portfolio: publicPhotos,
+        services: (barber.services ?? []).map((s) => ({
+          id: s.id,
+          name: s.name,
+          priceBs: s.priceBs,
+          durationMin: s.durationMin,
+          category: s.category,
+        })),
         updatedAt: (barber.presence?.updatedAt ?? barber.updatedAt).toISOString(),
       };
     });
