@@ -17,9 +17,8 @@ import { laPazMonthStartUtc } from '../src/utils/la-paz-date';
 
 describe('cut-quota: plan limits', () => {
   it('returns the monthly limit per plan and null for unlimited plans', () => {
-    expect(getPlanCutLimit('AUTONOMO')).toBe(60);
-    expect(getPlanCutLimit('BARBERIA_BASE')).toBe(200);
-    expect(getPlanCutLimit('ALTO_FLUJO')).toBeNull();
+    expect(getPlanCutLimit('GRATIS')).toBe(30);
+    expect(getPlanCutLimit('PRO')).toBeNull();
   });
 });
 
@@ -42,11 +41,11 @@ describe('cut-quota: computeUsage (pure)', () => {
   const counts = (finished: number, cancelled: number, inProgress = 0) => ({ finished, cancelled, inProgress });
 
   it('computes the allowance as ceil(limit * pct / 100), minimum 1', () => {
+    expect(computeCancelAllowance(30, 5)).toBe(2);
     expect(computeCancelAllowance(60, 5)).toBe(3);
-    expect(computeCancelAllowance(200, 5)).toBe(10);
-    expect(computeCancelAllowance(60, 0)).toBe(1);
+    expect(computeCancelAllowance(30, 0)).toBe(1);
     expect(computeCancelAllowance(10, 1)).toBe(1);
-    expect(computeCancelAllowance(60, 50)).toBe(30);
+    expect(computeCancelAllowance(30, 50)).toBe(15);
   });
 
   it('does not count cancellations within the allowance', () => {
@@ -143,97 +142,84 @@ describe('cut-quota: database behavior', () => {
     // Exactly 00:00 La Paz on day 1: counts.
     await seedCuts('FINISHED', 1, monthStart);
 
-    const result = await getMonthlyCutUsage(app.prisma, barber.id, 'AUTONOMO');
-    expect(result).toMatchObject({ finished: 3, cancelled: 1, inProgress: 1, usage: 4, cancelAllowance: 3 });
+    const result = await getMonthlyCutUsage(app.prisma, barber.id, 'GRATIS');
+    expect(result).toMatchObject({ finished: 3, cancelled: 1, inProgress: 1, usage: 4, cancelAllowance: 2 });
   });
 
   it('returns zeros for a barber without cuts', async () => {
-    const result = await getMonthlyCutUsage(app.prisma, '00000000-0000-0000-0000-000000000000', 'AUTONOMO');
-    expect(result).toEqual({ finished: 0, cancelled: 0, inProgress: 0, usage: 0, cancelAllowance: 3 });
+    const result = await getMonthlyCutUsage(app.prisma, '00000000-0000-0000-0000-000000000000', 'GRATIS');
+    expect(result).toEqual({ finished: 0, cancelled: 0, inProgress: 0, usage: 0, cancelAllowance: 2 });
   });
 
-  it('AUTONOMO: 59 finished + 3 cancelled is allowed (usage 59)', async () => {
-    await seedCuts('FINISHED', 59);
-    await seedCuts('CANCELLED', 3);
-    expect((await getMonthlyCutUsage(app.prisma, barber.id, 'AUTONOMO')).usage).toBe(59);
-    const { cut } = await startAs('AUTONOMO');
+  it('GRATIS: 29 finished + 2 cancelled is allowed (usage 29)', async () => {
+    await seedCuts('FINISHED', 29);
+    await seedCuts('CANCELLED', 2);
+    expect((await getMonthlyCutUsage(app.prisma, barber.id, 'GRATIS')).usage).toBe(29);
+    const { cut } = await startAs('GRATIS');
     expect(cut.status).toBe('IN_PROGRESS');
   });
 
-  it('AUTONOMO: 59 finished + 5 cancelled is blocked (usage 61)', async () => {
-    await seedCuts('FINISHED', 59);
-    await seedCuts('CANCELLED', 5);
-    expect((await getMonthlyCutUsage(app.prisma, barber.id, 'AUTONOMO')).usage).toBe(61);
-    await expectBlocked('AUTONOMO');
+  it('GRATIS: 29 finished + 4 cancelled is blocked (usage 31)', async () => {
+    await seedCuts('FINISHED', 29);
+    await seedCuts('CANCELLED', 4);
+    expect((await getMonthlyCutUsage(app.prisma, barber.id, 'GRATIS')).usage).toBe(31);
+    await expectBlocked('GRATIS');
   });
 
-  it('AUTONOMO: cancelling alone is allowed up to 62 cancelled and blocked at 63', async () => {
-    await seedCuts('CANCELLED', 62);
-    expect((await getMonthlyCutUsage(app.prisma, barber.id, 'AUTONOMO')).usage).toBe(59);
-    const { cut } = await startAs('AUTONOMO');
+  it('GRATIS: cancelling alone is allowed up to 31 cancelled and blocked at 32', async () => {
+    await seedCuts('CANCELLED', 31);
+    expect((await getMonthlyCutUsage(app.prisma, barber.id, 'GRATIS')).usage).toBe(29);
+    const { cut } = await startAs('GRATIS');
     expect(cut.status).toBe('IN_PROGRESS');
 
     await app.prisma.cut.deleteMany({});
-    await seedCuts('CANCELLED', 63);
-    expect((await getMonthlyCutUsage(app.prisma, barber.id, 'AUTONOMO')).usage).toBe(60);
-    await expectBlocked('AUTONOMO');
+    await seedCuts('CANCELLED', 32);
+    expect((await getMonthlyCutUsage(app.prisma, barber.id, 'GRATIS')).usage).toBe(30);
+    await expectBlocked('GRATIS');
   });
 
   it('counts IN_PROGRESS cuts toward the limit', async () => {
-    await seedCuts('FINISHED', 59);
+    await seedCuts('FINISHED', 29);
     await seedCuts('IN_PROGRESS', 1);
-    // startCut auto-cancels the active cut (cancelled 1, within allowance), so usage drops to 59.
-    const { cut } = await startAs('AUTONOMO');
+    // startCut auto-cancels the active cut (cancelled 1, within allowance), so usage drops to 29.
+    const { cut } = await startAs('GRATIS');
     expect(cut.status).toBe('IN_PROGRESS');
-    expect((await getMonthlyCutUsage(app.prisma, barber.id, 'AUTONOMO')).usage).toBe(60);
-  });
-
-  it('BARBERIA_BASE: allows 10 free cancellations and limits at 200', async () => {
-    await seedCuts('FINISHED', 199);
-    await seedCuts('CANCELLED', 10);
-    expect((await getMonthlyCutUsage(app.prisma, barber.id, 'BARBERIA_BASE')).usage).toBe(199);
-    await startAs('BARBERIA_BASE');
-
-    await app.prisma.cut.deleteMany({});
-    await seedCuts('FINISHED', 199);
-    await seedCuts('CANCELLED', 12);
-    expect((await getMonthlyCutUsage(app.prisma, barber.id, 'BARBERIA_BASE')).usage).toBe(201);
-    await expectBlocked('BARBERIA_BASE');
+    expect((await getMonthlyCutUsage(app.prisma, barber.id, 'GRATIS')).usage).toBe(30);
   });
 
   it('respects a custom CUTS_CANCEL_ALLOWANCE_PCT', async () => {
     process.env.CUTS_CANCEL_ALLOWANCE_PCT = '10';
-    await seedCuts('FINISHED', 54);
-    await seedCuts('CANCELLED', 6);
-    // allowance = ceil(60 * 10 / 100) = 6
-    const result = await getMonthlyCutUsage(app.prisma, barber.id, 'AUTONOMO');
-    expect(result.cancelAllowance).toBe(6);
-    expect(result.usage).toBe(54);
-    await startAs('AUTONOMO');
+    await seedCuts('FINISHED', 27);
+    await seedCuts('CANCELLED', 3);
+    // allowance = ceil(30 * 10 / 100) = 3
+    const result = await getMonthlyCutUsage(app.prisma, barber.id, 'GRATIS');
+    expect(result.cancelAllowance).toBe(3);
+    expect(result.usage).toBe(27);
+    await startAs('GRATIS');
   });
 
-  it('does not limit ALTO_FLUJO', async () => {
+  it('does not limit PRO', async () => {
     await seedCuts('FINISHED', 300);
-    const { cut } = await startAs('ALTO_FLUJO');
+    const { cut } = await startAs('PRO');
     expect(cut.status).toBe('IN_PROGRESS');
   });
 
   it('auto-cancelling the previous active cut on startCut consumes the cancellation allowance', async () => {
-    await seedCuts('FINISHED', 58);
-    await seedCuts('CANCELLED', 3);
+    await seedCuts('FINISHED', 28);
+    await seedCuts('CANCELLED', 2);
     await seedCuts('IN_PROGRESS', 1);
-    // Before the restart: 58 + 1 in progress + 0 over allowance = 59 (allowed).
-    await startAs('AUTONOMO');
-    const after = await getMonthlyCutUsage(app.prisma, barber.id, 'AUTONOMO');
-    // The auto-cancel pushed cancelled to 4 (1 over allowance): 58 finished + 1 over + 1 new in progress.
-    expect(after.cancelled).toBe(4);
-    expect(after.usage).toBe(60);
-    await expectBlocked('AUTONOMO');
+    // Before the restart: 28 + 1 in progress + 0 over allowance = 29 (allowed).
+    await startAs('GRATIS');
+    const after = await getMonthlyCutUsage(app.prisma, barber.id, 'GRATIS');
+    // The auto-cancel pushed cancelled to 3 (1 over allowance): 28 finished + 1 over + 1 new in progress.
+    expect(after.cancelled).toBe(3);
+    expect(after.usage).toBe(30);
+    await expectBlocked('GRATIS');
   });
 
   it('clamps a backdated startedAt to the current La Paz month so it cannot evade the quota', async () => {
     const { cut } = await service.startCut(
-      { id: barber.id, phone: null, displayName: 'Test', shopId: barber.shopId, deviceId: null, plan: 'AUTONOMO' },
+      { id: barber.id, phone: null, displayName: 'Test', shopId: barber.shopId, deviceId: null, plan: 'GRATIS' },
       {
         clientRequestId: `quota-backdate-${++seq}`,
         clientProfileId,
@@ -241,16 +227,16 @@ describe('cut-quota: database behavior', () => {
       }
     );
     expect(cut.startedAt.getTime()).toBe(monthStart.getTime());
-    expect((await getMonthlyCutUsage(app.prisma, barber.id, 'AUTONOMO')).inProgress).toBe(1);
+    expect((await getMonthlyCutUsage(app.prisma, barber.id, 'GRATIS')).inProgress).toBe(1);
   });
 
   it('getBarberSubscription reports the same usage and the cancellation allowance', async () => {
     await seedCuts('FINISHED', 10);
     await seedCuts('CANCELLED', 5);
     const sub = await new AuthService(app.prisma).getBarberSubscription(barber.id);
-    expect(sub?.monthlyCutsCount).toBe(12);
-    expect(sub?.maxCuts).toBe(60);
+    expect(sub?.monthlyCutsCount).toBe(10);
+    expect(sub?.maxCuts).toBe(9999);
     expect(sub?.cancelledThisMonth).toBe(5);
-    expect(sub?.cancelAllowance).toBe(3);
+    expect(sub?.cancelAllowance).toBe(500);
   });
 });

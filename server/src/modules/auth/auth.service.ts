@@ -145,7 +145,7 @@ export class AuthService {
           passwordHash,
           phone: input.phone || null,
           deviceId: input.deviceId || `device-${Date.now()}`,
-          plan: 'AUTONOMO',
+          plan: 'GRATIS',
         },
       });
 
@@ -309,7 +309,7 @@ export class AuthService {
             displayName,
             avatarUrl,
             deviceId: input.deviceId || `device-${Date.now()}`,
-            plan: 'AUTONOMO',
+            plan: 'GRATIS',
           },
         });
 
@@ -723,14 +723,13 @@ export class AuthService {
     } = await getMonthlyCutUsage(this.prisma, barber.id, barber.plan, now);
 
     const prices: Record<string, number> = {
-      AUTONOMO: 45,
-      BARBERIA_BASE: 110,
-      ALTO_FLUJO: 190,
+      GRATIS: 0,
+      PRO: 49,
     };
 
-    // Unlimited plans (ALTO_FLUJO) report a large display cap.
+    // Unlimited plans (PRO) report a large display cap.
     const maxCuts = getPlanCutLimit(barber.plan) ?? 9999;
-    const priceBs = prices[barber.plan] || 45;
+    const priceBs = prices[barber.plan] ?? 0;
 
     // Last day of the La Paz month at 00:00 La Paz (04:00 UTC). startOfMonth is 04:00 UTC
     // on day 1, so its UTC year/month equal the La Paz year/month.
@@ -753,7 +752,7 @@ export class AuthService {
     };
   }
 
-  async updateBarberPlan(barberId: string, plan: 'AUTONOMO' | 'BARBERIA_BASE' | 'ALTO_FLUJO') {
+  async updateBarberPlan(barberId: string, plan: 'GRATIS' | 'PRO') {
     const updated = await this.prisma.barber.update({
       where: { id: barberId },
       data: { plan },

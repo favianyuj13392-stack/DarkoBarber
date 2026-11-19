@@ -9,9 +9,8 @@ generator client {
 }
 
 enum Plan {
-  AUTONOMO
-  BARBERIA_BASE
-  ALTO_FLUJO
+  GRATIS
+  PRO
 }
 
 enum CutStatus {
@@ -106,7 +105,7 @@ model Barber {
   instagram     String?
   tiktok        String?
   specialties   String[]        @default([])
-  plan          Plan            @default(AUTONOMO)
+  plan          Plan            @default(GRATIS)
   shopId        String?
   shop          Shop?           @relation(fields: [shopId], references: [id], onDelete: SetNull)
   deviceId      String?

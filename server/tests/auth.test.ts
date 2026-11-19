@@ -138,7 +138,7 @@ describe('Auth Module Integration Tests', () => {
     const meBody = JSON.parse(meResNew.body);
     expect(meBody.id).toBeDefined();
     expect(meBody.displayName).toBe('Diego');
-    expect(meBody.plan).toBe('AUTONOMO');
+    expect(meBody.plan).toBe('GRATIS');
     expect(meBody).toHaveProperty('activeCutId');
   });
 
@@ -226,7 +226,7 @@ describe('Auth Module Integration Tests', () => {
     const body = JSON.parse(res.body);
     expect(body.token).toBeDefined();
     expect(body.user.role).toBe('barbero');
-    expect(body.user.plan).toBe('AUTONOMO');
+    expect(body.user.plan).toBe('GRATIS');
 
     // Confirm presence was created in DB
     const presenceInDb = await app.prisma.presence.findUnique({

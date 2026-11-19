@@ -2,10 +2,9 @@ import { PrismaClient } from '@prisma/client';
 import { laPazMonthStartUtc } from '../../utils/la-paz-date';
 import { getCutsConfig } from './cuts.config';
 
-/** Monthly cut limits per plan. Plans missing here (ALTO_FLUJO) are unlimited. */
+/** Monthly cut limits per plan. Plans missing here (PRO) are unlimited. */
 export const PLAN_CUT_LIMITS: Readonly<Record<string, number>> = {
-  AUTONOMO: 60,
-  BARBERIA_BASE: 200,
+  GRATIS: 30,
 };
 
 /** Returns the monthly cut limit for a plan, or null when the plan has no limit. */
