@@ -16,6 +16,14 @@ export interface TestEmailTemplateParams {
   timestamp: string;
 }
 
+export interface DueForCutReminderTemplateParams {
+  clientName?: string;
+  barberName: string;
+  daysSinceLastCut: number;
+  bookingUrl?: string;
+}
+
+
 export function renderPasswordResetTemplate({
   name = 'Colega',
   resetUrl,
@@ -321,3 +329,108 @@ Remitente: Fade <fade@mail.darkosync.com>`;
 
   return { subject, html, text };
 }
+
+export function renderDueForCutReminderTemplate({
+  clientName = 'Cliente',
+  barberName,
+  daysSinceLastCut,
+  bookingUrl = 'https://fade.darkosync.com',
+}: DueForCutReminderTemplateParams): { subject: string; html: string; text: string } {
+  const subject = `FADE — Ya toca renovar tu corte con ${barberName}`;
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${subject}</title>
+  <style>
+    body { margin: 0; padding: 0; background-color: #050505; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #F5EBDD; }
+    .wrapper { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
+    .card { background: #0d0d0d; border: 1px solid rgba(182, 143, 78, 0.25); border-radius: 20px; padding: 36px 32px; box-shadow: 0 20px 40px rgba(0,0,0,0.8); }
+    .brand { text-align: center; margin-bottom: 28px; }
+    .brand-logo { font-size: 28px; font-weight: 900; letter-spacing: 0.25em; color: #B68F4E; text-transform: uppercase; margin: 0; }
+    .brand-tagline { font-size: 11px; letter-spacing: 0.15em; color: #D9C9B0; opacity: 0.6; text-transform: uppercase; margin-top: 4px; }
+    h1 { font-size: 22px; color: #FFFFFF; margin: 0 0 16px 0; font-weight: 700; text-align: center; }
+    p { font-size: 14px; line-height: 1.6; color: #D9C9B0; margin: 0 0 16px 0; }
+    .highlight-box {
+      background: #141414;
+      border: 1px solid rgba(182, 143, 78, 0.3);
+      border-radius: 14px;
+      padding: 18px;
+      text-align: center;
+      margin: 24px 0;
+    }
+    .highlight-number {
+      font-size: 32px;
+      font-weight: 800;
+      color: #B68F4E;
+      font-family: monospace;
+      margin-bottom: 4px;
+    }
+    .highlight-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #a89f91;
+    }
+    .btn-container { text-align: center; margin: 28px 0; }
+    .btn { display: inline-block; background: linear-gradient(180deg, #F3E9DC 0%, #D9C9B0 50%, #C2AE91 100%); color: #050505 !important; text-decoration: none; font-weight: 700; font-size: 14px; padding: 14px 32px; border-radius: 12px; letter-spacing: 0.05em; box-shadow: 0 8px 20px rgba(182, 143, 78, 0.3); }
+    .footer { text-align: center; margin-top: 28px; font-size: 12px; color: #736b5e; line-height: 1.5; }
+    .divider { height: 1px; background: rgba(255, 255, 255, 0.08); margin: 24px 0; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="card">
+      <div class="brand">
+        <h2 class="brand-logo">FADE</h2>
+        <div class="brand-tagline">Barber Hub & Ecosistema de Precisión</div>
+      </div>
+
+      <h1>¿Listo para renovar tu estilo?</h1>
+      <p>Hola <strong>${clientName}</strong>,</p>
+      <p>Te saluda <strong>${barberName}</strong> desde FADE. Queremos recordarte que ya es el momento ideal para retocar tu corte y mantener tu estilo al 100%.</p>
+
+      <div class="highlight-box">
+        <div class="highlight-number">${daysSinceLastCut} días</div>
+        <div class="highlight-label">Desde tu último corte con ${barberName}</div>
+      </div>
+
+      <p>Para asegurar tu horario habitual y no quedarte sin espacio, puedes ingresar directamente a la plataforma y reservar tu próxima cita:</p>
+
+      <div class="btn-container">
+        <a href="${bookingUrl}" target="_blank" class="btn">Reservar mi Corte en FADE</a>
+      </div>
+
+      <div class="divider"></div>
+
+      <p style="font-size: 12px; color: #736b5e; margin-bottom: 0;">
+        Recibiste este recordatorio porque te atendiste con ${barberName} en la red FADE.
+      </p>
+    </div>
+
+    <div class="footer">
+      <p>FADE — DarkoBarber Ecosystem<br>
+      Precisión, estilo y constancia.</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  const text = `FADE — Ya toca renovar tu corte con ${barberName}
+
+Hola ${clientName},
+
+Han pasado ${daysSinceLastCut} días desde tu último corte con ${barberName} en FADE.
+Es el momento ideal para renovar tu degradado y mantener tu estilo impecable.
+
+Ingresa a FADE para reservar tu espacio:
+${bookingUrl}
+
+---
+FADE Barber Hub`;
+
+  return { subject, html, text };
+}
+

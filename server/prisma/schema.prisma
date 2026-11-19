@@ -380,3 +380,14 @@ model RewardClaim {
 
   @@unique([barberId, type, goalKey])
 }
+
+model BarberReminderLog {
+  id        String   @id @default(uuid())
+  barberId  String
+  clientId  String
+  channel   String   @default("EMAIL")
+  sentAt    DateTime @default(now())
+
+  @@index([barberId, sentAt])
+}
+

@@ -4,8 +4,10 @@ import {
   renderPasswordResetTemplate,
   renderTestEmailTemplate,
   renderEmailVerificationTemplate,
+  renderDueForCutReminderTemplate,
   PasswordResetTemplateParams,
   EmailVerificationTemplateParams,
+  DueForCutReminderTemplateParams,
 } from './email.templates';
 
 export class EmailService {
@@ -48,6 +50,23 @@ export class EmailService {
       recipient: to,
       timestamp: new Date().toISOString(),
     });
+
+    return this.adapter.send({
+      to,
+      subject,
+      html,
+      text,
+    });
+  }
+
+  /**
+   * Dispatches a Pro loyalty reminder email to a client due for a haircut.
+   */
+  async sendDueForCutReminderEmail(
+    to: string,
+    params: DueForCutReminderTemplateParams
+  ): Promise<SendMailResult> {
+    const { subject, html, text } = renderDueForCutReminderTemplate(params);
 
     return this.adapter.send({
       to,

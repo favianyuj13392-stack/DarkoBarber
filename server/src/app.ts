@@ -18,6 +18,7 @@ import bookingsRoutes from './modules/bookings/bookings.routes';
 import { emailVerificationRoutes } from './modules/rewards/email-verification.routes';
 import { adminRewardsRoutes } from './modules/rewards/admin.routes';
 import { superAdminRoutes } from './modules/admin/superadmin.routes';
+import { fidelityRoutes } from './modules/fidelity/fidelity.routes';
 import { startWatchdogs, stopWatchdogs } from './modules/presence/presence.watchdog';
 
 dotenv.config();
@@ -96,6 +97,7 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
   await app.register(emailVerificationRoutes);
   await app.register(adminRewardsRoutes, { prefix: '/admin/rewards' });
   await app.register(superAdminRoutes, { prefix: '/admin' });
+  await app.register(fidelityRoutes);
 
   // Register API routes with /api prefix for full client compatibility
   await app.register(async (api) => {
@@ -108,6 +110,7 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
     await api.register(emailVerificationRoutes);
     await api.register(adminRewardsRoutes, { prefix: '/admin/rewards' });
     await api.register(superAdminRoutes, { prefix: '/admin' });
+    await api.register(fidelityRoutes);
   }, { prefix: '/api' });
 
   app.addHook('onReady', async () => {

@@ -13,6 +13,7 @@ import {
 import type { UserProfile, SubscriptionInfo } from '../../services/auth.service';
 import { fetchBarberSubscription } from '../../services/auth.service';
 import { BarberGrowthCard } from './BarberGrowthCard';
+import { BarberFidelityCard } from './BarberFidelityCard';
 
 interface BarberSubscriptionViewProps {
   barber: UserProfile | null;
@@ -176,6 +177,12 @@ export const BarberSubscriptionView: FC<BarberSubscriptionViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* 2.4 Motor de Fidelización & Reactivación (Exclusivo Plan Pro / Teaser en Gratis) */}
+      <BarberFidelityCard
+        barber={barber}
+        onUpgradeRequested={handleContactForUpgrade}
+      />
 
       {/* 2.5 Programa de Crecimiento FADE & Metas de Adquisición */}
       <BarberGrowthCard />
