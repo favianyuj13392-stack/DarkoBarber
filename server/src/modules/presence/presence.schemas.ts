@@ -113,6 +113,7 @@ export interface ChairMapItem {
   longitude: number | null;
   status: PresenceStatus;
   waitingCount: number;
+  plan?: 'GRATIS' | 'PRO';
   portfolio?: string[];
   services?: ChairServiceItem[];
   updatedAt: string;

@@ -395,7 +395,10 @@ export class PresenceService {
    */
   async getMapChairs(): Promise<ChairMapItem[]> {
     const barbers = await this.prisma.barber.findMany({
-      where: { isActive: true },
+      where: {
+        isActive: true,
+        plan: 'PRO',
+      },
       include: {
         presence: true,
         shop: true,
@@ -413,19 +416,23 @@ export class PresenceService {
           orderBy: { finishedAt: 'desc' },
         },
       },
-      orderBy: {
-        displayName: 'asc',
-      },
+      orderBy: [
+        { presence: { updatedAt: 'desc' } },
+        { displayName: 'asc' },
+      ],
     });
 
     return barbers.map((barber) => {
-      const publicPhotos = barber.cuts.flatMap((c) => c.photos.map((p) => p.r2Key));
+      const publicPhotos = barber.plan === 'PRO'
+        ? barber.cuts.flatMap((c) => c.photos.map((p) => p.r2Key))
+        : [];
 
       return {
         barberId: barber.id,
         displayName: barber.displayName,
         phone: barber.phone,
         avatarUrl: barber.avatarUrl,
+        plan: barber.plan,
         bio: barber.bio,
         linkedin: barber.linkedin,
         instagram: barber.instagram,
