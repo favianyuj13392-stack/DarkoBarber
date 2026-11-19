@@ -318,7 +318,11 @@ export const BarberListView: FC<BarberListViewProps> = ({
                 className="relative p-4 rounded-3xl bg-gradient-to-b from-[#181818] via-[#121212] to-[#0A0A0A] border border-white/10 hover:border-[#B68F4E]/40 shadow-[0_12px_28px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.12)] cursor-pointer group flex flex-col sm:flex-row gap-4"
               >
                 {/* Avatar con Halo de Presencia */}
-                <div className="relative w-full sm:w-36 h-36 rounded-2xl overflow-hidden border border-white/15 flex-shrink-0">
+                <div className={`relative w-full sm:w-36 h-36 rounded-2xl overflow-hidden flex-shrink-0 ${
+                  barber.plan === 'PRO'
+                    ? 'border-2 border-[#B68F4E] ring-1 ring-[#B68F4E]/40 shadow-[0_0_16px_rgba(182,143,78,0.3)]'
+                    : 'border border-white/15'
+                }`}>
                   <img
                     src={barber.avatar}
                     alt={barber.name}
@@ -350,11 +354,17 @@ export const BarberListView: FC<BarberListViewProps> = ({
                 <div className="flex-1 flex flex-col justify-between">
                   <div>
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <h3 className="text-base font-bold text-white tracking-tight group-hover:text-[#F3E9DC] transition-colors">
                           {barber.name}
                         </h3>
                         <CheckCircle2 className="w-3.5 h-3.5 text-[#B68F4E]" />
+                        {barber.plan === 'PRO' && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-mono font-bold bg-[#B68F4E] text-black">
+                            <Sparkles className="w-2.5 h-2.5 fill-black" />
+                            PRO
+                          </span>
+                        )}
                       </div>
                       <span className="text-xs font-mono font-bold text-[#B68F4E]">
                         {barber.priceRange}
@@ -377,13 +387,20 @@ export const BarberListView: FC<BarberListViewProps> = ({
                       ))}
                     </div>
 
-                    {/* Estado en vivo */}
-                    <div className="flex items-center gap-2 mt-2.5">
-                      <span className={`w-2 h-2 rounded-full ${statusConfig.dotClass}`} />
-                      <span className={`text-xs font-semibold ${statusConfig.textColor}`}>
-                        {statusConfig.label}
-                      </span>
-                    </div>
+                    {/* Estado en vivo (Gated to PRO) */}
+                    {barber.plan === 'PRO' ? (
+                      <div className="flex items-center gap-2 mt-2.5">
+                        <span className={`w-2 h-2 rounded-full ${statusConfig.dotClass}`} />
+                        <span className={`text-xs font-semibold ${statusConfig.textColor}`}>
+                          {statusConfig.label}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 mt-2.5 text-xs text-white/50">
+                        <span className="w-2 h-2 rounded-full bg-white/30" />
+                        <span>Atención en sillón</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Botones inferiores */}

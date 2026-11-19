@@ -266,6 +266,23 @@ export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
                 ">
                   <img src="${barber.avatar}" style="width: 100%; height: 100%; object-fit: cover; pointer-events: none;" alt="${barber.name}" />
                 </div>
+                ${barber.plan === 'PRO' ? `
+                  <div style="
+                    position: absolute;
+                    top: -3px;
+                    left: -2px;
+                    background: #B68F4E;
+                    color: #000;
+                    font-size: 7.5px;
+                    font-family: monospace;
+                    font-weight: 900;
+                    padding: 0.5px 3.5px;
+                    border-radius: 999px;
+                    border: 1px solid #000;
+                    box-shadow: 0 0 6px rgba(182, 143, 78, 0.8);
+                    z-index: 35;
+                  ">PRO</div>
+                ` : ''}
                 <!-- Diamond Status Indicator -->
                 <div style="
                   position: absolute;
@@ -497,6 +514,23 @@ export const DarkMapExplorer: FC<DarkMapExplorerProps> = ({
             ">
               <img src="${barber.avatar}" style="width: 100%; height: 100%; object-fit: cover;" alt="${barber.name}" />
             </div>
+            ${barber.plan === 'PRO' ? `
+              <div style="
+                position: absolute;
+                top: -3px;
+                left: -2px;
+                background: #B68F4E;
+                color: #000;
+                font-size: 8px;
+                font-family: monospace;
+                font-weight: 900;
+                padding: 1px 4.5px;
+                border-radius: 999px;
+                border: 1px solid #000;
+                box-shadow: 0 0 8px rgba(182, 143, 78, 0.8);
+                z-index: 15;
+              ">PRO</div>
+            ` : ''}
             <!-- Diamond Status Indicator -->
             <div style="
               position: absolute;

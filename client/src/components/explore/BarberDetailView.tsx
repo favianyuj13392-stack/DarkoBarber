@@ -100,25 +100,37 @@ export const BarberDetailView: FC<BarberDetailViewProps> = ({
       {/* 2. Hero Profile Card */}
       <div className="relative p-6 rounded-3xl bg-gradient-to-b from-[#1C1C1C] via-[#141414] to-[#0A0A0A] border border-white/15 shadow-[0_20px_45px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.18)] flex flex-col sm:flex-row items-center sm:items-start gap-6 text-center sm:text-left">
         {/* Avatar with gold border & status diamond */}
-        <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-3xl overflow-hidden border-2 border-[#B68F4E] shadow-[0_0_20px_rgba(182,143,78,0.3)] flex-shrink-0">
+        <div className={`relative w-28 h-28 sm:w-32 sm:h-32 rounded-3xl overflow-hidden flex-shrink-0 ${
+          barber.plan === 'PRO'
+            ? 'border-2 border-[#B68F4E] ring-2 ring-[#B68F4E]/40 shadow-[0_0_24px_rgba(182,143,78,0.4)]'
+            : 'border border-white/20'
+        }`}>
           <img
             src={barber.avatar}
             alt={barber.name}
             className="w-full h-full object-cover object-top"
           />
-          <div
-            className={`absolute bottom-2 right-2 w-4 h-4 rounded-full border-2 border-black ${statusConfig.dotClass}`}
-          />
+          {barber.plan === 'PRO' && (
+            <div
+              className={`absolute bottom-2 right-2 w-4 h-4 rounded-full border-2 border-black ${statusConfig.dotClass}`}
+            />
+          )}
         </div>
 
         {/* Profile Info */}
         <div className="flex-1 space-y-2">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-            <div className="flex items-center justify-center sm:justify-start gap-2">
+            <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
               <h1 className="text-2xl font-serif font-bold text-white tracking-tight">
                 {barber.name}
               </h1>
               <CheckCircle2 className="w-5 h-5 text-[#B68F4E]" />
+              {barber.plan === 'PRO' && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#B68F4E] text-black shadow-md">
+                  <Sparkles className="w-3 h-3 fill-black" />
+                  PRO
+                </span>
+              )}
             </div>
             <div className="flex items-center justify-center sm:justify-end gap-1 px-3 py-1 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-white">
               <Star className="w-3.5 h-3.5 text-[#B68F4E] fill-current" />
@@ -138,13 +150,22 @@ export const BarberDetailView: FC<BarberDetailViewProps> = ({
             </span>
           </button>
 
-          {/* Status pill */}
-          <div className="flex items-center justify-center sm:justify-start gap-2 pt-1">
-            <span className={`w-2 h-2 rounded-full ${statusConfig.dotClass}`} />
-            <span className={`text-xs font-semibold ${statusConfig.textColor}`}>
-              {statusConfig.label}
-            </span>
-          </div>
+          {/* Status pill (Gated to PRO) */}
+          {barber.plan === 'PRO' ? (
+            <div className="flex items-center justify-center sm:justify-start gap-2 pt-1">
+              <span className={`w-2 h-2 rounded-full ${statusConfig.dotClass}`} />
+              <span className={`text-xs font-semibold ${statusConfig.textColor}`}>
+                {statusConfig.label}
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center sm:justify-start gap-2 pt-1">
+              <span className="w-2 h-2 rounded-full bg-white/30" />
+              <span className="text-xs text-white/50">
+                Atención directa en sillón / QR
+              </span>
+            </div>
+          )}
 
           {/* Specialties pills */}
           <div className="flex flex-wrap justify-center sm:justify-start gap-1.5 pt-2">

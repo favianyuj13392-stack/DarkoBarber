@@ -22,6 +22,7 @@ export interface ExploreBarber {
   lng: number;
   status: BarberPresenceStatus;
   waitingCount: number;
+  plan?: 'GRATIS' | 'PRO';
   rating: number;
   reviewCount: number;
   distanceKm: number;

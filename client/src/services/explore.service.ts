@@ -188,6 +188,7 @@ export async function fetchExploreData(): Promise<{
             priceRange,
             services,
             portfolio: dbPhotos,
+            plan: item.plan || 'PRO',
             isFavorite: false,
           };
         });
