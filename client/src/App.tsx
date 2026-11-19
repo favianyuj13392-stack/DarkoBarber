@@ -12,6 +12,7 @@ import { HistorialFeed } from './components/history/HistorialFeed';
 import { ExploreCoordinator } from './components/explore/ExploreCoordinator';
 import { ClientNavBar } from './components/common/ClientNavBar';
 import { LegalView } from './components/common/LegalView';
+import { AdminDashboardView } from './components/admin/AdminDashboardView';
 import type { ScannedBarberInfo } from './components/chair/QrScannerModal';
 import {
   getStoredToken,
@@ -34,7 +35,8 @@ type AppScreen =
   | 'authenticated'
   | 'verify-email'
   | 'legal-privacidad'
-  | 'legal-terminos';
+  | 'legal-terminos'
+  | 'admin';
 
 const HAS_SEEN_ONBOARDING_KEY = 'fade_has_seen_onboarding';
 const VERIFY_EMAIL_PATH = '/verify-email';
@@ -61,6 +63,7 @@ export function App() {
     if (typeof window === 'undefined') return 'splash';
     if (IS_VERIFY_EMAIL_ROUTE) return 'verify-email';
     const path = window.location.pathname.toLowerCase();
+    if (path.startsWith('/admin') || path.includes('admin')) return 'admin';
     if (path.includes('privacidad') || path.includes('privacy')) return 'legal-privacidad';
     if (path.includes('terminos') || path.includes('terms')) return 'legal-terminos';
 
@@ -555,6 +558,28 @@ export function App() {
             type="terminos"
             onBack={() => setCurrentScreen('login')}
           />
+        )}
+
+        {currentScreen === 'admin' && (
+          <motion.div
+            key="admin"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="w-full min-h-screen"
+          >
+            <AdminDashboardView
+              onExit={() => {
+                try {
+                  window.history.pushState(null, '', '/');
+                } catch {
+                  // ignore
+                }
+                setCurrentScreen('login');
+              }}
+            />
+          </motion.div>
         )}
 
         {currentScreen === 'authenticated' && authData && (
