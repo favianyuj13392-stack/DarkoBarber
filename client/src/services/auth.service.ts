@@ -97,7 +97,7 @@ export async function loginWithEmailPassword(
     displayName: rawData.barber?.displayName || (role === 'barbero' ? 'Barbero FADE' : 'Cliente FADE'),
     email,
     role,
-    plan: rawData.barber?.plan || (role === 'barbero' ? 'AUTONOMO' : 'CLIENT'),
+    plan: rawData.barber?.plan || (role === 'barbero' ? 'GRATIS' : 'CLIENT'),
     shopId: rawData.barber?.shopId,
   };
 
@@ -188,7 +188,7 @@ export async function registerBarber(
     displayName: displayName.trim(),
     email: email.trim().toLowerCase(),
     role: 'barbero',
-    plan: 'AUTONOMO',
+    plan: 'GRATIS',
   };
 
   const loginResponse: LoginResponse = {
@@ -405,7 +405,7 @@ export async function updateBarberLocation(payload: {
 
 export interface SubscriptionInfo {
   barberId: string;
-  plan: 'AUTONOMO' | 'BARBERIA_BASE' | 'ALTO_FLUJO';
+  plan: 'GRATIS' | 'PRO';
   priceBs: number;
   monthlyCutsCount: number;
   maxCuts: number;
@@ -438,34 +438,9 @@ export async function fetchBarberSubscription(): Promise<SubscriptionInfo | null
 }
 
 export async function updateBarberPlan(
-  plan: 'AUTONOMO' | 'BARBERIA_BASE' | 'ALTO_FLUJO'
+  _plan: 'GRATIS' | 'PRO'
 ): Promise<SubscriptionInfo | null> {
-  const token = getStoredToken();
-  const currentUser = getStoredUser();
-  if (currentUser) {
-    currentUser.plan = plan;
-    localStorage.setItem(USER_KEY, JSON.stringify(currentUser));
-  }
-
-  if (token) {
-    try {
-      const res = await fetch('/api/barbers/me/subscription/plan', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ plan }),
-      });
-
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch (err) {
-      console.warn('Could not update barber plan on server:', err);
-    }
-  }
-
+  // Plan changes are managed by super admin upon payment verification.
   return fetchBarberSubscription();
 }
 
