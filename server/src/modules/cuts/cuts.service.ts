@@ -186,8 +186,21 @@ export class CutsService {
     const finishedAt = input.finishedAt ? new Date(input.finishedAt) : new Date();
     const durationMinutes = (finishedAt.getTime() - cut.startedAt.getTime()) / (1000 * 60);
 
-    const isExpress = input.chips.adicionales?.includes('Corte Express') ?? false;
+    const chipsObj = (input.chips as any) || {};
+    const isExpress = chipsObj.adicionales?.includes('Corte Express') ?? false;
     const isRapid = isExpress ? (durationMinutes < 8) : (durationMinutes < 15);
+
+    // Merge sameAsLastTime and notes into stored chips payload
+    const finalChips = {
+      ...chipsObj,
+      sameAsLastTime: input.sameAsLastTime ?? chipsObj.sameAsLastTime ?? false,
+      notes: input.notes ?? chipsObj.notes ?? chipsObj.notasEspeciales?.[0],
+      styleName: input.sameAsLastTime
+        ? 'Mismo estilo de siempre'
+        : (chipsObj.tipoDegradado
+            ? `${chipsObj.tipoDegradado} · ${chipsObj.parteSuperior || 'Texturizado'}`
+            : (input.notes || chipsObj.notes ? 'Corte personalizado' : 'Corte clásico')),
+    };
 
     // Conditional update guards against a concurrent finalize/cancel between read and write.
     const updated = await this.prisma.cut.updateMany({
@@ -195,7 +208,7 @@ export class CutsService {
       data: {
         status: 'FINISHED',
         finishedAt,
-        chips: input.chips as any,
+        chips: finalChips as any,
         rapidClosure: isRapid,
       },
     });

@@ -101,17 +101,50 @@ export async function startCut(params: StartCutParams): Promise<{ cut: CutRecord
   return await response.json();
 }
 
+export interface FinalizeCutParams {
+  sameAsLastTime?: boolean;
+  notes?: string;
+  chips?: Partial<CutChips> | Record<string, any>;
+  photos?: Array<{ url: string; angle?: string }>;
+  isPublic?: boolean;
+  finishedAt?: string;
+}
+
 /**
  * Finalizes a cut and stores its technical sheet (POST /api/cuts/:id/finalize).
- * Throws when the server did not confirm, instead of pretending the cut was saved.
+ * Supports both streamlined payload (photos + notes + sameAsLastTime) and legacy chips.
  */
 export async function finalizeCut(
   cutId: string,
-  chips: CutChips,
-  photos?: Array<{ url: string; angle: string }>,
+  paramsOrChips: FinalizeCutParams | CutChips,
+  photos?: Array<{ url: string; angle?: string }>,
   isPublic?: boolean
 ): Promise<{ cut: CutRecord }> {
   const token = getStoredToken();
+
+  let body: Record<string, any>;
+  if (
+    'baseLateral' in paramsOrChips ||
+    'tipoDegradado' in paramsOrChips ||
+    'parteSuperior' in paramsOrChips
+  ) {
+    body = {
+      chips: paramsOrChips,
+      photos,
+      isPublic,
+      finishedAt: new Date().toISOString(),
+    };
+  } else {
+    const params = paramsOrChips as FinalizeCutParams;
+    body = {
+      sameAsLastTime: params.sameAsLastTime ?? false,
+      notes: params.notes,
+      chips: params.chips,
+      photos: params.photos ?? photos,
+      isPublic: params.isPublic ?? isPublic,
+      finishedAt: params.finishedAt || new Date().toISOString(),
+    };
+  }
 
   const response = await fetch(`/api/cuts/${cutId}/finalize`, {
     method: 'POST',
@@ -119,12 +152,7 @@ export async function finalizeCut(
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({
-      chips,
-      photos,
-      isPublic,
-      finishedAt: new Date().toISOString(),
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {

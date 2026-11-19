@@ -2,27 +2,20 @@ import { useState, useRef } from 'react';
 import type { FC, ChangeEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Play,
-  CheckCircle2,
   X,
   Camera,
-  Globe,
-  Lock,
+  Plus,
+  Trash2,
+  Sparkles,
   Scissors,
   Loader2,
-  Sparkles,
-  ArrowLeft,
+  CheckCircle2,
 } from 'lucide-react';
 import { BrandLogo } from '../common/BrandLogo';
-import { SPRING_TOUCH, SPRING_MODAL } from '../../constants/springs';
-import { startCut, finalizeCut, type CutChips } from '../../services/cuts.service';
+import { SPRING_MODAL } from '../../constants/springs';
+import { startCut, finalizeCut } from '../../services/cuts.service';
 import { presenceService } from '../../services/presence.service';
-import {
-  requestPhotoConsent,
-  pollPhotoConsentResponse,
-  CHAIR_SYNC_CHANNEL_NAME,
-} from '../../services/chair.service';
-import { useBackoffPolling } from '../../hooks/useBackoffPolling';
+import { CHAIR_SYNC_CHANNEL_NAME } from '../../services/chair.service';
 
 interface RepeatCutConfigModalProps {
   isOpen: boolean;
@@ -35,8 +28,6 @@ interface RepeatCutConfigModalProps {
   clientPhone?: string;
   clientName?: string;
 }
-
-type ModalStep = 'config' | 'recording';
 
 /**
  * Comprime imágenes en el cliente mediante canvas para evitar sobrepasar límites de payload y almacenamiento.
@@ -77,6 +68,8 @@ function compressImage(file: File, maxDimension = 960, quality = 0.8): Promise<s
   });
 }
 
+const MAX_PHOTOS = 5;
+
 export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
   isOpen,
   onClose,
@@ -85,83 +78,32 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
   clientPhone = '',
   clientName = '',
 }) => {
-  const [step, setStep] = useState<ModalStep>('config');
+  // Photos state: Array of base64 images (up to 5)
+  // Initially we display slots for Foto 1, Foto 2, Foto 3 + [+] button
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [activeSlotIndex, setActiveSlotIndex] = useState<number>(0);
 
-  // Selected chips (fórmula)
-  const [baseLateral, setBaseLateral] = useState<string>('#0.5');
-  const [tipoDegradado, setTipoDegradado] = useState<string>('Mid Fade');
-  const [parteSuperior, setParteSuperior] = useState<string>('Texturizado');
-  const [barbaOption, setBarbaOption] = useState<string>('No');
-  const [cutNotes, setCutNotes] = useState<string>('Texturizado con tijera en coronilla y pulido de patillas con shaver.');
+  // Intent flag & Notes
+  const [sameAsLastTime, setSameAsLastTime] = useState<boolean>(false);
+  const [cutNotes, setCutNotes] = useState<string>('');
 
-  // Cut Execution State
-  const [isCutActive, setIsCutActive] = useState(false);
+  // Execution state
   const [activeCutId, setActiveCutId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [cutError, setCutError] = useState<string | null>(null);
 
-  // New Cut Photos State
-  const [newPhotos, setNewPhotos] = useState<Array<{ angle: string; img: string }>>([
-    { angle: 'Frontal', img: '' },
-    { angle: 'Lado izquierdo', img: '' },
-    { angle: 'Lado derecho', img: '' },
-    { angle: 'Posterior', img: '' },
-  ]);
-
-  // Portfolio Consent Request State
-  const [requestPortfolio, setRequestPortfolio] = useState(true);
-  const [isWaitingConsent, setIsWaitingConsent] = useState(false);
-  const [consentReceived, setConsentReceived] = useState<{ isPublic: boolean } | null>(null);
-  const [consentRequestId, setConsentRequestId] = useState<string | null>(null);
-  const [consentError, setConsentError] = useState<string | null>(null);
-
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const activeAngleSlotRef = useRef<number>(0);
-
-  // The client's answer comes from the server (works across devices). Backs off while
-  // waiting, pauses on hidden tabs, and stops when answered, expired or unmounted.
-  useBackoffPolling(
-    async () => {
-      if (!consentRequestId) return false;
-      const { response, status } = await pollPhotoConsentResponse(consentRequestId);
-      if (response) {
-        setIsWaitingConsent(false);
-        setConsentReceived({ isPublic: response.isPublic });
-        return true;
-      }
-      if (status === 'EXPIRED') {
-        setIsWaitingConsent(false);
-        setConsentError('La solicitud expiro. Envia una nueva solicitud al cliente.');
-      }
-      return false;
-    },
-    { enabled: isOpen && isWaitingConsent && consentRequestId !== null, baseMs: 1500, maxMs: 6000 }
-  );
 
   if (!isOpen) return null;
 
-  const handleStartCut = async () => {
-    setLoading(true);
-    setCutError(null);
-    try {
-      const res = await startCut({ clientId, clientPhone, clientName });
-      setActiveCutId(res.cut.id);
-      setIsCutActive(true);
-      presenceService.setStatus('RED');
-    } catch (err) {
-      setCutError(err instanceof Error ? err.message : 'No se pudo iniciar el corte');
-    } finally {
-      setLoading(false);
-    }
+  const handleOpenPhotoPicker = (slotIndex: number) => {
+    setActiveSlotIndex(slotIndex);
+    fileInputRef.current?.click();
   };
 
-  const handleGoToRecording = () => {
-    // Pasar al paso de registro de fotos y detalles del nuevo corte
-    setStep('recording');
-  };
-
-  const handlePhotoUploadClick = (index: number) => {
-    activeAngleSlotRef.current = index;
+  const handleAddPhotoClick = () => {
+    if (photos.length >= MAX_PHOTOS) return;
+    setActiveSlotIndex(photos.length);
     fileInputRef.current?.click();
   };
 
@@ -173,13 +115,14 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
       const compressedDataUrl = await compressImage(file, 960, 0.8);
       if (!compressedDataUrl) return;
 
-      setNewPhotos((prev) => {
+      setPhotos((prev) => {
         const next = [...prev];
-        next[activeAngleSlotRef.current] = {
-          ...next[activeAngleSlotRef.current],
-          img: compressedDataUrl,
-        };
-        return next;
+        if (activeSlotIndex < next.length) {
+          next[activeSlotIndex] = compressedDataUrl;
+        } else {
+          next.push(compressedDataUrl);
+        }
+        return next.slice(0, MAX_PHOTOS);
       });
     } catch (err) {
       console.warn('Error compressing photo:', err);
@@ -190,44 +133,20 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
     }
   };
 
-  const handleSendConsentRequest = async () => {
-    setConsentReceived(null);
-    setConsentError(null);
-    try {
-      const requestId = await requestPhotoConsent({
-        clientId,
-        clientPhone: clientId ? undefined : clientPhone || undefined,
-        cutId: activeCutId && /^[0-9a-f-]{36}$/i.test(activeCutId) ? activeCutId : undefined,
-        styleName: `${tipoDegradado} · ${parteSuperior}`,
-        notes: cutNotes,
-      });
-      setConsentRequestId(requestId);
-      setIsWaitingConsent(true);
-    } catch (err) {
-      setIsWaitingConsent(false);
-      setConsentError(err instanceof Error ? err.message : 'No se pudo enviar la solicitud.');
-    }
+  const handleRemovePhoto = (index: number) => {
+    setPhotos((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleCompleteAndFinalize = async () => {
+  const handleFinalizeCut = async () => {
     setLoading(true);
     setCutError(null);
-    const chips: CutChips = {
-      baseLateral,
-      tipoDegradado,
-      parteSuperior,
-      barba: {
-        included: barbaOption !== 'No',
-        alturaMejilla: barbaOption !== 'No' ? barbaOption : undefined,
-      },
-      notasEspeciales: cutNotes ? [cutNotes] : [],
-    };
 
-    const uploadedPhotos = newPhotos
-      .filter((p) => p.img)
-      .map((p) => ({ url: p.img, angle: p.angle }));
-
-    const isPublic = Boolean(consentReceived?.isPublic);
+    const uploadedPhotos = photos
+      .filter(Boolean)
+      .map((img, idx) => ({
+        url: img,
+        angle: `Foto ${idx + 1}`,
+      }));
 
     try {
       let cutIdToFinalize = activeCutId;
@@ -235,10 +154,17 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
         const startRes = await startCut({ clientId, clientPhone, clientName });
         cutIdToFinalize = startRes.cut.id;
         setActiveCutId(cutIdToFinalize);
+        presenceService.setStatus('RED');
       }
-      await finalizeCut(cutIdToFinalize, chips, uploadedPhotos, isPublic);
 
-      // Tell other tabs (e.g. the client's history feed) to reload the real cut from the server.
+      await finalizeCut(cutIdToFinalize, {
+        sameAsLastTime,
+        notes: cutNotes.trim() || undefined,
+        photos: uploadedPhotos,
+        isPublic: false,
+      });
+
+      // Notificar a otras vistas/pestañas de la finalización del corte
       try {
         if (typeof BroadcastChannel !== 'undefined') {
           const bc = new BroadcastChannel(CHAIR_SYNC_CHANNEL_NAME);
@@ -249,8 +175,6 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
         console.warn('Could not broadcast finalized cut:', err);
       }
 
-      setIsCutActive(false);
-      setStep('config');
       onCutFinalized();
     } catch (err) {
       setCutError(err instanceof Error ? err.message : 'No se pudo finalizar el corte');
@@ -259,9 +183,15 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
     }
   };
 
+  // Determine how many initial slots to render: at least 3, or more if photos > 3
+  const visibleSlotCount = Math.max(3, Math.min(photos.length + 1, MAX_PHOTOS));
+  const slotIndices = Array.from({ length: Math.min(visibleSlotCount, 3) }, (_, i) => i);
+  // Any extra photos beyond the first 3
+  const extraPhotos = photos.slice(3);
+
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-black/95 backdrop-blur-2xl select-none overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-xl select-none overflow-y-auto">
         <input
           ref={fileInputRef}
           type="file"
@@ -272,419 +202,246 @@ export const RepeatCutConfigModal: FC<RepeatCutConfigModalProps> = ({
         />
 
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.96 }}
           transition={SPRING_MODAL}
-          className="relative z-10 w-full max-w-md min-h-screen sm:min-h-0 sm:max-h-[92vh] sm:rounded-3xl p-6 sm:p-7 space-y-6 text-left flex flex-col justify-between overflow-y-auto bg-[#0E0D0B] border border-[#B68F4E]/30"
+          className="relative z-10 w-full max-w-md max-h-[92vh] rounded-3xl p-5 sm:p-6 space-y-5 text-left flex flex-col justify-between overflow-y-auto bg-[#0E0D0B] border border-[#B68F4E]/30 shadow-2xl"
         >
-          {/* =========================================================================
-              HEADER
-              ========================================================================= */}
-          <header className="flex items-center justify-between">
-            <BrandLogo variant="full" size="md" />
-
-            <div className="flex items-center gap-2">
-              {step === 'recording' && (
-                <button
-                  type="button"
-                  onClick={() => setStep('config')}
-                  className="p-2 rounded-full bg-white/5 border border-white/10 text-white/80 hover:text-white transition-colors cursor-pointer"
-                  title="Volver a parámetros"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                </button>
+          {/* HEADER */}
+          <header className="flex items-center justify-between pb-3 border-b border-white/10">
+            <div className="flex items-center gap-2.5">
+              <BrandLogo variant="full" size="sm" />
+              {clientName && (
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#B68F4E]/20 text-[#D9C9B0] border border-[#B68F4E]/30 truncate max-w-[150px]">
+                  {clientName}
+                </span>
               )}
-
-              <button
-                type="button"
-                onClick={onClose}
-                className="p-2 rounded-full bg-white/5 border border-white/10 text-white/60 hover:text-white transition-colors cursor-pointer"
-                aria-label="Cerrar"
-              >
-                <X className="w-5 h-5" />
-              </button>
             </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-full bg-white/5 border border-white/10 text-white/60 hover:text-white transition-colors cursor-pointer"
+              aria-label="Cerrar"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </header>
 
-          {/* =========================================================================
-              ETAPA 1: CONFIGURACIÓN Y PARÁMETROS DEL CORTE ANTERIOR
-              ========================================================================= */}
-          {step === 'config' && (
-            <div className="space-y-6">
-              <div className="space-y-1">
-                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white font-serif">
-                  Repetir último corte
-                </h1>
-                <p className="text-xs text-[#D9C9B0]/70 font-light leading-relaxed">
-                  Estos son los parámetros del último corte de {clientName}. Puedes modificarlos o iniciar directamente.
-                </p>
-              </div>
-
-              {/* Banner de Corte Activo */}
-              {isCutActive && (
-                <div className="p-4 rounded-2xl bg-red-950/40 border border-red-500/40 flex items-center justify-between animate-pulse">
-                  <div className="flex items-center gap-3">
-                    <span className="w-3 h-3 rounded-full bg-red-500 shadow-[0_0_10px_#ef4444]" />
-                    <div>
-                      <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-                        Corte en sillón en curso
-                      </h4>
-                      <span className="text-[10px] text-red-300 font-mono">
-                        Presencia: Ocupado (RED)
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Selectores de Chips */}
-              <div className="space-y-4">
-                {/* Degradado */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-white/90 uppercase tracking-wider font-mono">
-                    Degradado
-                  </label>
-                  <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-                    {['#0', '#0.5', '#1', '#1.5', '#2'].map((val) => (
-                      <button
-                        key={val}
-                        type="button"
-                        onClick={() => setBaseLateral(val)}
-                        className={`px-4 py-2 rounded-xl text-xs font-mono font-semibold transition-all cursor-pointer ${
-                          baseLateral === val
-                            ? 'bg-[#D9C9B0] text-black shadow-md font-bold'
-                            : 'bg-white/5 border border-white/10 text-white/70 hover:text-white'
-                        }`}
-                      >
-                        {val}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Tipo */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-white/90 uppercase tracking-wider font-mono">
-                    Tipo
-                  </label>
-                  <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-                    {['Low Fade', 'Mid Fade', 'High Fade'].map((val) => (
-                      <button
-                        key={val}
-                        type="button"
-                        onClick={() => setTipoDegradado(val)}
-                        className={`px-4 py-2 rounded-xl text-xs font-medium transition-all cursor-pointer ${
-                          tipoDegradado === val
-                            ? 'bg-[#D9C9B0] text-black shadow-md font-bold'
-                            : 'bg-white/5 border border-white/10 text-white/70 hover:text-white'
-                        }`}
-                      >
-                        {val}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Parte superior */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-white/90 uppercase tracking-wider font-mono">
-                    Parte superior
-                  </label>
-                  <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-                    {['Texturizado', 'Recto', 'Degradado'].map((val) => (
-                      <button
-                        key={val}
-                        type="button"
-                        onClick={() => setParteSuperior(val)}
-                        className={`px-4 py-2 rounded-xl text-xs font-medium transition-all cursor-pointer ${
-                          parteSuperior === val
-                            ? 'bg-[#D9C9B0] text-black shadow-md font-bold'
-                            : 'bg-white/5 border border-white/10 text-white/70 hover:text-white'
-                        }`}
-                      >
-                        {val}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Barba */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-white/90 uppercase tracking-wider font-mono">
-                    Barba
-                  </label>
-                  <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-                    {['No', 'Sí', 'Alta', 'Media', 'Baja'].map((val) => (
-                      <button
-                        key={val}
-                        type="button"
-                        onClick={() => setBarbaOption(val)}
-                        className={`px-4 py-2 rounded-xl text-xs font-medium transition-all cursor-pointer ${
-                          barbaOption === val
-                            ? 'bg-[#D9C9B0] text-black shadow-md font-bold'
-                            : 'bg-white/5 border border-white/10 text-white/70 hover:text-white'
-                        }`}
-                      >
-                        {val}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Fotos del Corte Anterior (Referencia) */}
-              <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-white">
-                    Fotos del corte anterior (Referencia)
-                  </h3>
-                  <span className="text-xs text-[#D9C9B0]/70">4 fotos</span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2.5">
-                  {[
-                    { angle: 'Frontal', img: '/assets/images/1.png' },
-                    { angle: 'Lado izquierdo', img: '/assets/images/2.png' },
-                    { angle: 'Lado derecho', img: '/assets/images/3.png' },
-                    { angle: 'Posterior', img: '/assets/images/4.png' },
-                  ].map((item) => (
-                    <div
-                      key={item.angle}
-                      className="relative aspect-4/3 rounded-2xl overflow-hidden border border-white/10 bg-[#161616]"
-                    >
-                      <img
-                        src={item.img}
-                        alt={item.angle}
-                        className="w-full h-full object-cover"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                      <div className="absolute bottom-1.5 left-2 text-[10px] text-white/90 font-mono">
-                        {item.angle}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Botón de Iniciar o Finalizar */}
-              <div className="pt-2">
-                {cutError ? (
-                  <p role="alert" className="text-[11px] text-red-400 text-center pb-2">
-                    {cutError}
-                  </p>
-                ) : null}
-                {!isCutActive ? (
-                  <motion.button
-                    type="button"
-                    whileTap={{ scale: 0.98 }}
-                    transition={SPRING_TOUCH}
-                    onClick={handleStartCut}
-                    disabled={loading}
-                    className="w-full py-4 rounded-2xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-bold text-sm tracking-wide shadow-lg cursor-pointer flex items-center justify-center gap-2"
-                  >
-                    <Play className="w-4 h-4 fill-current" />
-                    <span>Iniciar corte</span>
-                  </motion.button>
-                ) : (
-                  <motion.button
-                    type="button"
-                    whileTap={{ scale: 0.98 }}
-                    transition={SPRING_TOUCH}
-                    onClick={handleGoToRecording}
-                    className="w-full py-4 rounded-2xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-bold text-sm tracking-wide shadow-lg cursor-pointer flex items-center justify-center gap-2 hover:brightness-105"
-                  >
-                    <Scissors className="w-4 h-4" />
-                    <span>Finalizar corte y registrar nuevo trabajo →</span>
-                  </motion.button>
-                )}
-              </div>
+          <div className="space-y-5">
+            {/* Título de la acción */}
+            <div>
+              <h2 className="text-xl font-serif font-bold text-white tracking-tight flex items-center gap-2">
+                <span>Registrar Corte</span>
+                <Scissors className="w-4 h-4 text-[#B68F4E]" />
+              </h2>
+              <p className="text-xs text-[#D9C9B0]/60 mt-0.5">
+                Sube fotos del resultado y agrega notas técnicas si lo deseas.
+              </p>
             </div>
-          )}
 
-          {/* =========================================================================
-              ETAPA 2: REGISTRO DE FOTOS DEL NUEVO CORTE & CONSENTIMIENTO
-              ========================================================================= */}
-          {step === 'recording' && (
-            <div className="space-y-6">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-[#B68F4E] text-[10px] font-mono tracking-widest uppercase">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Nuevo corte terminado</span>
-                </div>
-                <h2 className="text-2xl font-bold text-white tracking-tight font-serif">
-                  Registrar fotos y evidencia
-                </h2>
-                <p className="text-xs text-[#D9C9B0]/80 font-light leading-relaxed">
-                  Captura las fotos del corte de hoy de {clientName} para guardarlo en su historial y solicitar publicación.
-                </p>
+            {/* SECCIÓN 1: FOTOS DEL CORTE (Foto 1, Foto 2, Foto 3 + [+] hasta 5) */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-mono font-bold uppercase tracking-wider text-white/80">
+                  Fotos del corte ({photos.length}/{MAX_PHOTOS})
+                </span>
+                <span className="text-[11px] text-[#D9C9B0]/60">
+                  {photos.length === 0 ? 'Opcional pero recomendado' : 'Nitidez optimizada'}
+                </span>
               </div>
 
-              {/* Slots de Fotos del Nuevo Corte */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-white font-mono uppercase tracking-wider">
-                    Fotos del corte de hoy (1-4)
-                  </label>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2.5">
-                  {newPhotos.map((slot, index) => (
+              <div className="grid grid-cols-3 gap-2.5">
+                {/* 3 Espacios Iniciales: Foto 1, Foto 2, Foto 3 */}
+                {slotIndices.map((idx) => {
+                  const photoUrl = photos[idx];
+                  return (
                     <div
-                      key={slot.angle}
-                      onClick={() => handlePhotoUploadClick(index)}
-                      className={`relative aspect-4/3 rounded-2xl overflow-hidden border transition-all cursor-pointer flex flex-col items-center justify-center text-center p-2 group ${
-                        slot.img
-                          ? 'border-[#B68F4E]/60 bg-black'
-                          : 'border-dashed border-white/20 bg-white/[0.02] hover:border-[#B68F4E]/40 hover:bg-white/[0.05]'
-                      }`}
+                      key={`slot-${idx}`}
+                      className="relative aspect-square rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden flex flex-col items-center justify-center group transition-all"
                     >
-                      {slot.img ? (
+                      {photoUrl ? (
                         <>
                           <img
-                            src={slot.img}
-                            alt={slot.angle}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                            src={photoUrl}
+                            alt={`Foto ${idx + 1}`}
+                            className="w-full h-full object-cover"
                           />
-                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <Camera className="w-6 h-6 text-white" />
-                          </div>
-                          <span className="absolute bottom-1.5 left-2 px-2 py-0.5 rounded-full bg-black/80 text-[10px] font-mono text-[#D9C9B0]">
-                            {slot.angle}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemovePhoto(idx);
+                            }}
+                            className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/75 hover:bg-red-500/80 text-white transition-colors cursor-pointer"
+                            title="Eliminar foto"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                          <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-black/70 text-white/90">
+                            Foto {idx + 1}
                           </span>
                         </>
                       ) : (
-                        <div className="space-y-1">
-                          <Camera className="w-5 h-5 text-[#B68F4E] mx-auto" />
-                          <span className="text-[10px] text-white/80 font-medium block">
-                            {slot.angle}
-                          </span>
-                          <span className="text-[9px] text-[#D9C9B0]/50 block">
-                            Toca para tomar/subir
-                          </span>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPhotoPicker(idx)}
+                          className="w-full h-full flex flex-col items-center justify-center gap-1.5 text-white/50 hover:text-[#D9C9B0] hover:bg-white/[0.06] transition-all cursor-pointer p-2"
+                        >
+                          <Camera className="w-5 h-5 text-[#B68F4E]/80" />
+                          <span className="text-[11px] font-mono font-semibold">Foto {idx + 1}</span>
+                        </button>
                       )}
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
 
-              {/* Notas Técnicas del Nuevo Corte */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-white font-mono uppercase tracking-wider">
-                  Notas técnicas del barbero
-                </label>
-                <textarea
-                  value={cutNotes}
-                  onChange={(e) => setCutNotes(e.target.value)}
-                  placeholder="Detalles de máquina, navaja o morfología..."
-                  rows={2}
-                  className="w-full p-3 rounded-xl bg-black/60 border border-white/10 text-xs text-white placeholder-white/30 focus:outline-none focus:border-[#B68F4E] transition-colors resize-none font-sans"
-                />
-              </div>
+              {/* Fotos adicionales (4 y 5) si existen, más el botón [+] */}
+              {(extraPhotos.length > 0 || (photos.length >= 3 && photos.length < MAX_PHOTOS)) && (
+                <div className="flex items-center gap-2.5 pt-1 overflow-x-auto pb-1">
+                  {extraPhotos.map((photoUrl, extraIdx) => {
+                    const actualIdx = 3 + extraIdx;
+                    return (
+                      <div
+                        key={`extra-${actualIdx}`}
+                        className="relative w-24 h-24 shrink-0 rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden group"
+                      >
+                        <img
+                          src={photoUrl}
+                          alt={`Foto ${actualIdx + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemovePhoto(actualIdx)}
+                          className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/75 hover:bg-red-500/80 text-white transition-colors cursor-pointer"
+                          title="Eliminar foto"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                        <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-black/70 text-white/90">
+                          Foto {actualIdx + 1}
+                        </span>
+                      </div>
+                    );
+                  })}
 
-              {/* Tarjeta de Publicación en Portafolio */}
-              <div className="fade-surface rounded-2xl p-4 border border-[#B68F4E]/30 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Globe className="w-4 h-4 text-[#B68F4E]" />
-                    <span className="text-xs font-bold text-white">
-                      Publicar en tu portafolio FADE
-                    </span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={requestPortfolio}
-                    onChange={(e) => setRequestPortfolio(e.target.checked)}
-                    className="w-4 h-4 accent-[#B68F4E] cursor-pointer"
-                  />
+                  {/* Cuadradito de agregar foto [+] con límite de 5 */}
+                  {photos.length < MAX_PHOTOS && (
+                    <button
+                      type="button"
+                      onClick={handleAddPhotoClick}
+                      className="w-24 h-24 shrink-0 rounded-2xl border border-dashed border-[#B68F4E]/40 hover:border-[#B68F4E] bg-[#B68F4E]/5 hover:bg-[#B68F4E]/10 flex flex-col items-center justify-center gap-1 text-[#D9C9B0] transition-all cursor-pointer"
+                    >
+                      <Plus className="w-5 h-5 text-[#B68F4E]" />
+                      <span className="text-[10px] font-mono font-bold">Agregar +</span>
+                    </button>
+                  )}
                 </div>
-                <p className="text-[11px] text-[#D9C9B0]/70 font-light leading-relaxed">
-                  Al activarlo, se enviará una notificación al celular de {clientName} para que autorice mostrar este trabajo públicamente.
-                </p>
+              )}
+            </div>
 
-                {/* Estado de Espera / Confirmación del Cliente */}
-                {isWaitingConsent && (
-                  <div className="p-3.5 rounded-xl bg-[#B68F4E]/10 border border-[#B68F4E]/40 flex items-center gap-2.5 text-xs text-[#D9C9B0]">
-                    <Loader2 className="w-4 h-4 text-[#B68F4E] animate-spin shrink-0" />
-                    <span>Esperando que {clientName} autorice en su celular...</span>
-                  </div>
-                )}
-
-                {consentReceived && (
+            {/* SECCIÓN 2: BOTÓN GRANDE “MISMO ESTILO QUE LA ÚLTIMA VEZ” */}
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setSameAsLastTime((prev) => !prev)}
+                className={`w-full p-4 rounded-2xl border transition-all text-left flex items-center justify-between cursor-pointer ${
+                  sameAsLastTime
+                    ? 'bg-gradient-to-r from-[#B68F4E]/25 to-[#D9C9B0]/20 border-[#B68F4E] shadow-[0_0_20px_rgba(182,143,78,0.25)]'
+                    : 'bg-white/[0.03] border-white/10 hover:border-white/20 hover:bg-white/[0.05]'
+                }`}
+              >
+                <div className="flex items-center gap-3">
                   <div
-                    className={`p-3 rounded-xl border flex items-center gap-2.5 text-xs font-medium ${
-                      consentReceived.isPublic
-                        ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-200'
-                        : 'bg-white/5 border-white/10 text-[#D9C9B0]'
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                      sameAsLastTime
+                        ? 'bg-[#B68F4E] text-black shadow-md'
+                        : 'bg-white/5 border border-white/10 text-[#D9C9B0]'
                     }`}
                   >
-                    {consentReceived.isPublic ? (
-                      <>
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                        <span>¡{clientName} autorizó publicar en portafolio público!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="w-4 h-4 text-[#B68F4E] shrink-0" />
-                        <span>{clientName} prefirió mantener el corte como privado.</span>
-                      </>
-                    )}
+                    <Sparkles className="w-5 h-5" />
                   </div>
-                )}
-              </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white tracking-wide">
+                      Mismo estilo que la última vez
+                    </h3>
+                    <p className="text-[11px] text-[#D9C9B0]/70 mt-0.5">
+                      {sameAsLastTime
+                        ? '✓ Se registrará como repetición de su corte habitual'
+                        : 'Toca aquí si el cliente se realizó su corte de siempre'}
+                    </p>
+                  </div>
+                </div>
 
-              {/* Acciones de la Etapa 2 */}
-              <div className="space-y-2 pt-2 border-t border-white/10">
-                {requestPortfolio && !consentReceived && !isWaitingConsent ? (
-                  <motion.button
-                    type="button"
-                    whileTap={{ scale: 0.98 }}
-                    transition={SPRING_TOUCH}
-                    onClick={handleSendConsentRequest}
-                    className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-bold text-xs tracking-wide shadow-md cursor-pointer flex items-center justify-center gap-2"
-                  >
-                    <Globe className="w-4 h-4 text-black" />
-                    <span>Solicitar autorización de portafolio al cliente</span>
-                  </motion.button>
-                ) : null}
-
-                {consentError ? (
-                  <p role="alert" className="text-[11px] text-red-400 text-center">
-                    {consentError}
-                  </p>
-                ) : null}
-                {cutError ? (
-                  <p role="alert" className="text-[11px] text-red-400 text-center">
-                    {cutError}
-                  </p>
-                ) : null}
-
-                {/* Botón para finalizar y pasar al micro-tap de sala de espera */}
-                <motion.button
-                  type="button"
-                  whileTap={{ scale: 0.98 }}
-                  transition={SPRING_TOUCH}
-                  onClick={handleCompleteAndFinalize}
-                  disabled={loading}
-                  className={`w-full py-3.5 px-4 rounded-xl font-bold text-xs tracking-wide shadow-lg cursor-pointer flex items-center justify-center gap-2 transition-all ${
-                    consentReceived?.isPublic
-                      ? 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-emerald-950/40'
-                      : 'bg-[#B68F4E] hover:bg-[#B68F4E]/90 text-black'
+                <div
+                  className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                    sameAsLastTime
+                      ? 'border-[#B68F4E] bg-[#B68F4E] text-black'
+                      : 'border-white/20 bg-transparent text-transparent'
                   }`}
                 >
-                  <CheckCircle2 className="w-4 h-4 text-black" />
-                  <span>
-                    {consentReceived || !requestPortfolio
-                      ? 'Finalizar y registrar corte en sala de espera →'
-                      : isWaitingConsent
-                      ? 'Continuar sin esperar (Guardar como privado) →'
-                      : 'Saltar solicitud y finalizar corte →'}
-                  </span>
-                </motion.button>
-              </div>
+                  <CheckCircle2 className="w-4 h-4 fill-current" />
+                </div>
+              </button>
             </div>
-          )}
+
+            {/* SECCIÓN 3: UN SOLO CAMPO DE COMENTARIO OPCIONAL MUY CORTO */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <label
+                  htmlFor="cutNotesInput"
+                  className="font-mono font-bold uppercase tracking-wider text-white/80"
+                >
+                  Comentario o nota técnica <span className="text-white/40 font-normal">(opcional)</span>
+                </label>
+                <span className="text-[10px] font-mono text-white/40">
+                  {cutNotes.length}/280
+                </span>
+              </div>
+              <textarea
+                id="cutNotesInput"
+                rows={2}
+                maxLength={280}
+                value={cutNotes}
+                onChange={(e) => setCutNotes(e.target.value)}
+                placeholder="Ej: Tijera en coronilla, pulido con shaver, patillas en punta..."
+                className="w-full px-3.5 py-2.5 rounded-2xl bg-white/[0.03] border border-white/10 text-white placeholder-white/30 text-xs focus:outline-none focus:border-[#B68F4E] transition-colors resize-none"
+              />
+            </div>
+
+            {/* Mensaje de error si falla */}
+            {cutError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 text-xs flex items-center gap-2">
+                <X className="w-4 h-4 text-red-400 shrink-0" />
+                <span>{cutError}</span>
+              </div>
+            )}
+          </div>
+
+          {/* ACCIÓN PRINCIPAL: FINALIZAR CORTE */}
+          <div className="pt-2 border-t border-white/10">
+            <button
+              type="button"
+              disabled={loading}
+              onClick={handleFinalizeCut}
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-bold text-xs uppercase tracking-wider shadow-xl hover:brightness-105 active:scale-98 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-black" />
+                  <span>Guardando corte...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4 text-black" />
+                  <span>Finalizar y Guardar Corte</span>
+                </>
+              )}
+            </button>
+          </div>
         </motion.div>
       </div>
     </AnimatePresence>

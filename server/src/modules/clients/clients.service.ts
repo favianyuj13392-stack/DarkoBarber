@@ -102,9 +102,9 @@ export class ClientsService {
       },
       cuts: allCuts.map((c) => {
         const chipsObj = (c.chips as any) || {};
-        const styleName = chipsObj.tipoDegradado
+        const styleName = chipsObj.styleName || (chipsObj.tipoDegradado
           ? `${chipsObj.tipoDegradado} · ${chipsObj.parteSuperior || 'Texturizado'}`
-          : 'Fade Clásico';
+          : (chipsObj.sameAsLastTime ? 'Mismo estilo de siempre' : 'Fade Clásico'));
 
         return {
           id: c.id,
@@ -126,7 +126,7 @@ export class ClientsService {
             ? Math.round((c.finishedAt.getTime() - c.startedAt.getTime()) / 60000)
             : 35,
           priceBs: 60,
-          barberNotes: chipsObj.barberNotes || chipsObj.notasEspeciales?.[0] || 'Corte finalizado en sillón.',
+          barberNotes: chipsObj.notes || chipsObj.barberNotes || chipsObj.notasEspeciales?.[0] || 'Corte finalizado en sillón.',
           photos: c.photos.map((ph, idx) => ({
             id: ph.id,
             url: ph.r2Key,
