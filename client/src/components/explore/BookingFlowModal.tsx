@@ -355,9 +355,15 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                       );
                     })}
                     {barber.services.length === 0 && (
-                      <p className="text-xs text-white/50 text-center py-3">
-                        Este barbero aún no tiene servicios disponibles para reservar.
-                      </p>
+                      <div className="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/30 text-center space-y-1">
+                        <AlertCircle className="w-5 h-5 text-amber-400 mx-auto" />
+                        <p className="text-xs font-semibold text-amber-200">
+                          Este barbero aún no tiene servicios disponibles para reservar
+                        </p>
+                        <p className="text-[11px] text-amber-300/70">
+                          El profesional debe configurar servicios y precios en su perfil antes de poder recibir citas online.
+                        </p>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -574,17 +580,26 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                   disabled={
                     submitting ||
                     isNonClientSession ||
+                    barber.services.length === 0 ||
                     !selectedTime ||
                     selectedServices.length === 0 ||
                     Boolean(availability && (!availability.acceptsBookings || !availability.isWorkingDay))
                   }
                   onClick={handleConfirm}
-                  className="w-full py-3.5 rounded-2xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-extrabold text-xs uppercase tracking-wider shadow-[0_8px_24px_rgba(217,201,176,0.35),inset_0_1px_0_rgba(255,255,255,0.8)] hover:brightness-105 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className={`w-full py-3.5 rounded-2xl font-extrabold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
+                    barber.services.length === 0
+                      ? 'bg-white/10 text-white/40 border border-white/10 cursor-not-allowed'
+                      : 'bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black shadow-[0_8px_24px_rgba(217,201,176,0.35),inset_0_1px_0_rgba(255,255,255,0.8)] hover:brightness-105 active:scale-[0.99] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed'
+                  }`}
                 >
                   <Sparkles className="w-4 h-4" />
                   <span>
-                    {submitting
+                    {barber.services.length === 0
+                      ? 'Sin servicios disponibles'
+                      : submitting
                       ? 'Enviando...'
+                      : selectedServices.length === 0
+                      ? 'Selecciona al menos un servicio'
                       : !selectedTime
                       ? 'Elige un horario'
                       : `Confirmar reserva (${totalBs} Bs)`}

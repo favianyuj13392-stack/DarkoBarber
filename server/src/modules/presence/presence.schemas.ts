@@ -34,7 +34,7 @@ export const updateWaitingCountMessageSchema = z.object({
  */
 export const setStatusMessageSchema = z.object({
   type: z.literal('SET_STATUS'),
-  status: z.enum(['GREEN', 'GRAY']),
+  status: z.enum(['GREEN', 'GRAY', 'RED', 'YELLOW']),
 });
 
 export const pingMessageSchema = z.object({

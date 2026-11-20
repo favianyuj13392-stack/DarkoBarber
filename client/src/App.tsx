@@ -130,6 +130,10 @@ export function App() {
     const user = getStoredUser();
     if (token && user) {
       setAuthData({ token, user });
+      const path = window.location.pathname.toLowerCase();
+      if (path.startsWith('/admin') || path.includes('admin')) {
+        return;
+      }
       if (user.role === 'cliente') {
         setCurrentScreen('historial');
       } else {
@@ -576,7 +580,13 @@ export function App() {
                 } catch {
                   // ignore
                 }
-                setCurrentScreen('login');
+                const token = getStoredToken();
+                const user = getStoredUser();
+                if (token && user) {
+                  setCurrentScreen(user.role === 'cliente' ? 'historial' : 'barber-chair');
+                } else {
+                  setCurrentScreen('login');
+                }
               }}
             />
           </motion.div>

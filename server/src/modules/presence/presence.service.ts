@@ -137,11 +137,15 @@ export class PresenceService {
 
   /**
    * Manual status change:
-   * Only accepts 'GREEN' or 'GRAY'.
-   * If returning from 'GRAY' ('GREEN' requested) while an active cut is still in progress,
+   * Accepts 'GREEN', 'GRAY', 'RED', or 'YELLOW'.
+   * If returning to 'GREEN' while an active cut is still in progress,
    * restores to RED/YELLOW instead of masking the active cut as GREEN.
    */
-  async setStatus(barberId: string, shopId: string | null, status: 'GREEN' | 'GRAY') {
+  async setStatus(
+    barberId: string,
+    shopId: string | null,
+    status: 'GREEN' | 'GRAY' | 'RED' | 'YELLOW'
+  ) {
     const current = await this.prisma.presence.findUnique({
       where: { barberId },
     });
@@ -149,6 +153,10 @@ export class PresenceService {
     let targetStatus: PresenceStatus;
     if (status === 'GRAY') {
       targetStatus = PresenceStatus.GRAY;
+    } else if (status === 'RED') {
+      targetStatus = PresenceStatus.RED;
+    } else if (status === 'YELLOW') {
+      targetStatus = PresenceStatus.YELLOW;
     } else if (current?.activeCutId) {
       targetStatus = (current.waitingCount ?? 0) > 0 ? PresenceStatus.YELLOW : PresenceStatus.RED;
     } else {

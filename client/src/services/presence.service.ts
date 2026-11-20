@@ -1,4 +1,4 @@
-import { getStoredToken } from './auth.service';
+import { getStoredToken, getStoredUser } from './auth.service';
 
 export type BarberPresenceStatus = 'GREEN' | 'YELLOW' | 'RED' | 'OFFLINE';
 
@@ -110,7 +110,7 @@ class PresenceClient {
   }
 
   /**
-   * Cambiar estado de presencia (GREEN, YELLOW, RED)
+   * Cambiar estado de presencia (GREEN, YELLOW, RED, GRAY)
    */
   setStatus(status: BarberPresenceStatus): void {
     this.currentStatus = status;
@@ -119,10 +119,31 @@ class PresenceClient {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(
         JSON.stringify({
+          type: 'UPDATE_STATUS',
+          status,
+        })
+      );
+      this.ws.send(
+        JSON.stringify({
           type: 'SET_STATUS',
           status,
         })
       );
+    }
+
+    const token = getStoredToken();
+    const user = getStoredUser();
+    if (token && user?.id) {
+      fetch(`/presence/${user.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status }),
+      }).catch((err) => {
+        console.warn('[Presence] HTTP status sync fallback failed:', err);
+      });
     }
   }
 
@@ -137,6 +158,12 @@ class PresenceClient {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(
         JSON.stringify({
+          type: 'UPDATE_STATUS',
+          status,
+        })
+      );
+      this.ws.send(
+        JSON.stringify({
           type: 'SET_STATUS',
           status,
         })
@@ -147,6 +174,21 @@ class PresenceClient {
           waitingCount,
         })
       );
+    }
+
+    const token = getStoredToken();
+    const user = getStoredUser();
+    if (token && user?.id) {
+      fetch(`/presence/${user.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status, waitingCount }),
+      }).catch((err) => {
+        console.warn('[Presence] HTTP presence sync fallback failed:', err);
+      });
     }
   }
 
