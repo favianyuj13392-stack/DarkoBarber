@@ -50,3 +50,5 @@ Thumbs.db
 .temp/
 scratch/
 .atl/
+stickers_pro/
+client/public/stickers/
