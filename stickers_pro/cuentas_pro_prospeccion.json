@@ -1,0 +1,102 @@
+[
+  {
+    "num": "01",
+    "email": "pro01@fade.com",
+    "password": "Fade2026!",
+    "pin": "1234",
+    "displayName": "Barbero Pro 01",
+    "barberId": "91fef1d4-0f7a-45fe-a507-01cd693d9226",
+    "qrUrl": "https://fade.darkosync.com/?chair=91fef1d4-0f7a-45fe-a507-01cd693d9226",
+    "pngFile": "sticker_pro_01.png"
+  },
+  {
+    "num": "02",
+    "email": "pro02@fade.com",
+    "password": "Fade2026!",
+    "pin": "1234",
+    "displayName": "Barbero Pro 02",
+    "barberId": "37a51d4b-04d5-443f-be26-aaa51ae59aef",
+    "qrUrl": "https://fade.darkosync.com/?chair=37a51d4b-04d5-443f-be26-aaa51ae59aef",
+    "pngFile": "sticker_pro_02.png"
+  },
+  {
+    "num": "03",
+    "email": "pro03@fade.com",
+    "password": "Fade2026!",
+    "pin": "1234",
+    "displayName": "Barbero Pro 03",
+    "barberId": "3bec984f-4637-492b-8112-369819055655",
+    "qrUrl": "https://fade.darkosync.com/?chair=3bec984f-4637-492b-8112-369819055655",
+    "pngFile": "sticker_pro_03.png"
+  },
+  {
+    "num": "04",
+    "email": "pro04@fade.com",
+    "password": "Fade2026!",
+    "pin": "1234",
+    "displayName": "Barbero Pro 04",
+    "barberId": "bffc4991-ccb0-4ed9-942f-7b5f472fa49c",
+    "qrUrl": "https://fade.darkosync.com/?chair=bffc4991-ccb0-4ed9-942f-7b5f472fa49c",
+    "pngFile": "sticker_pro_04.png"
+  },
+  {
+    "num": "05",
+    "email": "pro05@fade.com",
+    "password": "Fade2026!",
+    "pin": "1234",
+    "displayName": "Barbero Pro 05",
+    "barberId": "1cc3abd4-a7ea-4b78-a0ca-c4f86cd760ad",
+    "qrUrl": "https://fade.darkosync.com/?chair=1cc3abd4-a7ea-4b78-a0ca-c4f86cd760ad",
+    "pngFile": "sticker_pro_05.png"
+  },
+  {
+    "num": "06",
+    "email": "pro06@fade.com",
+    "password": "Fade2026!",
+    "pin": "1234",
+    "displayName": "Barbero Pro 06",
+    "barberId": "ce498394-d796-4408-b601-598d18421e40",
+    "qrUrl": "https://fade.darkosync.com/?chair=ce498394-d796-4408-b601-598d18421e40",
+    "pngFile": "sticker_pro_06.png"
+  },
+  {
+    "num": "07",
+    "email": "pro07@fade.com",
+    "password": "Fade2026!",
+    "pin": "1234",
+    "displayName": "Barbero Pro 07",
+    "barberId": "f863c7c5-1934-4d29-bb57-89e099b12814",
+    "qrUrl": "https://fade.darkosync.com/?chair=f863c7c5-1934-4d29-bb57-89e099b12814",
+    "pngFile": "sticker_pro_07.png"
+  },
+  {
+    "num": "08",
+    "email": "pro08@fade.com",
+    "password": "Fade2026!",
+    "pin": "1234",
+    "displayName": "Barbero Pro 08",
+    "barberId": "d61b9e8d-e3e9-49c5-84c1-b0b287e58292",
+    "qrUrl": "https://fade.darkosync.com/?chair=d61b9e8d-e3e9-49c5-84c1-b0b287e58292",
+    "pngFile": "sticker_pro_08.png"
+  },
+  {
+    "num": "09",
+    "email": "pro09@fade.com",
+    "password": "Fade2026!",
+    "pin": "1234",
+    "displayName": "Barbero Pro 09",
+    "barberId": "81360c75-af48-4c9a-828c-733717d6bb5e",
+    "qrUrl": "https://fade.darkosync.com/?chair=81360c75-af48-4c9a-828c-733717d6bb5e",
+    "pngFile": "sticker_pro_09.png"
+  },
+  {
+    "num": "10",
+    "email": "pro10@fade.com",
+    "password": "Fade2026!",
+    "pin": "1234",
+    "displayName": "Barbero Pro 10",
+    "barberId": "4d7bce33-0bd4-4860-abcf-3988e3d9e6a3",
+    "qrUrl": "https://fade.darkosync.com/?chair=4d7bce33-0bd4-4860-abcf-3988e3d9e6a3",
+    "pngFile": "sticker_pro_10.png"
+  }
+]
