@@ -129,6 +129,7 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
 
   // Only real cuts from the server; no demo history is mixed in.
   const [cutsList, setCutsList] = useState<HaircutItem[]>([]);
+  const [isLoadingCuts, setIsLoadingCuts] = useState(true);
 
   const loadCutsFromDb = async () => {
     try {
@@ -150,6 +151,8 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
       }
     } catch (err) {
       console.warn('Could not fetch cuts from DB:', err);
+    } finally {
+      setIsLoadingCuts(false);
     }
   };
 
@@ -538,11 +541,20 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
             GALERÍA MENSUAL AGRUPADA (Cuadrículas Responsivas: 3 cols móvil, 4-6 en desktop)
             ========================================================================= */}
         <div className="space-y-8 text-left">
-          {cutsList.length === 0 && (
+          {isLoadingCuts ? (
+            <div className="space-y-4 py-4 animate-pulse">
+              <div className="h-5 w-36 bg-white/10 rounded-lg" />
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="aspect-[4/5] rounded-2xl bg-white/5 border border-white/5" />
+                ))}
+              </div>
+            </div>
+          ) : cutsList.length === 0 ? (
             <p className="text-center text-xs text-white/50 py-10">
               Aún no tienes cortes registrados. Aparecerán aquí cuando un barbero finalice tu primer corte.
             </p>
-          )}
+          ) : null}
           {monthGroups.map((month) => {
             const cutsInMonth = filteredCuts.filter((c) => c.monthGroup === month);
 

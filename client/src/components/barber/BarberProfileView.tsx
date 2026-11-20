@@ -1011,7 +1011,7 @@ export const BarberProfileView: FC<BarberProfileViewProps> = ({ barber, onProfil
             <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 text-center space-y-1">
               <Sparkles className="w-4 h-4 mx-auto text-[#B68F4E]" />
               <div className="text-lg font-bold font-serif text-white">{barber?.totalCuts || 19}</div>
-              <div className="text-[10px] text-white/50 uppercase tracking-wider">Cortes Este Mes</div>
+              <div className="text-[10px] text-white/50 uppercase tracking-wider">Cortes Totales</div>
             </div>
 
             <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 text-center space-y-1">

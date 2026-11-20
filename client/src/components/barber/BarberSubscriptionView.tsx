@@ -142,7 +142,7 @@ export const BarberSubscriptionView: FC<BarberSubscriptionViewProps> = ({
         <div className="space-y-2.5 pt-4 border-t border-white/10">
           <div className="flex items-center justify-between text-xs">
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-white/80">Cortes realizados este mes:</span>
+              <span className="font-semibold text-white/80">Cortes este mes (cuota):</span>
               <span className="font-mono font-bold text-white text-sm">
                 {cutsCount} <span className="text-white/50 text-xs">/ {isUnlimited ? 'Ilimitados' : `${maxCuts} máx`}</span>
               </span>

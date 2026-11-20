@@ -121,10 +121,12 @@ export class ClientsService {
           styleName,
           barberName: c.barber?.displayName || 'Barbero FADE',
           barberAvatar: c.barber?.avatarUrl || undefined,
-          shopName: c.barber?.shop?.name || 'Fade Studio — Sopocachi',
-          durationMinutes: c.finishedAt
-            ? Math.round((c.finishedAt.getTime() - c.startedAt.getTime()) / 60000)
-            : 35,
+          shopName: c.barber?.shop?.name || 'Darko Studio — Sopocachi',
+          durationMinutes: (() => {
+            if (!c.finishedAt) return 35;
+            const diffMin = Math.round((c.finishedAt.getTime() - c.startedAt.getTime()) / 60000);
+            return diffMin >= 5 ? diffMin : 35;
+          })(),
           priceBs: 60,
           barberNotes: chipsObj.notes || chipsObj.barberNotes || chipsObj.notasEspeciales?.[0] || 'Corte finalizado en sillón.',
           photos: c.photos.map((ph, idx) => ({

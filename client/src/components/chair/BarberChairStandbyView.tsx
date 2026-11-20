@@ -34,7 +34,7 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
 }) => {
   const barberName = barber?.displayName || 'Diego Armando';
   const barberId = barber?.id || 'barber-diego';
-  const shopName = 'Fade Studio — Sopocachi';
+  const shopName = barber?.shopName || 'Darko Studio — Sopocachi';
 
   const [presenceStatus, setPresenceStatus] = useState<BarberPresenceStatus>('GREEN');
   const [isPresenceModalOpen, setIsPresenceModalOpen] = useState(false);
