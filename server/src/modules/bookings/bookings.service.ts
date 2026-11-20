@@ -400,7 +400,16 @@ export class BookingsService {
   async getClientBookings(clientId: string, now: Date = new Date()) {
     const rows = await this.prisma.booking.findMany({
       where: { clientId },
-      include: { barber: { select: { displayName: true } } },
+      include: {
+        barber: {
+          select: {
+            id: true,
+            displayName: true,
+            avatarUrl: true,
+            shop: { select: { id: true, name: true } },
+          },
+        },
+      },
       orderBy: [{ date: 'desc' }, { time: 'desc' }, { createdAt: 'desc' }],
     });
     const nowLocal = nowLocalMinutes(now);
@@ -412,6 +421,15 @@ export class BookingsService {
         id: b.id,
         barberId: b.barberId,
         barberName: b.barber.displayName,
+        barberAvatar: b.barber.avatarUrl,
+        shopName: b.barber.shop?.name || 'Fade Studio',
+        shopId: b.barber.shop?.id || null,
+        barber: {
+          id: b.barber.id,
+          displayName: b.barber.displayName,
+          avatarUrl: b.barber.avatarUrl,
+          shop: b.barber.shop ? { id: b.barber.shop.id, name: b.barber.shop.name } : null,
+        },
         serviceName: b.serviceName,
         servicePriceBs: b.servicePriceBs,
         durationMin: b.durationMin,

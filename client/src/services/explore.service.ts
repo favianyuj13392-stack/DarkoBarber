@@ -75,15 +75,21 @@ async function fetchActiveClientBooking(): Promise<ActiveBooking | null> {
       ? active.date
       : `${dayNames[dateObj.getUTCDay()]} ${dateObj.getUTCDate()} ${monthNames[dateObj.getUTCMonth()]}`;
 
+    const barberName = active.barberName || active.barber?.displayName || 'Barbero FADE';
+    const shopName = active.shopName || active.barber?.shop?.name || 'Fade Studio';
+    const barberAvatar = active.barberAvatar || active.barber?.avatarUrl || DEFAULT_AVATAR;
+
     return {
       id: active.id,
+      barberId: active.barberId || active.barber?.id,
+      shopId: active.shopId || active.barber?.shop?.id,
       dateBadge,
       timeRange: active.time
         ? `${active.time} - ${active.durationMin ? `(${active.durationMin} min)` : ''}`.trim()
         : '',
-      shopName: active.barber?.shop?.name || 'Fade Studio',
-      barberName: active.barber?.displayName || 'Barbero FADE',
-      barberAvatar: active.barber?.avatarUrl || DEFAULT_AVATAR,
+      shopName,
+      barberName,
+      barberAvatar,
       serviceName: active.serviceName || 'Servicio FADE',
       status: active.status === 'CONFIRMED' ? 'confirmada' : 'pendiente',
     };
@@ -116,7 +122,7 @@ async function fetchShopsList(): Promise<ShopItem[]> {
       photos: s.photoUrl ? [s.photoUrl] : [],
       isOpen: s.isActive ?? true,
       hours: 'Lun - Sáb: 09:00 - 20:30',
-      barberIds: [],
+      barberIds: Array.isArray(s.barbers) ? s.barbers.map((b: any) => b.id) : [],
       services: [],
       isVerified: true,
       isFavorite: false,
@@ -203,9 +209,22 @@ export async function fetchExploreData(): Promise<{
     fetchActiveClientBooking(),
   ]);
 
+  const enrichedShops = shops.map((s) => {
+    const ids = new Set(s.barberIds);
+    for (const b of barbers) {
+      if (b.shopId === s.id) {
+        ids.add(b.id);
+      }
+    }
+    return {
+      ...s,
+      barberIds: Array.from(ids),
+    };
+  });
+
   return {
     barbers,
-    shops,
+    shops: enrichedShops,
     activeBooking,
   };
 }

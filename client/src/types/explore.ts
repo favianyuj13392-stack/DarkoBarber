@@ -84,6 +84,8 @@ export interface BookingDay {
 
 export interface ActiveBooking {
   id: string;
+  barberId?: string;
+  shopId?: string;
   dateBadge: string; // "VIE 16 OCT"
   timeRange: string; // "16:00 - 16:30"
   shopName: string; // "Estudio 16"

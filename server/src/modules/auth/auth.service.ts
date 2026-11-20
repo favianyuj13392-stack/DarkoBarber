@@ -640,6 +640,12 @@ export class AuthService {
   async getAllShops() {
     return this.prisma.shop.findMany({
       where: { isActive: true },
+      include: {
+        barbers: {
+          where: { isActive: true },
+          select: { id: true },
+        },
+      },
       orderBy: { name: 'asc' },
     });
   }

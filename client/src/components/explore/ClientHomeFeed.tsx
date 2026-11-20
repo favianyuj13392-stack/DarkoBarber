@@ -152,10 +152,17 @@ export const ClientHomeFeed: FC<ClientHomeFeedProps> = ({
                 {activeBooking.timeRange}
               </span>
             </div>
-            <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-              <CheckCircle2 className="w-3 h-3" />
-              Confirmada
-            </span>
+            {activeBooking.status === 'confirmada' ? (
+              <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                <CheckCircle2 className="w-3 h-3" />
+                Confirmada
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-300 bg-amber-950/40 border border-amber-500/30 px-2 py-0.5 rounded-full">
+                <Clock className="w-3 h-3 text-amber-400" />
+                Por Confirmar
+              </span>
+            )}
           </div>
 
           <div className="flex items-center justify-between gap-4">
@@ -181,8 +188,14 @@ export const ClientHomeFeed: FC<ClientHomeFeedProps> = ({
             <button
               type="button"
               onClick={() => {
-                const b = barbers.find((x) => x.name.includes(activeBooking.barberName)) || barbers[0];
-                onSelectBarber(b);
+                const b =
+                  (activeBooking.barberId && barbers.find((x) => x.id === activeBooking.barberId)) ||
+                  barbers.find((x) => x.name.toLowerCase() === activeBooking.barberName.toLowerCase()) ||
+                  barbers.find((x) => x.name.includes(activeBooking.barberName)) ||
+                  barbers[0];
+                if (b) {
+                  onSelectBarber(b);
+                }
               }}
               className="flex-shrink-0 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-[#B68F4E]/20 text-white hover:text-[#F3E9DC] border border-white/15 text-xs font-semibold tracking-wide transition-all cursor-pointer flex items-center gap-1"
             >
