@@ -104,23 +104,41 @@ export function App() {
     // Si la URL contiene ?chair= o ?scan=, se enlaza directamente la sesión del sillón
     const chairBarberId = params.get('chair') || params.get('scan');
     if (chairBarberId) {
-      const barberName = params.get('name') || 'Diego Armando';
-      const shopName = params.get('shop') || 'Fade Studio — Sopocachi';
-      const scan: ScannedBarberInfo = {
+      const fallbackName = params.get('name') || 'Barbero FADE';
+      const fallbackShop = params.get('shop') || 'Darko Studio — Sopocachi';
+      const initialScan: ScannedBarberInfo = {
         barberId: chairBarberId,
-        barberName,
-        shopName,
+        barberName: fallbackName,
+        shopName: fallbackShop,
         avatarUrl: '/assets/images/1.png',
       };
+
+      // Resolve live barber info from DB so physical stickers reflect name changes in real time
+      fetch(`/presence/chair/${chairBarberId}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((live) => {
+          if (live) {
+            const updatedScan: ScannedBarberInfo = {
+              barberId: chairBarberId,
+              barberName: live.displayName || fallbackName,
+              shopName: live.shopName || fallbackShop,
+              avatarUrl: live.avatarUrl || '/assets/images/1.png',
+            };
+            setPendingChairScan(updatedScan);
+            savePendingChairBind(updatedScan);
+          }
+        })
+        .catch(() => {});
+
       const storedToken = getStoredToken();
       const storedUser = getStoredUser();
       if (storedToken && storedUser?.role === 'cliente') {
         setAuthData({ token: storedToken, user: storedUser });
-        setPendingChairScan(scan);
+        setPendingChairScan(initialScan);
         setCurrentScreen('historial');
       } else {
         // Resume the bind after the client signs in.
-        savePendingChairBind(scan);
+        savePendingChairBind(initialScan);
         setCurrentScreen('login');
       }
       return;

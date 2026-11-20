@@ -39,11 +39,7 @@ export const BarberQrModal: FC<BarberQrModalProps> = ({
       ? window.location.origin
       : 'https://fade.darkosync.com';
 
-  const qrLink = `${baseUrl}/?chair=${encodeURIComponent(
-    barberId
-  )}&name=${encodeURIComponent(barberName)}&shop=${encodeURIComponent(
-    shopName
-  )}`;
+  const qrLink = `${baseUrl}/?chair=${encodeURIComponent(barberId)}`;
 
   useEffect(() => {
     if (!isOpen) return;

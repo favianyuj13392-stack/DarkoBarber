@@ -200,6 +200,25 @@ const presenceRoutesPlugin: FastifyPluginAsync = async (fastify) => {
     return reply.status(200).send(chairs);
   });
 
+  // 2b. Public Chair Info Resolution (Immutable QR Pointer): GET /presence/chair/:barberId
+  fastify.get('/presence/chair/:barberId', async (request, reply) => {
+    const { barberId } = request.params as { barberId: string };
+    const barber = await fastify.prisma.barber.findUnique({
+      where: { id: barberId },
+      include: { shop: true },
+    });
+    if (!barber || !barber.isActive) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: 'Barbero no encontrado' });
+    }
+    return reply.status(200).send({
+      barberId: barber.id,
+      displayName: barber.displayName,
+      avatarUrl: barber.avatarUrl || '/assets/images/1.png',
+      shopName: barber.shop?.name || 'Fade Studio — Sopocachi',
+      shopId: barber.shopId,
+    });
+  });
+
   // 3. Authenticated Barber Presence: GET /presence/me
   fastify.get(
     '/presence/me',

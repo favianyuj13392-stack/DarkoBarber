@@ -49,11 +49,7 @@ export const BarberChairStandbyView: FC<BarberChairStandbyViewProps> = ({
       ? window.location.origin
       : 'https://fade.darkosync.com';
 
-  const qrLink = `${baseUrl}/?chair=${encodeURIComponent(
-    barberId
-  )}&name=${encodeURIComponent(barberName)}&shop=${encodeURIComponent(
-    shopName
-  )}`;
+  const qrLink = `${baseUrl}/?chair=${encodeURIComponent(barberId)}`;
 
   useEffect(() => {
     QRCode.toDataURL(qrLink, {
