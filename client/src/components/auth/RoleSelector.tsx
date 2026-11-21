@@ -3,6 +3,7 @@ import type { FC, KeyboardEvent } from 'react';
 import { motion } from 'framer-motion';
 import { Scissors, User } from 'lucide-react';
 import { SPRING_TOUCH } from '../../constants/springs';
+import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion';
 
 export type UserRole = 'barbero' | 'cliente';
 
@@ -18,6 +19,7 @@ export const RoleSelector: FC<RoleSelectorProps> = ({
   className = '',
 }) => {
   const layoutId = useId();
+  const reduceMotion = usePrefersReducedMotion();
   const tabRefs = useRef<Record<UserRole, HTMLButtonElement | null>>({
     barbero: null,
     cliente: null,
@@ -58,7 +60,7 @@ export const RoleSelector: FC<RoleSelectorProps> = ({
       {/* Botón Soy Barbero */}
       <motion.button
         type="button"
-        whileTap={{ scale: 0.98 }}
+        whileTap={reduceMotion ? undefined : { scale: 0.98 }}
         transition={SPRING_TOUCH}
         ref={(node) => {
           tabRefs.current.barbero = node;
@@ -89,7 +91,7 @@ export const RoleSelector: FC<RoleSelectorProps> = ({
       {/* Botón Soy Cliente */}
       <motion.button
         type="button"
-        whileTap={{ scale: 0.98 }}
+        whileTap={reduceMotion ? undefined : { scale: 0.98 }}
         transition={SPRING_TOUCH}
         ref={(node) => {
           tabRefs.current.cliente = node;

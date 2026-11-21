@@ -211,9 +211,9 @@ export const LoginView: FC<LoginViewProps> = ({
           <AnimatePresence>
             {errorMessage && (
               <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
+                initial={reduceMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
+                animate={reduceMotion ? { opacity: 1 } : { opacity: 1, height: 'auto' }}
+                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
                 className="flex items-center gap-2.5 p-3 rounded-xl bg-red-950/40 border border-red-500/30 text-red-200 text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
               >
                 <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
