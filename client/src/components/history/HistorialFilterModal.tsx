@@ -2,7 +2,8 @@ import { useState } from 'react';
 import type { FC } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, ChevronRight, User, Store, Check } from 'lucide-react';
-import { SPRING_TOUCH, SPRING_MODAL } from '../../constants/springs';
+import { SPRING_MODAL } from '../../constants/springs';
+import { SegmentedControl } from '../common/SegmentedControl';
 
 export interface BarberFilterOption {
   id: string;
@@ -57,47 +58,31 @@ export const HistorialFilterModal: FC<HistorialFilterModalProps> = ({
           </div>
 
           {/* Selector Barbero / Barbería */}
-          <div className="relative flex items-center p-1 rounded-2xl bg-black/60 border border-white/10">
-            <button
-              type="button"
-              onClick={() => setFilterType('barbero')}
-              className={`relative z-10 flex-1 py-2.5 text-xs font-semibold tracking-wider rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
-                filterType === 'barbero' ? 'text-black font-bold' : 'text-[#D9C9B0]/70'
-              }`}
-            >
-              {filterType === 'barbero' && (
-                <motion.div
-                  layoutId="filterTypePill"
-                  transition={SPRING_TOUCH}
-                  className="absolute inset-0 rounded-xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91]"
-                />
-              )}
-              <span className="relative z-10 flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5" />
-                <span>Barbero</span>
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFilterType('barberia')}
-              className={`relative z-10 flex-1 py-2.5 text-xs font-semibold tracking-wider rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
-                filterType === 'barberia' ? 'text-black font-bold' : 'text-[#D9C9B0]/70'
-              }`}
-            >
-              {filterType === 'barberia' && (
-                <motion.div
-                  layoutId="filterTypePill"
-                  transition={SPRING_TOUCH}
-                  className="absolute inset-0 rounded-xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91]"
-                />
-              )}
-              <span className="relative z-10 flex items-center gap-1.5">
-                <Store className="w-3.5 h-3.5" />
-                <span>Barbería</span>
-              </span>
-            </button>
-          </div>
+          <SegmentedControl<'barbero' | 'barberia'>
+            ariaLabel="Tipo de filtro"
+            value={filterType}
+            onChange={setFilterType}
+            options={[
+              {
+                value: 'barbero',
+                label: (
+                  <span className="flex items-center justify-center gap-1.5">
+                    <User className="w-3.5 h-3.5" />
+                    <span>Barbero</span>
+                  </span>
+                ),
+              },
+              {
+                value: 'barberia',
+                label: (
+                  <span className="flex items-center justify-center gap-1.5">
+                    <Store className="w-3.5 h-3.5" />
+                    <span>Barbería</span>
+                  </span>
+                ),
+              },
+            ]}
+          />
 
           {/* Lista de Barberos */}
           <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">

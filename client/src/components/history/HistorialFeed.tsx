@@ -14,6 +14,7 @@ import {
   Sparkles,
   Layers,
 } from 'lucide-react';
+import { SegmentedControl } from '../common/SegmentedControl';
 import { ClientNavBar, type ClientNavTab } from '../common/ClientNavBar';
 import { CutDetailModal } from './CutDetailModal';
 import { HistorialFilterModal } from './HistorialFilterModal';
@@ -346,41 +347,26 @@ export const HistorialFeed: FC<HistorialFeedProps> = ({
             TABS DE FILTRO: [Todos | Cortes | Barba | Favoritos]
             ========================================================================= */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-black/60 border border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] max-w-md w-full">
-            {(
-              [
-                { id: 'todos', label: 'Todos' },
-                { id: 'cortes', label: 'Cortes' },
-                { id: 'barba', label: 'Barba' },
-                { id: 'favoritos', label: 'Favoritos' },
-              ] as const
-            ).map((tab) => {
-              const isActive = categoryFilter === tab.id;
-
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setCategoryFilter(tab.id)}
-                  className={`relative flex-1 py-2 text-xs font-semibold tracking-wider rounded-xl transition-colors cursor-pointer select-none ${
-                    isActive ? 'text-black font-bold' : 'text-[#D9C9B0]/70 hover:text-white'
-                  }`}
-                >
-                  {isActive && (
-                    <motion.div
-                      layoutId="historyCategoryPill"
-                      transition={SPRING_TOUCH}
-                      className="absolute inset-0 rounded-xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_2px_8px_rgba(217,201,176,0.3)]"
-                    />
-                  )}
-                  <span className="relative z-10 flex items-center justify-center gap-1">
-                    {tab.id === 'favoritos' && <Star className="w-3 h-3 fill-current" />}
-                    {tab.label}
+          <SegmentedControl<CategoryFilter>
+            ariaLabel="Filtrar por categoría"
+            className="max-w-md w-full"
+            value={categoryFilter}
+            onChange={setCategoryFilter}
+            options={[
+              { value: 'todos', label: 'Todos' },
+              { value: 'cortes', label: 'Cortes' },
+              { value: 'barba', label: 'Barba' },
+              {
+                value: 'favoritos',
+                label: (
+                  <span className="flex items-center justify-center gap-1">
+                    <Star className="w-3 h-3 fill-current" />
+                    Favoritos
                   </span>
-                </button>
-              );
-            })}
-          </div>
+                ),
+              },
+            ]}
+          />
 
           <div className="hidden sm:flex items-center gap-2 text-xs text-[#D9C9B0]/50 font-mono">
             <Layers className="w-3.5 h-3.5 text-[#B68F4E]" />
