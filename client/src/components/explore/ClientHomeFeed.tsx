@@ -13,6 +13,9 @@ import {
 } from 'lucide-react';
 import type { ExploreBarber, ShopItem, ActiveBooking } from '../../types/explore';
 import { BrandLogo } from '../common/BrandLogo';
+import { AnimatedNumber } from '../common/AnimatedNumber';
+import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion';
+import { SPRING_TOUCH, SPRING_MODAL } from '../../constants/springs';
 
 interface ClientHomeFeedProps {
   barbers: ExploreBarber[];
@@ -27,6 +30,35 @@ interface ClientHomeFeedProps {
   onQuickBook: (barber: ExploreBarber) => void;
 }
 
+const pageVariants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.07 } },
+};
+
+const sectionVariants = {
+  hidden: { opacity: 0, y: 14 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { ...SPRING_MODAL, staggerChildren: 0.06 },
+  },
+};
+
+const cardVariants = {
+  hidden: { opacity: 0, y: 12 },
+  visible: { opacity: 1, y: 0, transition: SPRING_MODAL },
+};
+
+const reducedPageVariants = {
+  hidden: {},
+  visible: {},
+};
+
+const reducedItemVariants = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1, transition: { duration: 0 } },
+};
+
 export const ClientHomeFeed: FC<ClientHomeFeedProps> = ({
   barbers,
   shops,
@@ -39,13 +71,85 @@ export const ClientHomeFeed: FC<ClientHomeFeedProps> = ({
   onFilterNearMe,
   onQuickBook,
 }) => {
+  const reduceMotion = usePrefersReducedMotion();
+  const pageMotion = reduceMotion ? reducedPageVariants : pageVariants;
+  const sectionMotion = reduceMotion ? reducedItemVariants : sectionVariants;
+  const cardMotion = reduceMotion ? reducedItemVariants : cardVariants;
+  const hoverProps = reduceMotion
+    ? {}
+    : { whileHover: { y: -2 }, whileTap: { scale: 0.98 }, transition: SPRING_TOUCH };
+
   const availableBarbers = barbers.filter((b) => b.status === 'GREEN');
   const recommendedBarbers = barbers.filter((b) => b.rating >= 4.8);
 
+  // Anchor of the "available now" bento: the best rated available barber.
+  const anchorBarber = availableBarbers.reduce<ExploreBarber | null>(
+    (best, b) => (best === null || b.rating > best.rating ? b : best),
+    null
+  );
+  const satelliteBarbers = availableBarbers.filter((b) => b.id !== anchorBarber?.id);
+  const topSatellites = satelliteBarbers.slice(0, 2);
+  const restBarbers = satelliteBarbers.slice(2);
+
+  const featuredShops = shops.slice(0, 3);
+  const anchorShop = featuredShops[0];
+  const satelliteShops = featuredShops.slice(1);
+
+  const renderCompactBarber = (barber: ExploreBarber) => (
+    <motion.div
+      key={barber.id}
+      variants={cardMotion}
+      {...hoverProps}
+      onClick={() => onSelectBarber(barber)}
+      className="fade-surface rounded-3xl p-3.5 hover:border-[#B68F4E]/50 cursor-pointer group flex items-center gap-3.5"
+    >
+      <img
+        src={barber.avatar}
+        alt={barber.name}
+        className="w-16 h-16 rounded-2xl object-cover object-top border border-white/10 flex-shrink-0"
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-[10px] font-bold text-emerald-300 tracking-wider uppercase font-mono">
+            Libre
+          </span>
+        </div>
+        <h3 className="text-sm font-bold text-white tracking-tight truncate group-hover:text-[#F3E9DC] transition-colors">
+          {barber.name}
+        </h3>
+        <p className="text-xs text-[#D9C9B0]/80 truncate">{barber.shopName}</p>
+        <div className="flex items-center gap-2 mt-0.5 text-[11px] text-white/50">
+          <span className="flex items-center gap-0.5 text-[#B68F4E] font-semibold">
+            <Star className="w-3 h-3 fill-current" />
+            <AnimatedNumber value={barber.rating} decimals={1} />
+          </span>
+          <span>·</span>
+          <span className="font-mono text-[#B68F4E]">{barber.priceRange}</span>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onQuickBook(barber);
+        }}
+        className="flex-shrink-0 px-3 py-1.5 rounded-xl bg-gradient-to-b from-[#F3E9DC] to-[#D9C9B0] text-black text-xs font-extrabold uppercase tracking-wider shadow-sm hover:brightness-105 active:scale-95 transition-all cursor-pointer"
+      >
+        Reservar
+      </button>
+    </motion.div>
+  );
+
   return (
-    <div className="w-full pb-28 pt-2 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto space-y-7">
+    <motion.div
+      variants={pageMotion}
+      initial="hidden"
+      animate="visible"
+      className="w-full pb-28 pt-2 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto space-y-8"
+    >
       {/* 1. Header con Ciudad e Isotipo */}
-      <div className="flex items-center justify-between pt-2">
+      <motion.div variants={sectionMotion} className="flex items-center justify-between pt-2">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md shadow-sm">
             <MapPin className="w-3.5 h-3.5 text-[#B68F4E]" />
@@ -67,23 +171,23 @@ export const ClientHomeFeed: FC<ClientHomeFeedProps> = ({
             <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#B68F4E] ring-2 ring-black" />
           </button>
         </div>
-      </div>
+      </motion.div>
 
       {/* 2. Hero Search "¿Qué corte va hoy?" */}
-      <div className="space-y-3">
+      <motion.div variants={sectionMotion} className="space-y-4">
         <div>
           <span className="text-[11px] uppercase tracking-[0.2em] font-mono text-[#B68F4E] font-semibold">
             Dark Luxury Grooming
           </span>
-          <h1 className="text-2xl sm:text-3xl font-serif font-bold text-white tracking-tight mt-0.5">
-            ¿Qué corte va hoy?
+          <h1 className="text-3xl sm:text-4xl font-serif font-bold text-white tracking-tight mt-1 leading-[1.1]">
+            ¿Qué corte <span className="font-editorial text-gold-gradient">va hoy?</span>
           </h1>
         </div>
 
         {/* Search Bar Input */}
         <div
           onClick={onOpenSearch}
-          className="relative flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-gradient-to-r from-white/[0.07] to-white/[0.03] border border-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_10px_25px_rgba(0,0,0,0.5)] cursor-pointer hover:border-[#B68F4E]/50 transition-all group"
+          className="fade-surface relative flex items-center gap-3 px-4 py-3.5 rounded-2xl cursor-pointer hover:border-[#B68F4E]/50 transition-all group"
         >
           <Search className="w-4 h-4 text-[#D9C9B0]/70 group-hover:text-[#B68F4E] transition-colors" />
           <span className="text-xs sm:text-sm text-white/50 tracking-wide font-normal">
@@ -129,20 +233,19 @@ export const ClientHomeFeed: FC<ClientHomeFeedProps> = ({
             <span>Cerca de mí</span>
           </button>
         </div>
-      </div>
+      </motion.div>
 
       {/* 3. Card "Tu próxima reserva" (Destacada) */}
       {activeBooking && (
         <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#1E1C18] via-[#151412] to-[#0D0D0C] border border-[#B68F4E]/30 p-5 shadow-[0_15px_35px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(217,201,176,0.25)]"
+          variants={sectionMotion}
+          className="fade-surface-elevated relative overflow-hidden rounded-3xl border-[#B68F4E]/30 p-5 sm:p-6"
         >
           {/* Subtle gold glow behind card */}
           <div className="absolute top-0 right-0 w-48 h-48 bg-[#B68F4E]/10 rounded-full blur-3xl pointer-events-none" />
 
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#B68F4E]/20 text-[#F5EBDD] border border-[#B68F4E]/40 text-[10px] font-mono font-bold tracking-wider uppercase">
                 <Calendar className="w-3 h-3 text-[#B68F4E]" />
                 {activeBooking.dateBadge}
@@ -170,10 +273,10 @@ export const ClientHomeFeed: FC<ClientHomeFeedProps> = ({
               <img
                 src={activeBooking.barberAvatar}
                 alt={activeBooking.barberName}
-                className="w-13 h-13 rounded-2xl object-cover border border-[#B68F4E]/40 shadow-md"
+                className="w-14 h-14 rounded-2xl object-cover border border-[#B68F4E]/40 shadow-md"
               />
               <div>
-                <h3 className="text-base font-bold text-white tracking-tight">
+                <h3 className="text-lg font-serif font-bold text-white tracking-tight">
                   {activeBooking.shopName}
                 </h3>
                 <p className="text-xs text-[#D9C9B0]/90">
@@ -206,14 +309,17 @@ export const ClientHomeFeed: FC<ClientHomeFeedProps> = ({
         </motion.div>
       )}
 
-      {/* 4. Carrusel "Barberos disponibles ahora" */}
-      <div className="space-y-3.5">
+      {/* 4. Bento "Barberos disponibles ahora" */}
+      <motion.section variants={sectionMotion} className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <h2 className="text-base font-bold text-white tracking-tight">
-              Barberos disponibles ahora
+            <h2 className="text-xl font-serif font-bold text-white tracking-tight">
+              Barberos <span className="font-editorial text-gold-gradient">disponibles ahora</span>
             </h2>
+            <span className="text-xs font-mono font-bold text-[#B68F4E] px-2 py-0.5 rounded-full bg-[#B68F4E]/10 border border-[#B68F4E]/25">
+              <AnimatedNumber value={availableBarbers.length} />
+            </span>
           </div>
           <button
             type="button"
@@ -225,73 +331,86 @@ export const ClientHomeFeed: FC<ClientHomeFeedProps> = ({
           </button>
         </div>
 
-        {/* Horizontal Carousel */}
-        <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2 pt-1 -mx-4 px-4 sm:mx-0 sm:px-0">
-          {availableBarbers.map((barber) => (
+        {anchorBarber && (
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            {/* Anchor: dominant visual (about 60% width) */}
             <motion.div
-              key={barber.id}
-              whileHover={{ y: -4 }}
-              transition={{ duration: 0.2 }}
-              onClick={() => onSelectBarber(barber)}
-              className="flex-shrink-0 w-64 rounded-3xl bg-gradient-to-b from-[#181818] via-[#121212] to-[#0A0A0A] border border-white/10 hover:border-[#B68F4E]/50 p-4 shadow-[0_12px_28px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.12)] cursor-pointer group flex flex-col justify-between"
+              variants={cardMotion}
+              {...hoverProps}
+              onClick={() => onSelectBarber(anchorBarber)}
+              className="fade-surface rounded-[28px] p-4 hover:border-[#B68F4E]/50 cursor-pointer group flex flex-col justify-between md:col-span-3 md:row-span-2"
             >
-              <div>
-                <div className="relative mb-3">
-                  <img
-                    src={barber.avatar}
-                    alt={barber.name}
-                    className="w-full h-36 rounded-2xl object-cover object-top border border-white/10"
-                  />
-                  {/* Presence Status Badge */}
-                  <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 px-2 py-1 rounded-full bg-black/80 backdrop-blur-md border border-white/15">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="text-[10px] font-bold text-white tracking-wider uppercase font-mono">
-                      Libre
-                    </span>
-                  </div>
-
-                  {/* Rating Badge */}
-                  <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 px-2 py-0.5 rounded-lg bg-black/80 backdrop-blur-md border border-white/15 text-xs text-[#F5EBDD] font-bold">
-                    <Star className="w-3 h-3 text-[#B68F4E] fill-current" />
-                    <span>{barber.rating}</span>
-                  </div>
+              <div className="relative mb-4 flex-1 min-h-56">
+                <img
+                  src={anchorBarber.avatar}
+                  alt={anchorBarber.name}
+                  className="absolute inset-0 w-full h-full rounded-2xl object-cover object-top border border-white/10"
+                />
+                <div className="absolute inset-0 rounded-2xl bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+                <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/80 backdrop-blur-md border border-white/15">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-[10px] font-bold text-white tracking-wider uppercase font-mono">
+                    Libre
+                  </span>
                 </div>
-
-                <h3 className="text-sm font-bold text-white tracking-tight group-hover:text-[#F3E9DC] transition-colors">
-                  {barber.name}
-                </h3>
-                <p className="text-xs text-[#D9C9B0]/80 truncate">{barber.shopName}</p>
-                <p className="text-[11px] text-white/50 mt-0.5">
-                  {barber.zone} · A {Math.round(barber.distanceKm * 1000)} m
-                </p>
+                <div className="absolute bottom-3 right-3 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-black/80 backdrop-blur-md border border-white/15 text-sm text-[#F5EBDD] font-bold">
+                  <Star className="w-3.5 h-3.5 text-[#B68F4E] fill-current" />
+                  <AnimatedNumber value={anchorBarber.rating} decimals={1} />
+                </div>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
-                <span className="text-xs font-mono font-bold text-[#B68F4E]">
-                  {barber.priceRange}
-                </span>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onQuickBook(barber);
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-gradient-to-b from-[#F3E9DC] to-[#D9C9B0] text-black text-xs font-extrabold uppercase tracking-wider shadow-sm hover:brightness-105 active:scale-95 transition-all cursor-pointer"
-                >
-                  Reservar
-                </button>
+              <div className="flex items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="text-xl font-serif font-bold text-white tracking-tight group-hover:text-[#F3E9DC] transition-colors">
+                    {anchorBarber.name}
+                  </h3>
+                  <p className="text-sm text-[#D9C9B0]/80 truncate">{anchorBarber.shopName}</p>
+                  <p className="text-xs text-white/50 mt-0.5">
+                    {anchorBarber.zone} · A {Math.round(anchorBarber.distanceKm * 1000)} m
+                  </p>
+                </div>
+                <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                  <span className="text-xs font-mono font-bold text-[#B68F4E]">
+                    {anchorBarber.priceRange}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onQuickBook(anchorBarber);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-b from-[#F3E9DC] to-[#D9C9B0] text-black text-xs font-extrabold uppercase tracking-wider shadow-sm hover:brightness-105 active:scale-95 transition-all cursor-pointer"
+                  >
+                    Reservar
+                  </button>
+                </div>
               </div>
             </motion.div>
-          ))}
-        </div>
-      </div>
 
-      {/* 5. Sección Barberías Destacadas */}
-      <div className="space-y-3.5">
+            {/* Satellites */}
+            {topSatellites.map((barber) => (
+              <div key={barber.id} className="md:col-span-2 flex flex-col">
+                {renderCompactBarber(barber)}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {restBarbers.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {restBarbers.map((barber) => renderCompactBarber(barber))}
+          </div>
+        )}
+      </motion.section>
+
+      {/* 5. Bento "Estudios destacados" */}
+      <motion.section variants={sectionMotion} className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-[#B68F4E]" />
-            <h2 className="text-base font-bold text-white tracking-tight">Estudios destacados</h2>
+            <h2 className="text-xl font-serif font-bold text-white tracking-tight">
+              Estudios <span className="font-editorial text-gold-gradient">destacados</span>
+            </h2>
           </div>
           <button
             type="button"
@@ -303,60 +422,97 @@ export const ClientHomeFeed: FC<ClientHomeFeedProps> = ({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {shops.slice(0, 3).map((shop) => (
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+          {anchorShop && (
             <motion.div
-              key={shop.id}
-              whileHover={{ y: -3 }}
-              onClick={() => onSelectShop(shop)}
-              className="rounded-3xl bg-gradient-to-b from-[#161616] to-[#0A0A0A] border border-white/10 hover:border-[#B68F4E]/40 p-4 shadow-lg cursor-pointer group"
+              variants={cardMotion}
+              {...hoverProps}
+              onClick={() => onSelectShop(anchorShop)}
+              className="fade-surface rounded-[28px] p-4 hover:border-[#B68F4E]/40 cursor-pointer group lg:col-span-3 lg:row-span-2 flex flex-col"
             >
-              <div className="relative h-40 mb-3 rounded-2xl overflow-hidden border border-white/10">
+              <div className="relative flex-1 min-h-64 mb-4 rounded-2xl overflow-hidden border border-white/10">
                 <img
-                  src={shop.photos[0]}
-                  alt={shop.name}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  src={anchorShop.photos[0]}
+                  alt={anchorShop.name}
+                  className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
-                <div className="absolute top-2.5 right-2.5 flex items-center gap-1 px-2 py-0.5 rounded-lg bg-black/70 backdrop-blur-md border border-white/15 text-xs text-white font-bold">
-                  <Star className="w-3 h-3 text-[#B68F4E] fill-current" />
-                  <span>{shop.rating}</span>
-                  <span className="text-[10px] text-white/50">({shop.reviewCount})</span>
+                <div className="absolute top-3 right-3 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-black/70 backdrop-blur-md border border-white/15 text-sm text-white font-bold">
+                  <Star className="w-3.5 h-3.5 text-[#B68F4E] fill-current" />
+                  <AnimatedNumber value={anchorShop.rating} decimals={1} />
+                  <span className="text-[10px] text-white/50">({anchorShop.reviewCount})</span>
                 </div>
-                <div className="absolute bottom-2.5 left-2.5">
+                <div className="absolute bottom-3 left-3">
                   <span className="text-[10px] font-mono uppercase tracking-wider text-[#B68F4E] bg-black/70 px-2 py-0.5 rounded-md border border-white/10">
-                    {shop.zone}
+                    {anchorShop.zone}
                   </span>
                 </div>
               </div>
 
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="text-sm font-bold text-white tracking-tight group-hover:text-[#D9C9B0] transition-colors">
-                    {shop.name}
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="text-xl font-serif font-bold text-white tracking-tight group-hover:text-[#D9C9B0] transition-colors">
+                    {anchorShop.name}
                   </h3>
-                  <p className="text-xs text-white/50 truncate max-w-[200px] mt-0.5">
-                    {shop.address}
-                  </p>
+                  <p className="text-xs text-white/50 truncate mt-0.5">{anchorShop.address}</p>
                 </div>
-                <span className="text-xs text-[#D9C9B0] font-mono">
-                  {shop.distanceKm} km
+                <span className="text-xs text-[#D9C9B0] font-mono flex-shrink-0">
+                  <AnimatedNumber value={anchorShop.distanceKm} decimals={1} /> km
                 </span>
+              </div>
+            </motion.div>
+          )}
+
+          {satelliteShops.map((shop) => (
+            <motion.div
+              key={shop.id}
+              variants={cardMotion}
+              {...hoverProps}
+              onClick={() => onSelectShop(shop)}
+              className="fade-surface rounded-3xl p-3.5 hover:border-[#B68F4E]/40 cursor-pointer group lg:col-span-2 flex items-center gap-3.5"
+            >
+              <img
+                src={shop.photos[0]}
+                alt={shop.name}
+                className="w-20 h-20 rounded-2xl object-cover border border-white/10 flex-shrink-0"
+              />
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-[#B68F4E]">
+                  {shop.zone}
+                </span>
+                <h3 className="text-sm font-bold text-white tracking-tight truncate group-hover:text-[#D9C9B0] transition-colors">
+                  {shop.name}
+                </h3>
+                <p className="text-xs text-white/50 truncate">{shop.address}</p>
+                <div className="flex items-center gap-2 mt-0.5 text-[11px] text-white/60">
+                  <span className="flex items-center gap-0.5 text-[#B68F4E] font-semibold">
+                    <Star className="w-3 h-3 fill-current" />
+                    <AnimatedNumber value={shop.rating} decimals={1} />
+                  </span>
+                  <span className="text-white/50">({shop.reviewCount})</span>
+                  <span className="font-mono text-[#D9C9B0]">
+                    <AnimatedNumber value={shop.distanceKm} decimals={1} /> km
+                  </span>
+                </div>
               </div>
             </motion.div>
           ))}
         </div>
-      </div>
+      </motion.section>
 
       {/* 6. Sección "Recomendados para ti" */}
-      <div className="space-y-3.5">
-        <h2 className="text-base font-bold text-white tracking-tight">Recomendados para ti</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+      <motion.section variants={sectionMotion} className="space-y-4">
+        <h2 className="text-xl font-serif font-bold text-white tracking-tight">
+          Recomendados <span className="font-editorial text-gold-gradient">para ti</span>
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {recommendedBarbers.map((barber) => (
-            <div
+            <motion.div
               key={barber.id}
+              variants={cardMotion}
+              {...hoverProps}
               onClick={() => onSelectBarber(barber)}
-              className="flex items-center justify-between p-3.5 rounded-2xl bg-gradient-to-r from-white/[0.04] to-transparent border border-white/10 hover:border-[#B68F4E]/40 hover:bg-white/[0.06] transition-all cursor-pointer group"
+              className="fade-surface flex items-center justify-between p-3.5 rounded-2xl hover:border-[#B68F4E]/40 cursor-pointer group"
             >
               <div className="flex items-center gap-3">
                 <img
@@ -372,19 +528,21 @@ export const ClientHomeFeed: FC<ClientHomeFeedProps> = ({
                   <div className="flex items-center gap-2 mt-0.5 text-[11px] text-white/50">
                     <span className="flex items-center gap-0.5 text-[#B68F4E] font-semibold">
                       <Star className="w-3 h-3 fill-current" />
-                      {barber.rating}
+                      <AnimatedNumber value={barber.rating} decimals={1} />
                     </span>
                     <span>•</span>
-                    <span>{barber.experienceYears} años exp</span>
+                    <span>
+                      <AnimatedNumber value={barber.experienceYears} /> años exp
+                    </span>
                   </div>
                 </div>
               </div>
 
               <ChevronRight className="w-4 h-4 text-white/40 group-hover:text-white transition-colors" />
-            </div>
+            </motion.div>
           ))}
         </div>
-      </div>
-    </div>
+      </motion.section>
+    </motion.div>
   );
 };
