@@ -38,9 +38,9 @@ interface BarberRegisterWizardProps {
 
 const FIELD_LABEL = 'text-[11px] font-semibold uppercase tracking-[0.16em] text-[#D9C9B0]/80 block';
 const FIELD_INPUT =
-  'w-full py-3 rounded-2xl bg-white/[0.03] border border-white/10 text-white placeholder-white/20 text-sm focus:outline-none focus:border-[#B68F4E]/70 focus:ring-2 focus:ring-[#B68F4E]/25 focus:shadow-[0_0_24px_rgba(182,143,78,0.18)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-colors';
+  'w-full py-3 rounded-2xl bg-white/[0.03] border border-white/10 text-white placeholder-white/50 text-sm focus:outline-none focus:border-[#B68F4E]/70 focus:ring-2 focus:ring-[#B68F4E]/25 focus:shadow-[0_0_24px_rgba(182,143,78,0.18)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-colors';
 const MINI_INPUT =
-  'px-3 py-2 rounded-xl bg-white/[0.03] border border-white/10 text-xs text-white placeholder-white/30 focus:outline-none focus:border-[#B68F4E]/70 focus:ring-2 focus:ring-[#B68F4E]/25 transition-colors';
+  'px-3 py-2 rounded-xl bg-white/[0.03] border border-white/10 text-xs text-white placeholder-white/50 focus:outline-none focus:border-[#B68F4E]/70 focus:ring-2 focus:ring-[#B68F4E]/25 transition-colors';
 const ERROR_BOX =
   'p-3 rounded-xl bg-red-950/40 border border-red-500/30 border-l-2 border-l-[#E85A44] text-xs leading-snug text-red-100';
 const PRIMARY_BTN =
@@ -519,7 +519,7 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
               {/* Separador */}
               <div className="relative flex items-center justify-center">
                 <div className="border-t border-white/10 w-full" />
-                <span className="bg-[#0A0A0A] px-3 text-[11px] font-mono text-white/40 uppercase">
+                <span className="bg-[#0A0A0A] px-3 text-[11px] font-mono text-white/65 uppercase">
                   o
                 </span>
               </div>

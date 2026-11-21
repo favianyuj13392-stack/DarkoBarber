@@ -60,7 +60,7 @@ export const PhonePinInput: FC<PhonePinInputProps> = ({
             onChange={handlePhoneInput}
             placeholder="77212345"
             disabled={disabled}
-            className="w-full bg-transparent px-3 py-2 text-sm md:text-base font-medium text-white placeholder-white/20 tracking-wider focus:outline-none disabled:opacity-50"
+            className="w-full bg-transparent px-3 py-2 text-sm md:text-base font-medium text-white placeholder-white/50 tracking-wider focus:outline-none disabled:opacity-50"
           />
         </div>
       </div>
@@ -93,7 +93,7 @@ export const PhonePinInput: FC<PhonePinInputProps> = ({
             placeholder="••••"
             maxLength={4}
             disabled={disabled}
-            className="w-full bg-transparent px-2 py-2 text-sm md:text-base font-mono tracking-[0.3em] text-white placeholder-white/20 focus:outline-none disabled:opacity-50"
+            className="w-full bg-transparent px-2 py-2 text-sm md:text-base font-mono tracking-[0.3em] text-white placeholder-white/50 focus:outline-none disabled:opacity-50"
           />
 
           <button

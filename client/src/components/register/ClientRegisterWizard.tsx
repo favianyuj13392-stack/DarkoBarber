@@ -36,7 +36,7 @@ const FIELD_LABEL = 'text-[11px] font-semibold uppercase tracking-[0.16em] text-
 const FIELD_WRAP =
   'flex items-center rounded-2xl bg-white/[0.03] border border-white/10 px-3.5 py-1.5 transition-colors focus-within:border-[#B68F4E]/70 focus-within:ring-2 focus-within:ring-[#B68F4E]/25 focus-within:shadow-[0_0_24px_rgba(182,143,78,0.18)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]';
 const FIELD_INPUT =
-  'w-full bg-transparent py-2 text-sm text-white placeholder-white/20 focus:outline-none';
+  'w-full bg-transparent py-2 text-sm text-white placeholder-white/50 focus:outline-none';
 const ERROR_BOX =
   'p-3 rounded-xl bg-red-950/40 border border-red-500/30 border-l-2 border-l-[#E85A44] text-red-100 text-xs leading-snug';
 
@@ -456,7 +456,7 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-white/10" />
                 </div>
-                <span className="relative z-10 bg-[#161616] px-3 text-[10px] tracking-[0.16em] uppercase text-[#D9C9B0]/50">
+                <span className="relative z-10 bg-[#161616] px-3 text-[10px] tracking-[0.16em] uppercase text-white/65">
                   o
                 </span>
               </div>

@@ -44,7 +44,7 @@ export const EmailPasswordInput: FC<EmailPasswordInputProps> = ({
             placeholder="tu.correo@ejemplo.com"
             disabled={disabled}
             autoComplete="email"
-            className="w-full bg-transparent py-2 text-sm md:text-base font-normal text-white placeholder-white/20 tracking-normal focus:outline-none disabled:opacity-50"
+            className="w-full bg-transparent py-2 text-sm md:text-base font-normal text-white placeholder-white/50 tracking-normal focus:outline-none disabled:opacity-50"
           />
         </div>
       </div>
@@ -82,7 +82,7 @@ export const EmailPasswordInput: FC<EmailPasswordInputProps> = ({
             placeholder="••••••••"
             disabled={disabled}
             autoComplete="current-password"
-            className="w-full bg-transparent py-2 text-sm md:text-base font-sans tracking-wide text-white placeholder-white/20 focus:outline-none disabled:opacity-50"
+            className="w-full bg-transparent py-2 text-sm md:text-base font-sans tracking-wide text-white placeholder-white/50 focus:outline-none disabled:opacity-50"
           />
 
           <button

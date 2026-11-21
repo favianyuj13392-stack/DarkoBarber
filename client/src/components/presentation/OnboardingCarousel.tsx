@@ -163,7 +163,7 @@ export const OnboardingCarousel: FC<OnboardingCarouselProps> = ({ onComplete }) 
                 onClick={() => setCurrentIndex(idx)}
                 aria-label={`Ir al slide ${idx + 1}`}
                 style={{ width: DOT_SIZE, height: DOT_SIZE }}
-                className="rounded-full bg-white/20 hover:bg-white/40 transition-colors cursor-pointer"
+                className="rounded-full bg-white/40 hover:bg-white/60 transition-colors cursor-pointer"
               />
             ))}
             <motion.span
