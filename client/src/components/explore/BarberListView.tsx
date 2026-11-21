@@ -12,6 +12,24 @@ import {
   Sparkles,
 } from 'lucide-react';
 import type { ExploreBarber, ShopItem, FilterOptions } from '../../types/explore';
+import { SegmentedControl } from '../common/SegmentedControl';
+import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion';
+import { SPRING_TOUCH, SPRING_MODAL } from '../../constants/springs';
+
+const listVariants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.06 } },
+};
+
+const cardVariants = {
+  hidden: { opacity: 0, y: 12 },
+  visible: { opacity: 1, y: 0, transition: SPRING_MODAL },
+};
+
+const reducedCardVariants = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1, transition: { duration: 0 } },
+};
 
 interface BarberListViewProps {
   barbers: ExploreBarber[];
@@ -40,6 +58,12 @@ export const BarberListView: FC<BarberListViewProps> = ({
   onToggleFavoriteBarber,
   onToggleFavoriteShop,
 }) => {
+  const reduceMotion = usePrefersReducedMotion();
+  const cardMotion = reduceMotion ? reducedCardVariants : cardVariants;
+  const hoverProps = reduceMotion
+    ? {}
+    : { whileHover: { y: -2 }, whileTap: { scale: 0.98 }, transition: SPRING_TOUCH };
+
   // Apply filtering logic
   const filteredBarbers = barbers.filter((b) => {
     // Search query
@@ -179,48 +203,35 @@ export const BarberListView: FC<BarberListViewProps> = ({
         </div>
 
         {/* Sub-tabs: [Todos | Barberías | Barberos] */}
-        <div className="flex rounded-2xl bg-black/60 p-1 border border-white/10 max-w-md">
-          {(['todos', 'barberias', 'barberos'] as const).map((tab) => {
-            const isActive = filters.subTab === tab;
-            const labels = {
-              todos: 'Todos',
-              barberias: `Barberías (${filteredShops.length})`,
-              barberos: `Barberos (${filteredBarbers.length})`,
-            };
-
-            return (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => onChangeFilters({ ...filters, subTab: tab })}
-                className={`relative flex-1 py-1.5 text-xs font-semibold rounded-xl transition-all cursor-pointer select-none text-center ${
-                  isActive ? 'text-black font-bold' : 'text-[#D9C9B0]/70 hover:text-white'
-                }`}
-              >
-                {isActive && (
-                  <motion.div
-                    layoutId="subTabHighlight"
-                    className="absolute inset-0 rounded-xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] shadow-sm"
-                  />
-                )}
-                <span className="relative z-10">{labels[tab]}</span>
-              </button>
-            );
-          })}
-        </div>
+        <SegmentedControl
+          ariaLabel="Result type"
+          className="max-w-md"
+          value={filters.subTab}
+          onChange={(tab) => onChangeFilters({ ...filters, subTab: tab })}
+          options={[
+            { value: 'todos', label: 'Todos' },
+            { value: 'barberias', label: `Barberías (${filteredShops.length})` },
+            { value: 'barberos', label: `Barberos (${filteredBarbers.length})` },
+          ]}
+        />
       </div>
 
       {/* 3. Lista Vertical de Resultados */}
-      <div className="space-y-4 pt-1">
+      <motion.div
+        variants={reduceMotion ? undefined : listVariants}
+        initial="hidden"
+        animate="visible"
+        className="space-y-4 pt-1"
+      >
         {/* Render Barberías si subTab es 'todos' o 'barberias' */}
         {(filters.subTab === 'todos' || filters.subTab === 'barberias') &&
           filteredShops.map((shop) => (
             <motion.div
               key={shop.id}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
+              variants={cardMotion}
+              {...hoverProps}
               onClick={() => onSelectShop(shop)}
-              className="relative p-4 rounded-3xl bg-gradient-to-b from-[#181818] via-[#121212] to-[#0A0A0A] border border-white/10 hover:border-[#B68F4E]/40 shadow-[0_12px_28px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.12)] cursor-pointer group flex flex-col sm:flex-row gap-4"
+              className="fade-surface relative p-4 rounded-[28px] hover:border-[#B68F4E]/40 cursor-pointer group flex flex-col sm:flex-row gap-4"
             >
               {/* Foto destacada */}
               <div className="relative w-full sm:w-44 h-36 rounded-2xl overflow-hidden border border-white/10 flex-shrink-0">
@@ -312,13 +323,19 @@ export const BarberListView: FC<BarberListViewProps> = ({
             return (
               <motion.div
                 key={barber.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
+                variants={cardMotion}
+                {...hoverProps}
                 onClick={() => onSelectBarber(barber)}
-                className="relative p-4 rounded-3xl bg-gradient-to-b from-[#181818] via-[#121212] to-[#0A0A0A] border border-white/10 hover:border-[#B68F4E]/40 shadow-[0_12px_28px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.12)] cursor-pointer group flex flex-col sm:flex-row gap-4"
+                className={`relative hover:border-[#B68F4E]/40 cursor-pointer group flex flex-col sm:flex-row ${
+                  barber.plan === 'PRO'
+                    ? 'fade-surface-elevated p-5 rounded-[28px] gap-5'
+                    : 'fade-surface p-3.5 rounded-3xl gap-4'
+                }`}
               >
                 {/* Avatar con Halo de Presencia */}
-                <div className={`relative w-full sm:w-36 h-36 rounded-2xl overflow-hidden flex-shrink-0 ${
+                <div className={`relative w-full rounded-2xl overflow-hidden flex-shrink-0 ${
+                  barber.plan === 'PRO' ? 'sm:w-48 h-44' : 'sm:w-32 h-32'
+                } ${
                   barber.plan === 'PRO'
                     ? 'border-2 border-[#B68F4E] ring-1 ring-[#B68F4E]/40 shadow-[0_0_16px_rgba(182,143,78,0.3)]'
                     : 'border border-white/15'
@@ -355,7 +372,11 @@ export const BarberListView: FC<BarberListViewProps> = ({
                   <div>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <h3 className="text-base font-bold text-white tracking-tight group-hover:text-[#F3E9DC] transition-colors">
+                        <h3
+                          className={`tracking-tight text-white group-hover:text-[#F3E9DC] transition-colors ${
+                            barber.plan === 'PRO' ? 'text-lg font-serif font-bold' : 'text-base font-bold'
+                          }`}
+                        >
                           {barber.name}
                         </h3>
                         <CheckCircle2 className="w-3.5 h-3.5 text-[#B68F4E]" />
@@ -433,7 +454,7 @@ export const BarberListView: FC<BarberListViewProps> = ({
             </p>
           </div>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 };
