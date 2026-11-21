@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { FC } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { Trophy, Sparkles, CheckCircle2, Gift, QrCode, ArrowRight, Check, Clock, AlertCircle } from 'lucide-react';
-import { SPRING_TOUCH } from '../../constants/springs';
+import { SPRING_TOUCH, SPRING_SLIDE } from '../../constants/springs';
+import { AnimatedNumber } from '../common/AnimatedNumber';
 import type { BarberAcquisitionProgress } from '../../services/auth.service';
 import { fetchBarberAcquisitions, claimFreeMonthReward } from '../../services/auth.service';
 
@@ -20,6 +21,14 @@ export const BarberGrowthCard: FC<BarberGrowthCardProps> = ({
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const reduceMotion = useReducedMotion();
+  const entrance = reduceMotion
+    ? { initial: false as const }
+    : {
+        initial: { opacity: 0, y: 12 },
+        animate: { opacity: 1, y: 0 },
+        transition: SPRING_SLIDE,
+      };
 
   const load = useCallback(async () => {
     try {
@@ -95,11 +104,19 @@ export const BarberGrowthCard: FC<BarberGrowthCardProps> = ({
   const { goal, qualified, pending, remaining, freeMonthsEarned, maxFreeMonths, claim } = data;
   const percentage = Math.min(100, goal > 0 ? Math.round((qualified / goal) * 100) : 0);
   const capReached = maxFreeMonths > 0 && freeMonthsEarned >= maxFreeMonths;
-  const breakdown = `${qualified} validados · ${pending} pendientes · ${remaining} faltan`;
+  const breakdown = (
+    <>
+      <AnimatedNumber value={qualified} /> validados · <AnimatedNumber value={pending} /> pendientes ·{' '}
+      <AnimatedNumber value={remaining} /> faltan
+    </>
+  );
 
   if (compact) {
     return (
-      <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/30 via-black to-zinc-950 border border-[#B68F4E]/30 space-y-2 text-left shadow-lg">
+      <motion.div
+        {...entrance}
+        className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/30 via-black to-zinc-950 border border-[#B68F4E]/30 space-y-2 text-left shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1),0_12px_28px_-12px_rgba(0,0,0,0.9)]"
+      >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Trophy className="w-4 h-4 text-[#B68F4E]" />
@@ -108,7 +125,7 @@ export const BarberGrowthCard: FC<BarberGrowthCardProps> = ({
             </span>
           </div>
           <span className="text-[11px] font-mono font-bold text-[#B68F4E]">
-            {qualified} / {goal} validados
+            <AnimatedNumber value={qualified} /> / <AnimatedNumber value={goal} /> validados
           </span>
         </div>
 
@@ -127,12 +144,15 @@ export const BarberGrowthCard: FC<BarberGrowthCardProps> = ({
             {claim?.status === 'PENDING' ? 'En revisión' : 'Meta: 1 Mes Gratis'}
           </span>
         </div>
-      </div>
+      </motion.div>
     );
   }
 
   return (
-    <div className="p-6 sm:p-7 rounded-3xl bg-gradient-to-br from-[#1C160C]/60 via-black to-zinc-950 border border-[#B68F4E]/40 backdrop-blur-xl space-y-5 text-left relative overflow-hidden shadow-2xl">
+    <motion.div
+      {...entrance}
+      className="p-6 sm:p-7 rounded-3xl bg-gradient-to-br from-[#1C160C]/60 via-black to-zinc-950 border border-[#B68F4E]/40 backdrop-blur-xl space-y-5 text-left relative overflow-hidden shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_24px_48px_-16px_rgba(0,0,0,0.9)]"
+    >
       <div
         className="absolute w-72 h-72 rounded-full blur-[100px] pointer-events-none opacity-20 -top-10 -right-10 bg-[#B68F4E]"
         aria-hidden="true"
@@ -147,7 +167,7 @@ export const BarberGrowthCard: FC<BarberGrowthCardProps> = ({
             </span>
             {freeMonthsEarned > 0 && (
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#B68F4E]/20 text-[#D9C9B0] border border-[#B68F4E]/40">
-                {freeMonthsEarned} {freeMonthsEarned === 1 ? 'Mes Gratis Aprobado' : 'Meses Gratis Aprobados'}
+                <AnimatedNumber value={freeMonthsEarned} /> {freeMonthsEarned === 1 ? 'Mes Gratis Aprobado' : 'Meses Gratis Aprobados'}
               </span>
             )}
           </div>
@@ -179,10 +199,10 @@ export const BarberGrowthCard: FC<BarberGrowthCardProps> = ({
       <div className="space-y-3 relative z-10 pt-1">
         <div className="flex items-center justify-between text-xs font-mono">
           <span className="text-[#D9C9B0] font-semibold">
-            Progreso hacia la meta ({percentage}%):
+            Progreso hacia la meta (<AnimatedNumber value={percentage} suffix="%" />):
           </span>
           <span className="text-[#B68F4E] font-bold text-sm">
-            {qualified} / {goal} Validados
+            <AnimatedNumber value={qualified} /> / <AnimatedNumber value={goal} /> Validados
           </span>
         </div>
 
@@ -278,7 +298,9 @@ export const BarberGrowthCard: FC<BarberGrowthCardProps> = ({
         ) : (
           <div className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.02] border border-white/10 text-xs">
             <span className="text-white/60">
-              Te faltan <strong className="text-white font-mono">{remaining} clientes validados</strong> para desbloquear tu mes gratis.
+              Te faltan <strong className="text-white font-mono">
+                <AnimatedNumber value={remaining} /> clientes validados
+              </strong> para desbloquear tu mes gratis.
             </span>
             <span className="text-[#B68F4E] font-mono font-semibold flex items-center gap-1 shrink-0">
               <span>Sigue escaneando</span>
@@ -308,6 +330,6 @@ export const BarberGrowthCard: FC<BarberGrowthCardProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </motion.div>
   );
 };

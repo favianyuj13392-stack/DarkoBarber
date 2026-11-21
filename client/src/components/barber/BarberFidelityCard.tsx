@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { FC } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
   TrendingUp,
   Clock,
@@ -17,6 +17,8 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import type { UserProfile } from '../../services/auth.service';
+import { SPRING_SLIDE } from '../../constants/springs';
+import { AnimatedNumber } from '../common/AnimatedNumber';
 import {
   fetchFidelityStats,
   fetchDueForCutClients,
@@ -36,6 +38,14 @@ export const BarberFidelityCard: FC<BarberFidelityCardProps> = ({
   onUpgradeRequested,
 }) => {
   const isPro = barber?.plan === 'PRO';
+  const reduceMotion = useReducedMotion();
+  const entrance = reduceMotion
+    ? { initial: false as const }
+    : {
+        initial: { opacity: 0, y: 12 },
+        animate: { opacity: 1, y: 0 },
+        transition: SPRING_SLIDE,
+      };
 
   const [loading, setLoading] = useState(isPro);
   const [refreshing, setRefreshing] = useState(false);
@@ -200,7 +210,10 @@ export const BarberFidelityCard: FC<BarberFidelityCardProps> = ({
   const quota = dueData?.emailQuota || { sentThisMonth: 0, monthlyLimit: 12, remaining: 12 };
 
   return (
-    <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-white/[0.04] to-white/[0.01] border border-[#B68F4E]/30 backdrop-blur-xl space-y-7 relative">
+    <motion.div
+      {...entrance}
+      className="p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-white/[0.04] to-white/[0.01] border border-[#B68F4E]/30 backdrop-blur-xl space-y-7 relative shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1),0_24px_48px_-16px_rgba(0,0,0,0.9)]"
+    >
       {/* Toast Feedback */}
       <AnimatePresence>
         {feedbackMsg && (
@@ -272,11 +285,11 @@ export const BarberFidelityCard: FC<BarberFidelityCardProps> = ({
               </div>
               <div className="flex items-baseline gap-2">
                 <span className="text-3xl font-mono font-bold text-white">
-                  {stats?.recurrenceRate ?? 0}%
+                  <AnimatedNumber value={stats?.recurrenceRate ?? 0} suffix="%" />
                 </span>
               </div>
               <p className="text-[11px] text-[#D9C9B0]/60">
-                {stats?.recurringClients ?? 0} de {stats?.uniqueClients ?? 0} clientes volvieron más de una vez.
+                <AnimatedNumber value={stats?.recurringClients ?? 0} /> de <AnimatedNumber value={stats?.uniqueClients ?? 0} /> clientes volvieron más de una vez.
               </p>
             </div>
 
@@ -290,7 +303,11 @@ export const BarberFidelityCard: FC<BarberFidelityCardProps> = ({
               </div>
               <div className="flex items-baseline gap-2">
                 <span className="text-3xl font-mono font-bold text-white">
-                  {stats?.averageCycleDays !== null ? `${stats?.averageCycleDays} días` : '21 días'}
+                  {stats?.averageCycleDays !== null ? (
+                    <AnimatedNumber value={stats?.averageCycleDays} suffix=" días" />
+                  ) : (
+                    '21 días'
+                  )}
                 </span>
                 {stats?.averageCycleDays === null && (
                   <span className="text-[10px] text-white/40">(Estándar)</span>
@@ -315,7 +332,7 @@ export const BarberFidelityCard: FC<BarberFidelityCardProps> = ({
                     <div key={idx} className="flex items-center justify-between text-xs">
                       <span className="text-white/80 truncate max-w-[140px]">{style.name}</span>
                       <span className="font-mono text-[#B68F4E] font-bold text-[11px]">
-                        {style.count} cortes
+                        <AnimatedNumber value={style.count} /> cortes
                       </span>
                     </div>
                   ))
@@ -333,7 +350,7 @@ export const BarberFidelityCard: FC<BarberFidelityCardProps> = ({
                 <h3 className="text-base font-serif font-bold text-white flex items-center gap-2">
                   <span>Clientes que ya deberían cortarse</span>
                   <span className="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-[#B68F4E]/20 text-[#F5EBDD] border border-[#B68F4E]/40">
-                    {dueClients.length}
+                    <AnimatedNumber value={dueClients.length} />
                   </span>
                 </h3>
               </div>
@@ -343,7 +360,10 @@ export const BarberFidelityCard: FC<BarberFidelityCardProps> = ({
                 <Mail className="w-3.5 h-3.5 text-[#B68F4E]" />
                 <span>
                   Correos disponibles:{' '}
-                  <strong className="text-white font-mono">{quota.remaining}</strong> / {quota.monthlyLimit} este mes
+                  <strong className="text-white font-mono">
+                    <AnimatedNumber value={quota.remaining} />
+                  </strong>{' '}
+                  / <AnimatedNumber value={quota.monthlyLimit} /> este mes
                 </span>
               </div>
             </div>
@@ -455,6 +475,6 @@ export const BarberFidelityCard: FC<BarberFidelityCardProps> = ({
           </div>
         </>
       )}
-    </div>
+    </motion.div>
   );
 };
