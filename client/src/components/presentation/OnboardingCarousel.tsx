@@ -3,6 +3,7 @@ import type { FC } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
 import { SPRING_TOUCH, SPRING_MODAL } from '../../constants/springs';
+import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion';
 
 interface SlideData {
   image: string;
@@ -24,6 +25,12 @@ const itemVariants = {
   hidden: { opacity: 0, y: 16 },
   visible: { opacity: 1, y: 0, transition: SPRING_MODAL },
   exit: { opacity: 0, y: -8, transition: SPRING_MODAL },
+};
+
+const itemVariantsReduced = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1, transition: { duration: 0 } },
+  exit: { opacity: 0, transition: { duration: 0 } },
 };
 
 const ONBOARDING_SLIDES: SlideData[] = [
@@ -59,6 +66,8 @@ interface OnboardingCarouselProps {
 
 export const OnboardingCarousel: FC<OnboardingCarouselProps> = ({ onComplete }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const reduceMotion = usePrefersReducedMotion();
+  const itemMotion = reduceMotion ? itemVariantsReduced : itemVariants;
 
   const handleNext = () => {
     if (currentIndex < ONBOARDING_SLIDES.length - 1) {
@@ -79,10 +88,10 @@ export const OnboardingCarousel: FC<OnboardingCarouselProps> = ({ onComplete }) 
             key={currentSlide.image}
             src={currentSlide.image}
             alt="FADE Presentación"
-            initial={{ opacity: 0, scale: 1.05 }}
-            animate={{ opacity: 1, scale: 1 }}
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 1.05 }}
+            animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
             exit={{ opacity: 0 }}
-            transition={SPRING_MODAL}
+            transition={reduceMotion ? { duration: 0 } : SPRING_MODAL}
             className="w-full h-full object-cover object-center filter brightness-85 contrast-105"
           />
         </AnimatePresence>
@@ -119,7 +128,7 @@ export const OnboardingCarousel: FC<OnboardingCarouselProps> = ({ onComplete }) 
             className="space-y-3"
           >
             <motion.h2
-              variants={itemVariants}
+              variants={itemMotion}
               className="font-serif text-4xl md:text-5xl leading-[1.1] tracking-tight text-white"
             >
               {currentSlide.titleRegular}
@@ -130,7 +139,7 @@ export const OnboardingCarousel: FC<OnboardingCarouselProps> = ({ onComplete }) 
               )}
             </motion.h2>
             <motion.p
-              variants={itemVariants}
+              variants={itemMotion}
               className="text-sm md:text-base text-[#D9C9B0]/80 font-light leading-relaxed max-w-sm"
             >
               {currentSlide.description}
@@ -162,7 +171,7 @@ export const OnboardingCarousel: FC<OnboardingCarouselProps> = ({ onComplete }) 
               aria-hidden="true"
               initial={false}
               animate={{ x: currentIndex * (DOT_SIZE + DOT_GAP) }}
-              transition={SPRING_TOUCH}
+              transition={reduceMotion ? { duration: 0 } : SPRING_TOUCH}
               style={{ width: DOT_SIZE, height: DOT_SIZE }}
               className="absolute left-0 top-0 rounded-full bg-gradient-to-r from-[#F3E9DC] to-[#B68F4E] shadow-[0_0_10px_rgba(182,143,78,0.6)] pointer-events-none"
             />
@@ -171,8 +180,8 @@ export const OnboardingCarousel: FC<OnboardingCarouselProps> = ({ onComplete }) 
           <motion.button
             type="button"
             onClick={handleNext}
-            whileHover={{ y: -2 }}
-            whileTap={{ scale: 0.98 }}
+            whileHover={reduceMotion ? undefined : { y: -2 }}
+            whileTap={reduceMotion ? undefined : { scale: 0.98 }}
             transition={SPRING_TOUCH}
             aria-label={currentIndex === ONBOARDING_SLIDES.length - 1 ? 'Finalizar' : 'Siguiente'}
             className="w-14 h-14 rounded-full flex items-center justify-center bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_8px_24px_-4px_rgba(217,201,176,0.45)] cursor-pointer"

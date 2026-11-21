@@ -9,6 +9,7 @@ import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { GoogleSignInButton } from './GoogleSignInButton';
 import { loginWithEmailPassword, loginWithGoogle, type LoginResponse } from '../../services/auth.service';
 import { SPRING_TOUCH, SPRING_MODAL } from '../../constants/springs';
+import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion';
 
 const sectionVariants = {
   hidden: { opacity: 0, y: 12 },
@@ -17,6 +18,11 @@ const sectionVariants = {
     y: 0,
     transition: { ...SPRING_MODAL, delay: 0.06 * i },
   }),
+};
+
+const sectionVariantsReduced = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1, transition: { duration: 0 } },
 };
 
 interface LoginViewProps {
@@ -32,6 +38,8 @@ export const LoginView: FC<LoginViewProps> = ({
   onShowRegister,
   initialResetToken,
 }) => {
+  const reduceMotion = usePrefersReducedMotion();
+  const sectionMotion = reduceMotion ? sectionVariantsReduced : sectionVariants;
   const [role, setRole] = useState<UserRole>('barbero');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -164,15 +172,15 @@ export const LoginView: FC<LoginViewProps> = ({
         <div className="relative z-10 w-full max-w-md">
           <motion.div
             aria-hidden="true"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={SPRING_MODAL}
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 16 }}
+            animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+            transition={reduceMotion ? { duration: 0 } : SPRING_MODAL}
             className="fade-surface absolute inset-0 rounded-3xl pointer-events-none"
           />
           <div className="relative p-6 sm:p-8 space-y-6">
           {/* Header de la Tarjeta */}
           <motion.div
-            variants={sectionVariants}
+            variants={sectionMotion}
             initial="hidden"
             animate="visible"
             custom={0}
@@ -190,7 +198,7 @@ export const LoginView: FC<LoginViewProps> = ({
 
           {/* Selector de Rol [Soy Barbero ⇄ Soy Cliente] */}
           <motion.div
-            variants={sectionVariants}
+            variants={sectionMotion}
             initial="hidden"
             animate="visible"
             custom={1}
@@ -217,7 +225,7 @@ export const LoginView: FC<LoginViewProps> = ({
           {/* Formulario */}
           <motion.form
             onSubmit={handleSubmit}
-            variants={sectionVariants}
+            variants={sectionMotion}
             initial="hidden"
             animate="visible"
             custom={2}
@@ -236,8 +244,8 @@ export const LoginView: FC<LoginViewProps> = ({
             <motion.button
               type="submit"
               disabled={loading}
-              whileHover={{ y: -2 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={reduceMotion ? undefined : { y: -2 }}
+              whileTap={reduceMotion ? undefined : { scale: 0.98 }}
               transition={SPRING_TOUCH}
               className="fade-btn-primary w-full py-4 rounded-2xl flex items-center justify-center gap-2 text-xs md:text-sm tracking-[0.12em] font-black cursor-pointer shadow-[0_8px_24px_-4px_rgba(217,201,176,0.35)] disabled:opacity-50"
             >
