@@ -177,7 +177,7 @@ export const ForgotPasswordModal: FC<ForgotPasswordModalProps> = ({
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="tu.correo@ejemplo.com"
                     required
-                    className="w-full bg-transparent py-2 text-sm text-white placeholder-white/20 focus:outline-none"
+                    className="w-full bg-transparent py-2 text-sm text-white placeholder:text-white/50 focus:outline-none"
                   />
                 </div>
               </div>
@@ -233,7 +233,7 @@ export const ForgotPasswordModal: FC<ForgotPasswordModalProps> = ({
                     onChange={(e) => setToken(e.target.value)}
                     placeholder="Código de verificación"
                     required
-                    className="w-full bg-transparent py-2 text-sm text-white placeholder-white/20 focus:outline-none font-mono tracking-wider"
+                    className="w-full bg-transparent py-2 text-sm text-white placeholder:text-white/50 focus:outline-none font-mono tracking-wider"
                   />
                 </div>
               </div>
@@ -250,7 +250,7 @@ export const ForgotPasswordModal: FC<ForgotPasswordModalProps> = ({
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="Mínimo 8 caracteres"
                     required
-                    className="w-full bg-transparent py-2 text-sm text-white placeholder-white/20 focus:outline-none"
+                    className="w-full bg-transparent py-2 text-sm text-white placeholder:text-white/50 focus:outline-none"
                   />
                 </div>
               </div>
@@ -267,7 +267,7 @@ export const ForgotPasswordModal: FC<ForgotPasswordModalProps> = ({
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Repite la contraseña"
                     required
-                    className="w-full bg-transparent py-2 text-sm text-white placeholder-white/20 focus:outline-none"
+                    className="w-full bg-transparent py-2 text-sm text-white placeholder:text-white/50 focus:outline-none"
                   />
                 </div>
               </div>
