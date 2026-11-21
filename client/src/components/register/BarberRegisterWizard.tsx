@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { BrandLogo } from '../common/BrandLogo';
 import { SPRING_TOUCH, SPRING_SLIDE } from '../../constants/springs';
+import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion';
 import type {
   BarberRegisterState,
   BarberServiceItem,
@@ -35,12 +36,54 @@ interface BarberRegisterWizardProps {
   onSwitchToClient?: () => void;
 }
 
+const FIELD_LABEL = 'text-[11px] font-semibold uppercase tracking-[0.16em] text-[#D9C9B0]/80 block';
+const FIELD_INPUT =
+  'w-full py-3 rounded-2xl bg-white/[0.03] border border-white/10 text-white placeholder-white/20 text-sm focus:outline-none focus:border-[#B68F4E]/70 focus:ring-2 focus:ring-[#B68F4E]/25 focus:shadow-[0_0_24px_rgba(182,143,78,0.18)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-colors';
+const MINI_INPUT =
+  'px-3 py-2 rounded-xl bg-white/[0.03] border border-white/10 text-xs text-white placeholder-white/30 focus:outline-none focus:border-[#B68F4E]/70 focus:ring-2 focus:ring-[#B68F4E]/25 transition-colors';
+const ERROR_BOX =
+  'p-3 rounded-xl bg-red-950/40 border border-red-500/30 border-l-2 border-l-[#E85A44] text-xs leading-snug text-red-100';
+const PRIMARY_BTN =
+  'w-full py-3.5 rounded-2xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-bold text-sm tracking-wide shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_4px_16px_rgba(217,201,176,0.3)] cursor-pointer';
+
 export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
   initialStep = 1,
   onCancel,
   onRegisterSuccess,
   onSwitchToClient,
 }) => {
+  const reduceMotion = usePrefersReducedMotion();
+  const hoverMotion = reduceMotion ? undefined : { scale: 1.02 };
+  const tapMotion = reduceMotion ? undefined : { scale: 0.97 };
+  // Step transition: small slide with a spring; opacity-only when reduced.
+  const stepMotion = reduceMotion
+    ? {
+        initial: { opacity: 0 },
+        animate: { opacity: 1 },
+        exit: { opacity: 0 },
+        transition: { duration: 0 },
+      }
+    : {
+        initial: { opacity: 0, x: 20 },
+        animate: { opacity: 1, x: 0 },
+        exit: { opacity: 0, x: -20 },
+        transition: SPRING_SLIDE,
+      };
+  // Opacity-only variant for the step that embeds the Google iframe: no
+  // transform/filter/backdrop-filter may sit in the iframe's ancestor chain.
+  const fadeStepMotion = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+    exit: { opacity: 0 },
+    transition: reduceMotion ? { duration: 0 } : SPRING_SLIDE,
+  };
+  // Staggered entrance for list rows. Applied on a wrapper that only plays on
+  // mount, so the stagger delay never leaks into tap/toggle animations.
+  const rowEnter = (index: number) => ({
+    initial: reduceMotion ? false : { opacity: 0, y: 8 },
+    animate: { opacity: 1, y: 0 },
+    transition: reduceMotion ? { duration: 0 } : { ...SPRING_SLIDE, delay: Math.min(index, 8) * 0.04 },
+  });
   const [step, setStep] = useState<number>(initialStep);
 
   useEffect(() => {
@@ -214,28 +257,21 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
   };
 
   return (
-    <div className="relative min-h-screen w-full bg-black text-[#F5EBDD] flex flex-col justify-between p-4 sm:p-8 select-none overflow-x-hidden">
-      {/* Background Glow */}
-      <div 
-        className="absolute w-[500px] h-[500px] rounded-full blur-[150px] pointer-events-none opacity-15 top-0 -left-20 bg-[#B68F4E]"
-        aria-hidden="true"
-      />
-      <div 
-        className="absolute w-[400px] h-[400px] rounded-full blur-[140px] pointer-events-none opacity-10 bottom-0 -right-20 bg-[#D9C9B0]"
-        aria-hidden="true"
-      />
-
+    <div className="fade-ambient relative min-h-screen w-full text-[#F5EBDD] flex flex-col justify-between p-4 sm:p-8 select-none overflow-x-hidden">
       {/* Top Header con Botón Atrás y Progreso */}
       <header className="relative z-10 w-full max-w-md mx-auto flex items-center justify-between py-2">
         {step < 7 ? (
-          <button
+          <motion.button
             type="button"
             onClick={handleBack}
+            whileHover={hoverMotion}
+            whileTap={tapMotion}
+            transition={SPRING_TOUCH}
             className="p-2.5 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 text-[#D9C9B0] transition-colors cursor-pointer"
             aria-label="Atrás"
           >
             <ArrowLeft className="w-5 h-5" />
-          </button>
+          </motion.button>
         ) : (
           <div className="w-10" />
         )}
@@ -256,6 +292,24 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
         )}
       </header>
 
+      {/* Progress: spring-driven fill (scaleX) over a static track */}
+      {step > 1 && step < 7 && (
+        <div
+          className="relative z-10 w-full max-w-md mx-auto h-1 rounded-full bg-white/10 overflow-hidden"
+          role="progressbar"
+          aria-valuemin={1}
+          aria-valuemax={5}
+          aria-valuenow={step - 1}
+        >
+          <motion.div
+            className="absolute inset-0 origin-left rounded-full bg-gradient-to-r from-[#B68F4E] to-[#D9C9B0]"
+            initial={false}
+            animate={{ scaleX: (step - 1) / 5 }}
+            transition={reduceMotion ? { duration: 0 } : SPRING_SLIDE}
+          />
+        </div>
+      )}
+
       {/* Contenedor Central con Transición de Pasos */}
       <main className="relative z-10 w-full max-w-md mx-auto flex-1 flex flex-col justify-center py-4">
         <AnimatePresence mode="wait">
@@ -265,16 +319,13 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
           {step === 1 && (
             <motion.div
               key="barber-step-1"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={SPRING_SLIDE}
+              {...stepMotion}
               className="space-y-6 text-left"
             >
               <div className="space-y-2 text-center sm:text-left">
                 <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight font-serif">
                   ¿Cómo quieres usar <br />
-                  <span className="text-gold-gradient font-sans font-black">FADE?</span>
+                  <span className="font-editorial text-gold-gradient font-black">FADE?</span>
                 </h1>
                 <p className="text-xs sm:text-sm text-[#D9C9B0]/70 leading-relaxed font-light">
                   Puedes cambiar el modo en cualquier momento desde tu perfil.
@@ -284,7 +335,8 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
               <div className="space-y-4">
                 {/* Opción Soy Cliente */}
                 <motion.div
-                  whileTap={{ scale: 0.98 }}
+                  whileHover={reduceMotion ? undefined : 'hover'}
+                  whileTap={tapMotion}
                   transition={SPRING_TOUCH}
                   onClick={() => {
                     if (onSwitchToClient) {
@@ -293,13 +345,15 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
                       onCancel();
                     }
                   }}
-                  className="fade-surface rounded-3xl p-5 flex items-center gap-4 cursor-pointer border border-white/10 hover:border-[#B68F4E]/60 transition-all group shadow-xl"
+                  className="fade-surface rounded-3xl p-5 flex items-center gap-4 cursor-pointer border border-white/10 hover:border-[#B68F4E]/60 transition-colors group shadow-xl"
                 >
                   <div className="relative w-20 h-24 rounded-2xl overflow-hidden border border-white/10 shrink-0">
-                    <img
+                    <motion.img
                       src="/assets/images/1.png"
                       alt="Cliente FADE"
-                      className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
+                      variants={{ hover: { scale: 1.05 } }}
+                      transition={SPRING_TOUCH}
+                      className="w-full h-full object-cover object-center"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
                     <div className="absolute bottom-1.5 left-1.5 p-1 rounded-full bg-black/60 text-[#B68F4E]">
@@ -316,21 +370,30 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
                     </p>
                   </div>
 
-                  <ChevronRight className="w-5 h-5 text-white/40 group-hover:text-[#B68F4E] group-hover:translate-x-1 transition-all shrink-0" />
+                  <motion.span
+                    variants={{ hover: { x: 4 } }}
+                    transition={SPRING_TOUCH}
+                    className="shrink-0 inline-flex"
+                  >
+                    <ChevronRight className="w-5 h-5 text-white/40 group-hover:text-[#B68F4E] transition-colors" />
+                  </motion.span>
                 </motion.div>
 
                 {/* Opción Soy Barbero */}
                 <motion.div
-                  whileTap={{ scale: 0.98 }}
+                  whileHover={reduceMotion ? undefined : 'hover'}
+                  whileTap={tapMotion}
                   transition={SPRING_TOUCH}
                   onClick={() => setStep(2)}
                   className="fade-surface rounded-3xl p-5 flex items-center gap-4 cursor-pointer border-2 border-[#B68F4E] bg-[#B68F4E]/5 group shadow-[0_0_25px_rgba(182,143,78,0.25)]"
                 >
                   <div className="relative w-20 h-24 rounded-2xl overflow-hidden border border-[#B68F4E]/40 shrink-0">
-                    <img
+                    <motion.img
                       src="/assets/images/2.png"
                       alt="Barbero Profesional FADE"
-                      className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
+                      variants={{ hover: { scale: 1.05 } }}
+                      transition={SPRING_TOUCH}
+                      className="w-full h-full object-cover object-center"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
                     <div className="absolute bottom-1.5 left-1.5 p-1 rounded-full bg-black/60 text-[#B68F4E]">
@@ -352,7 +415,13 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
                     </p>
                   </div>
 
-                  <ChevronRight className="w-5 h-5 text-[#B68F4E] group-hover:translate-x-1 transition-all shrink-0" />
+                  <motion.span
+                    variants={{ hover: { x: 4 } }}
+                    transition={SPRING_TOUCH}
+                    className="shrink-0 inline-flex"
+                  >
+                    <ChevronRight className="w-5 h-5 text-[#B68F4E]" />
+                  </motion.span>
                 </motion.div>
               </div>
             </motion.div>
@@ -364,10 +433,7 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
           {step === 2 && (
             <motion.div
               key="barber-step-2"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={SPRING_SLIDE}
+              {...fadeStepMotion}
               className="space-y-6 text-left"
             >
               <div className="space-y-1 text-center sm:text-left">
@@ -375,7 +441,7 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
                   Paso 1 de 5 · Acceso Pro
                 </span>
                 <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight font-serif">
-                  Crea tu cuenta
+                  Crea tu <span className="font-editorial text-gold-gradient">cuenta</span>
                 </h1>
                 <p className="text-xs text-[#D9C9B0]/70">
                   Comienza a configurar tu perfil profesional de barbero.
@@ -383,49 +449,55 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
               </div>
 
               {errorMessage && (
-                <div className="p-3 rounded-xl bg-red-950/40 border border-red-500/30 text-xs text-red-200">
+                <motion.div
+                  role="alert"
+                  initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={reduceMotion ? { duration: 0 } : SPRING_TOUCH}
+                  className={ERROR_BOX}
+                >
                   {errorMessage}
-                </div>
+                </motion.div>
               )}
 
               <form onSubmit={handleStep2Submit} className="space-y-4">
                 {/* Email */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[#D9C9B0]/80 block">
+                  <label className={FIELD_LABEL}>
                     Correo electrónico
                   </label>
                   <div className="relative">
-                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#B68F4E]" />
                     <input
                       type="email"
                       required
                       value={form.email}
                       onChange={(e) => setForm({ ...form, email: e.target.value })}
                       placeholder="brian.barber@fade.bo"
-                      className="w-full pl-10 pr-4 py-3 rounded-2xl bg-white/5 border border-white/10 text-white placeholder-white/20 text-sm focus:outline-none focus:border-[#B68F4E] transition-all"
+                      className={`${FIELD_INPUT} pl-10 pr-4`}
                     />
                   </div>
                 </div>
 
                 {/* Password */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[#D9C9B0]/80 block">
+                  <label className={FIELD_LABEL}>
                     Contraseña
                   </label>
                   <div className="relative">
-                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#B68F4E]" />
                     <input
                       type={showPassword ? 'text' : 'password'}
                       required
                       value={form.password}
                       onChange={(e) => setForm({ ...form, password: e.target.value })}
                       placeholder="Mínimo 8 caracteres"
-                      className="w-full pl-10 pr-10 py-3 rounded-2xl bg-white/5 border border-white/10 text-white placeholder-white/20 text-sm focus:outline-none focus:border-[#B68F4E] transition-all"
+                      className={`${FIELD_INPUT} pl-10 pr-10`}
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors cursor-pointer"
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#D9C9B0]/60 hover:text-[#F5EBDD] transition-colors cursor-pointer"
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -435,9 +507,10 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
                 {/* Botón Continuar */}
                 <motion.button
                   type="submit"
-                  whileTap={{ scale: 0.98 }}
+                  whileHover={hoverMotion}
+                whileTap={tapMotion}
                   transition={SPRING_TOUCH}
-                  className="w-full py-3.5 rounded-2xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-bold text-sm tracking-wide shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_4px_16px_rgba(217,201,176,0.3)] cursor-pointer mt-2"
+                  className={`${PRIMARY_BTN} mt-2`}
                 >
                   Continuar
                 </motion.button>
@@ -446,7 +519,7 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
               {/* Separador */}
               <div className="relative flex items-center justify-center">
                 <div className="border-t border-white/10 w-full" />
-                <span className="bg-black px-3 text-[11px] font-mono text-white/40 uppercase">
+                <span className="bg-[#0A0A0A] px-3 text-[11px] font-mono text-white/40 uppercase">
                   o
                 </span>
               </div>
@@ -474,10 +547,7 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
           {step === 3 && (
             <motion.div
               key="barber-step-3"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={SPRING_SLIDE}
+              {...stepMotion}
               className="space-y-6 text-left"
             >
               <div className="space-y-1 text-center sm:text-left">
@@ -485,7 +555,7 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
                   Paso 2 de 5 · Identidad
                 </span>
                 <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight font-serif">
-                  Completa tu perfil profesional
+                  Completa tu perfil <span className="font-editorial text-gold-gradient">profesional</span>
                 </h1>
               </div>
 
@@ -498,22 +568,29 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
                   accept="image/*"
                   className="hidden"
                 />
-                <div
+                <motion.div
                   onClick={() => avatarInputRef.current?.click()}
+                  whileHover={reduceMotion ? undefined : 'hover'}
+                  whileTap={tapMotion}
+                  transition={SPRING_TOUCH}
                   className="relative w-28 h-28 rounded-full border-2 border-[#B68F4E]/60 p-1 cursor-pointer group shadow-[0_0_20px_rgba(182,143,78,0.2)]"
                 >
                   <div className="w-full h-full rounded-full overflow-hidden bg-neutral-900 border border-white/10 flex items-center justify-center">
                     {form.avatarUrl ? (
-                      <img
+                      <motion.img
                         src={form.avatarUrl}
                         alt="Avatar"
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        variants={{ hover: { scale: 1.05 } }}
+                        transition={SPRING_TOUCH}
+                        className="w-full h-full object-cover"
                       />
                     ) : (
-                      <img
+                      <motion.img
                         src="/assets/images/3.png"
                         alt="Avatar por defecto"
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        variants={{ hover: { scale: 1.05 } }}
+                        transition={SPRING_TOUCH}
+                        className="w-full h-full object-cover"
                       />
                     )}
                   </div>
@@ -521,7 +598,7 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
                   <div className="absolute bottom-0 right-0 p-2 rounded-full bg-gradient-to-b from-[#F3E9DC] to-[#C2AE91] text-black shadow-lg">
                     <Camera className="w-4 h-4" />
                   </div>
-                </div>
+                </motion.div>
                 <span className="text-[11px] text-[#D9C9B0]/60 mt-2">
                   Toca para cambiar foto de perfil
                 </span>
@@ -531,76 +608,82 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
               <div className="space-y-4">
                 {/* Nombre */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[#D9C9B0]/80 block">
+                  <label className={FIELD_LABEL}>
                     Nombre completo
                   </label>
                   <div className="relative">
-                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#B68F4E]" />
                     <input
                       type="text"
                       value={form.displayName}
                       onChange={(e) => setForm({ ...form, displayName: e.target.value })}
                       placeholder="Brian López"
-                      className="w-full pl-10 pr-4 py-3 rounded-2xl bg-white/5 border border-white/10 text-white placeholder-white/20 text-sm focus:outline-none focus:border-[#B68F4E] transition-all"
+                      className={`${FIELD_INPUT} pl-10 pr-4`}
                     />
                   </div>
                 </div>
 
                 {/* Ciudad */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[#D9C9B0]/80 block">
+                  <label className={FIELD_LABEL}>
                     Ciudad
                   </label>
                   <div className="relative">
-                    <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                    <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#B68F4E]" />
                     <input
                       type="text"
                       value={form.city}
                       onChange={(e) => setForm({ ...form, city: e.target.value })}
                       placeholder="La Paz"
-                      className="w-full pl-10 pr-4 py-3 rounded-2xl bg-white/5 border border-white/10 text-white placeholder-white/20 text-sm focus:outline-none focus:border-[#B68F4E] transition-all"
+                      className={`${FIELD_INPUT} pl-10 pr-4`}
                     />
                   </div>
                 </div>
 
                 {/* Barbería actual */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[#D9C9B0]/80 block">
+                  <label className={FIELD_LABEL}>
                     Barbería actual (opcional)
                   </label>
                   <div className="relative">
-                    <Store className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                    <Store className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#B68F4E]" />
                     <input
                       type="text"
                       value={form.currentShop}
                       onChange={(e) => setForm({ ...form, currentShop: e.target.value })}
                       placeholder="Estudio 16 o Autónomo"
-                      className="w-full pl-10 pr-4 py-3 rounded-2xl bg-white/5 border border-white/10 text-white placeholder-white/20 text-sm focus:outline-none focus:border-[#B68F4E] transition-all"
+                      className={`${FIELD_INPUT} pl-10 pr-4`}
                     />
                   </div>
                   <div className="flex gap-2 pt-1">
-                    <button
+                    <motion.button
                       type="button"
                       onClick={() => setForm({ ...form, currentShop: 'Estudio 16' })}
-                      className={`px-2.5 py-1 rounded-full text-[10px] font-mono border transition-all cursor-pointer ${
+                      whileHover={hoverMotion}
+                      whileTap={tapMotion}
+                      transition={SPRING_TOUCH}
+                      className={`px-2.5 py-1 rounded-full text-[10px] font-mono border transition-colors cursor-pointer ${
                         form.currentShop === 'Estudio 16'
                           ? 'bg-[#B68F4E]/20 border-[#B68F4E] text-[#B68F4E]'
                           : 'bg-white/5 border-white/10 text-white/60'
                       }`}
                     >
                       Estudio 16
-                    </button>
-                    <button
+                    </motion.button>
+                    <motion.button
                       type="button"
                       onClick={() => setForm({ ...form, currentShop: 'Independiente / Autónomo' })}
-                      className={`px-2.5 py-1 rounded-full text-[10px] font-mono border transition-all cursor-pointer ${
+                      whileHover={hoverMotion}
+                      whileTap={tapMotion}
+                      transition={SPRING_TOUCH}
+                      className={`px-2.5 py-1 rounded-full text-[10px] font-mono border transition-colors cursor-pointer ${
                         form.currentShop === 'Independiente / Autónomo'
                           ? 'bg-[#B68F4E]/20 border-[#B68F4E] text-[#B68F4E]'
                           : 'bg-white/5 border-white/10 text-white/60'
                       }`}
                     >
                       Independiente
-                    </button>
+                    </motion.button>
                   </div>
                 </div>
               </div>
@@ -611,11 +694,12 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
 
               <motion.button
                 type="button"
-                whileTap={{ scale: 0.98 }}
+                whileHover={hoverMotion}
+                whileTap={tapMotion}
                 transition={SPRING_TOUCH}
                 onClick={() => setStep(4)}
                 disabled={!form.displayName.trim()}
-                className="disabled:opacity-40 disabled:cursor-not-allowed w-full py-3.5 rounded-2xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-bold text-sm tracking-wide shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_4px_16px_rgba(217,201,176,0.3)] cursor-pointer"
+                className={`${PRIMARY_BTN} disabled:opacity-40 disabled:cursor-not-allowed`}
               >
                 Continuar
               </motion.button>
@@ -628,10 +712,7 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
           {step === 4 && (
             <motion.div
               key="barber-step-4"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={SPRING_SLIDE}
+              {...stepMotion}
               className="space-y-5 text-left"
             >
               <div className="space-y-1 text-center sm:text-left">
@@ -639,7 +720,7 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
                   Paso 3 de 5 · Carta de Servicios
                 </span>
                 <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight font-serif">
-                  Servicios que ofreces
+                  Servicios que <span className="font-editorial text-gold-gradient">ofreces</span>
                 </h1>
                 <p className="text-xs text-[#D9C9B0]/70">
                   Puedes configurarlos y editarlos después.
@@ -648,11 +729,13 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
 
               {/* Lista táctil de servicios con switches interactivos */}
               <div className="space-y-3">
-                {form.services.map((service) => (
-                  <div
-                    key={service.id}
+                {form.services.map((service, index) => (
+                  <motion.div key={service.id} {...rowEnter(index)}>
+                  <motion.div
                     onClick={() => toggleService(service.id)}
-                    className={`fade-surface rounded-2xl p-3 sm:p-3.5 flex items-center justify-between border cursor-pointer transition-all ${
+                    whileTap={tapMotion}
+                    transition={SPRING_TOUCH}
+                    className={`fade-surface rounded-2xl p-3 sm:p-3.5 flex items-center justify-between border cursor-pointer transition-[opacity,background-color,border-color] ${
                       service.enabled
                         ? 'border-[#B68F4E]/40 bg-[#B68F4E]/5'
                         : 'border-white/10 opacity-60'
@@ -683,14 +766,16 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
                       }`}
                     >
                       <motion.div
-                        layout
-                        transition={SPRING_TOUCH}
+                        initial={false}
+                        animate={{ x: service.enabled ? 20 : 0 }}
+                        transition={reduceMotion ? { duration: 0 } : SPRING_TOUCH}
                         className={`w-4 h-4 rounded-full shadow-md ${
-                          service.enabled ? 'bg-black translate-x-5' : 'bg-neutral-400 translate-x-0'
+                          service.enabled ? 'bg-black' : 'bg-neutral-400'
                         }`}
                       />
                     </div>
-                  </div>
+                  </motion.div>
+                  </motion.div>
                 ))}
               </div>
 
@@ -698,7 +783,7 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
               {isAddingService ? (
                 <form
                   onSubmit={handleAddCustomService}
-                  className="p-4 rounded-2xl bg-white/5 border border-[#B68F4E]/40 space-y-3"
+                  className="p-4 rounded-2xl bg-white/[0.04] border border-[#B68F4E]/40 space-y-3"
                 >
                   <div className="text-xs font-bold text-[#B68F4E]">
                     Nuevo Servicio
@@ -709,49 +794,58 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
                       placeholder="Nombre del servicio (ej. Diseño freestyle)"
                       value={newServiceName}
                       onChange={(e) => setNewServiceName(e.target.value)}
-                      className="flex-1 px-3 py-2 rounded-xl bg-black border border-white/10 text-xs text-white placeholder-white/30"
+                      className={`flex-1 ${MINI_INPUT}`}
                     />
                     <input
                       type="number"
                       placeholder="Bs"
                       value={newServicePrice}
                       onChange={(e) => setNewServicePrice(e.target.value)}
-                      className="w-20 px-3 py-2 rounded-xl bg-black border border-white/10 text-xs text-white font-mono"
+                      className={`w-20 font-mono ${MINI_INPUT}`}
                     />
                   </div>
                   <div className="flex gap-2 justify-end">
-                    <button
+                    <motion.button
                       type="button"
                       onClick={() => setIsAddingService(false)}
-                      className="px-3 py-1.5 rounded-lg text-xs text-white/50 hover:text-white"
+                      whileTap={tapMotion}
+                      transition={SPRING_TOUCH}
+                      className="px-3 py-1.5 rounded-lg text-xs text-white/50 hover:text-white transition-colors cursor-pointer"
                     >
                       Cancelar
-                    </button>
-                    <button
+                    </motion.button>
+                    <motion.button
                       type="submit"
-                      className="px-4 py-1.5 rounded-lg bg-[#B68F4E] text-black text-xs font-bold"
+                      whileHover={hoverMotion}
+                      whileTap={tapMotion}
+                      transition={SPRING_TOUCH}
+                      className="px-4 py-1.5 rounded-lg bg-[#B68F4E] text-black text-xs font-bold cursor-pointer"
                     >
                       Añadir
-                    </button>
+                    </motion.button>
                   </div>
                 </form>
               ) : (
-                <button
+                <motion.button
                   type="button"
                   onClick={() => setIsAddingService(true)}
-                  className="w-full py-3 rounded-2xl border border-[#B68F4E]/50 bg-black/40 hover:bg-[#B68F4E]/10 text-xs font-semibold text-[#D9C9B0] flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  whileHover={hoverMotion}
+                  whileTap={tapMotion}
+                  transition={SPRING_TOUCH}
+                  className="w-full py-3 rounded-2xl border border-[#B68F4E]/50 bg-black/40 hover:bg-[#B68F4E]/10 text-xs font-semibold text-[#D9C9B0] flex items-center justify-center gap-2 transition-colors cursor-pointer"
                 >
                   <Plus className="w-4 h-4 text-[#B68F4E]" />
                   <span>Agregar servicio</span>
-                </button>
+                </motion.button>
               )}
 
               <motion.button
                 type="button"
-                whileTap={{ scale: 0.98 }}
+                whileHover={hoverMotion}
+                whileTap={tapMotion}
                 transition={SPRING_TOUCH}
                 onClick={() => setStep(5)}
-                className="w-full py-3.5 rounded-2xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-bold text-sm tracking-wide shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_4px_16px_rgba(217,201,176,0.3)] cursor-pointer"
+                className={PRIMARY_BTN}
               >
                 Continuar
               </motion.button>
@@ -764,10 +858,7 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
           {step === 5 && (
             <motion.div
               key="barber-step-5"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={SPRING_SLIDE}
+              {...stepMotion}
               className="space-y-5 text-left"
             >
               <div className="space-y-1 text-center sm:text-left">
@@ -775,7 +866,7 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
                   Paso 4 de 5 · Disponibilidad
                 </span>
                 <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight font-serif">
-                  Horario de trabajo
+                  Horario de <span className="font-editorial text-gold-gradient">trabajo</span>
                 </h1>
                 <p className="text-xs text-[#D9C9B0]/70">
                   Define tus días y horarios. Podrás modificarlos en cualquier momento.
@@ -784,11 +875,13 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
 
               {/* Lista de Días */}
               <div className="space-y-2.5">
-                {form.schedule.map((dayItem) => (
-                  <div
-                    key={dayItem.day}
+                {form.schedule.map((dayItem, index) => (
+                  <motion.div key={dayItem.day} {...rowEnter(index)}>
+                  <motion.div
                     onClick={() => toggleScheduleDay(dayItem.day)}
-                    className={`fade-surface rounded-2xl p-3 sm:p-3.5 flex items-center justify-between border cursor-pointer transition-all ${
+                    whileTap={tapMotion}
+                    transition={SPRING_TOUCH}
+                    className={`fade-surface rounded-2xl p-3 sm:p-3.5 flex items-center justify-between border cursor-pointer transition-[opacity,background-color,border-color] ${
                       dayItem.enabled
                         ? 'border-white/10 hover:border-[#B68F4E]/30'
                         : 'border-white/5 opacity-50'
@@ -810,24 +903,27 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
                         }`}
                       >
                         <motion.div
-                          layout
-                          transition={SPRING_TOUCH}
+                          initial={false}
+                          animate={{ x: dayItem.enabled ? 20 : 0 }}
+                          transition={reduceMotion ? { duration: 0 } : SPRING_TOUCH}
                           className={`w-4 h-4 rounded-full shadow-md ${
-                            dayItem.enabled ? 'bg-black translate-x-5' : 'bg-neutral-400 translate-x-0'
+                            dayItem.enabled ? 'bg-black' : 'bg-neutral-400'
                           }`}
                         />
                       </div>
                     </div>
-                  </div>
+                  </motion.div>
+                  </motion.div>
                 ))}
               </div>
 
               <motion.button
                 type="button"
-                whileTap={{ scale: 0.98 }}
+                whileHover={hoverMotion}
+                whileTap={tapMotion}
                 transition={SPRING_TOUCH}
                 onClick={() => setStep(6)}
-                className="w-full py-3.5 rounded-2xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-bold text-sm tracking-wide shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_4px_16px_rgba(217,201,176,0.3)] cursor-pointer"
+                className={PRIMARY_BTN}
               >
                 Continuar
               </motion.button>
@@ -840,10 +936,7 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
           {step === 6 && (
             <motion.div
               key="barber-step-6"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={SPRING_SLIDE}
+              {...stepMotion}
               className="space-y-6 text-left"
             >
               <div className="space-y-1 text-center sm:text-left">
@@ -851,7 +944,7 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
                   Paso 5 de 5 · Modalidad de Agenda
                 </span>
                 <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight font-serif">
-                  Método de reservas
+                  Método de <span className="font-editorial text-gold-gradient">reservas</span>
                 </h1>
                 <p className="text-xs text-[#D9C9B0]/70">
                   Elige cómo quieres recibir reservas.
@@ -860,9 +953,11 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
 
               <div className="space-y-4">
                 {/* Opción 1: Confirmación automática */}
-                <div
+                <motion.div
                   onClick={() => setForm({ ...form, reservationMethod: 'automatica' })}
-                  className={`fade-surface rounded-3xl p-5 border cursor-pointer transition-all ${
+                  whileTap={tapMotion}
+                  transition={SPRING_TOUCH}
+                  className={`fade-surface rounded-3xl p-5 border cursor-pointer transition-colors ${
                     form.reservationMethod === 'automatica'
                       ? 'border-2 border-[#B68F4E] bg-[#B68F4E]/10 shadow-[0_0_20px_rgba(182,143,78,0.2)]'
                       : 'border-white/10 hover:border-white/20'
@@ -891,12 +986,14 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
                       </p>
                     </div>
                   </div>
-                </div>
+                </motion.div>
 
                 {/* Opción 2: Confirmación manual */}
-                <div
+                <motion.div
                   onClick={() => setForm({ ...form, reservationMethod: 'manual' })}
-                  className={`fade-surface rounded-3xl p-5 border cursor-pointer transition-all ${
+                  whileTap={tapMotion}
+                  transition={SPRING_TOUCH}
+                  className={`fade-surface rounded-3xl p-5 border cursor-pointer transition-colors ${
                     form.reservationMethod === 'manual'
                       ? 'border-2 border-[#B68F4E] bg-[#B68F4E]/10 shadow-[0_0_20px_rgba(182,143,78,0.2)]'
                       : 'border-white/10 hover:border-white/20'
@@ -925,7 +1022,7 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
                       </p>
                     </div>
                   </div>
-                </div>
+                </motion.div>
               </div>
 
               {/* Info pill */}
@@ -936,10 +1033,11 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
 
               <motion.button
                 type="button"
-                whileTap={{ scale: 0.98 }}
+                whileHover={hoverMotion}
+                whileTap={tapMotion}
                 transition={SPRING_TOUCH}
                 onClick={() => setStep(7)}
-                className="w-full py-3.5 rounded-2xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black font-bold text-sm tracking-wide shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_4px_16px_rgba(217,201,176,0.3)] cursor-pointer"
+                className={PRIMARY_BTN}
               >
                 Finalizar
               </motion.button>
@@ -952,9 +1050,10 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
           {step === 7 && (
             <motion.div
               key="barber-step-7"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={SPRING_SLIDE}
+              initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95 }}
+              animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+              transition={reduceMotion ? { duration: 0 } : SPRING_SLIDE}
               className="space-y-6 text-center py-6"
             >
               {/* Checkmark dorado con resplandor */}
@@ -965,7 +1064,7 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
               </div>
 
               <div className="space-y-2">
-                <h1 className="text-3xl font-bold text-white tracking-tight font-serif">
+                <h1 className="font-editorial text-3xl font-bold text-gold-gradient tracking-tight">
                   ¡Listo!
                 </h1>
                 <p className="text-base font-semibold text-[#D9C9B0]">
@@ -977,7 +1076,7 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
               </div>
 
               {errorMessage && (
-                <div className="p-3 rounded-xl bg-red-950/40 border border-red-500/30 text-xs text-red-200 text-left">
+                <div role="alert" className={`${ERROR_BOX} text-left`}>
                   {errorMessage}
                 </div>
               )}
@@ -985,7 +1084,8 @@ export const BarberRegisterWizard: FC<BarberRegisterWizardProps> = ({
               {/* Botón Primario Comenzar */}
               <motion.button
                 type="button"
-                whileTap={{ scale: 0.98 }}
+                whileHover={hoverMotion}
+                whileTap={tapMotion}
                 transition={SPRING_TOUCH}
                 onClick={handleFinish}
                 disabled={loading}
