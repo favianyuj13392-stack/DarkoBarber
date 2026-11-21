@@ -9,6 +9,9 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import type { ExploreBarber, BookingDay, BookingSlot } from '../../types/explore';
+import { AnimatedNumber } from '../common/AnimatedNumber';
+import { SPRING_TOUCH, SPRING_MODAL, SPRING_SLIDE } from '../../constants/springs';
+import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion';
 import {
   fetchBarberAvailability,
   createClientBooking,
@@ -45,6 +48,18 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
   onClose,
   onConfirmBooking,
 }) => {
+  const reduceMotion = usePrefersReducedMotion();
+  const hoverMotion = reduceMotion ? undefined : { scale: 1.02 };
+  const tapMotion = reduceMotion ? undefined : { scale: 0.97 };
+  // Staggered entrance on a wrapper that only plays on mount, so the stagger
+  // delay never leaks into hover/tap animations of the interactive child.
+  const stagger = (index: number, cap = 8, step = 0.04) => ({
+    initial: reduceMotion ? (false as const) : { opacity: 0, y: 8 },
+    animate: { opacity: 1, y: 0 },
+    transition: reduceMotion
+      ? { duration: 0 }
+      : { ...SPRING_SLIDE, delay: Math.min(index, cap) * step },
+  });
   const currentUser = getStoredUser();
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
   const [selectedDay, setSelectedDay] = useState<BookingDay | null>(null);
@@ -262,11 +277,11 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
 
         {/* Modal Window Sheet */}
         <motion.div
-          initial={{ y: '100%', opacity: 0.5 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: '100%', opacity: 0 }}
-          transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-          className="relative w-full max-w-lg max-h-[92vh] bg-gradient-to-b from-[#181818] via-[#121212] to-[#0A0A0A] border-t sm:border border-white/15 rounded-t-3xl sm:rounded-3xl shadow-[0_-15px_40px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.18)] flex flex-col z-10 overflow-hidden"
+          initial={reduceMotion ? { opacity: 0 } : { y: '100%', opacity: 0.5 }}
+          animate={reduceMotion ? { opacity: 1 } : { y: 0, opacity: 1 }}
+          exit={reduceMotion ? { opacity: 0 } : { y: '100%', opacity: 0 }}
+          transition={reduceMotion ? { duration: 0 } : SPRING_MODAL}
+          className="fade-surface-elevated relative w-full max-w-lg max-h-[92vh] rounded-t-3xl sm:rounded-3xl flex flex-col z-10 overflow-hidden"
         >
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
@@ -278,39 +293,54 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
               />
               <div>
                 <h2 className="text-sm font-bold text-white tracking-tight">
-                  Reserva con {barber.name}
+                  Reserva con{' '}
+                  <span className="font-editorial text-base text-gold-gradient">{barber.name}</span>
                 </h2>
                 <p className="text-[11px] text-[#D9C9B0]/80">{barber.shopName}</p>
               </div>
             </div>
 
-            <button
+            <motion.button
               type="button"
               onClick={onClose}
+              whileHover={hoverMotion}
+              whileTap={tapMotion}
+              transition={SPRING_TOUCH}
               className="p-1.5 rounded-full text-white/50 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
-            </button>
+            </motion.button>
           </div>
 
           {/* Success Screen state */}
+          <AnimatePresence mode="wait" initial={false}>
           {isConfirmed ? (
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
+              key="confirmed"
+              initial={reduceMotion ? { opacity: 0 } : { scale: 0.9, opacity: 0 }}
+              animate={reduceMotion ? { opacity: 1 } : { scale: 1, opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={reduceMotion ? { duration: 0 } : SPRING_MODAL}
               className="py-16 px-6 text-center space-y-4"
             >
               <div className="w-16 h-16 rounded-full bg-[#B68F4E]/20 border border-[#B68F4E] mx-auto flex items-center justify-center text-[#B68F4E] shadow-[0_0_24px_rgba(182,143,78,0.5)]">
                 <CheckCircle2 className="w-8 h-8" />
               </div>
-              <h3 className="text-lg font-bold text-white">¡Reserva solicitada con éxito!</h3>
+              <h3 className="font-editorial text-2xl text-gold-gradient">¡Reserva solicitada con éxito!</h3>
               <p className="text-xs text-white/60 max-w-xs mx-auto">
                 {selectedDay.dayName} {selectedDay.dayNumber} {selectedDay.monthName} a las{' '}
                 {selectedTime} con {barber.name}. Queda pendiente hasta que el barbero la confirme.
               </p>
             </motion.div>
           ) : (
-            <>
+            <motion.div
+              key="form"
+              initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+              animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={reduceMotion ? { duration: 0 } : SPRING_SLIDE}
+              className="flex flex-col flex-1 min-h-0"
+            >
               {/* Scrollable Body */}
               <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
                 {/* 1. Selección de Servicios */}
@@ -319,13 +349,16 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                     1. Selecciona tus servicios
                   </span>
                   <div className="space-y-2">
-                    {barber.services.map((srv) => {
+                    {barber.services.map((srv, srvIndex) => {
                       const isSelected = selectedServiceIds.includes(srv.id);
                       return (
-                        <div
-                          key={srv.id}
+                        <motion.div key={srv.id} {...stagger(srvIndex)}>
+                        <motion.div
                           onClick={() => toggleService(srv.id)}
-                          className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                          whileHover={hoverMotion}
+                          whileTap={tapMotion}
+                          transition={SPRING_TOUCH}
+                          className={`p-3 rounded-2xl border transition-colors cursor-pointer flex items-center justify-between ${
                             isSelected
                               ? 'bg-[#B68F4E]/15 border-[#B68F4E] shadow-[0_0_12px_rgba(182,143,78,0.2)]'
                               : 'bg-white/5 border-white/10 hover:border-white/20'
@@ -351,7 +384,8 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                           <span className="text-xs font-mono font-bold text-[#F5EBDD]">
                             {srv.priceBs} Bs
                           </span>
-                        </div>
+                        </motion.div>
+                        </motion.div>
                       );
                     })}
                     {barber.services.length === 0 && (
@@ -374,40 +408,54 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                     <span className="text-xs font-mono uppercase tracking-wider text-[#B68F4E] font-semibold">
                       2. Elige el día
                     </span>
-                    <button
+                    <motion.button
                       type="button"
                       onClick={() => setOnlyAvailableSlots(!onlyAvailableSlots)}
-                      className="text-[11px] text-[#D9C9B0]/70 hover:text-white flex items-center gap-1.5 cursor-pointer"
+                      whileTap={tapMotion}
+                      transition={SPRING_TOUCH}
+                      className="text-[11px] text-[#D9C9B0]/70 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer"
                     >
                       <span
-                        className={`w-2 h-2 rounded-full ${
+                        className={`w-2 h-2 rounded-full transition-colors ${
                           onlyAvailableSlots ? 'bg-emerald-400' : 'bg-white/30'
                         }`}
                       />
                       <span>Solo libres</span>
-                    </button>
+                    </motion.button>
                   </div>
 
                   <div className="flex gap-2.5 overflow-x-auto no-scrollbar py-1">
-                    {realDays.map((day) => {
+                    {realDays.map((day, dayIndex) => {
                       const isSelected = selectedDay.id === day.id;
                       return (
-                        <button
-                          key={day.id}
+                        <motion.div key={day.id} className="flex-shrink-0" {...stagger(dayIndex, 7, 0.03)}>
+                        <motion.button
                           type="button"
                           onClick={() => setSelectedDay(day)}
-                          className={`flex-shrink-0 w-16 py-3 rounded-2xl flex flex-col items-center justify-center gap-1 border transition-all cursor-pointer ${
+                          whileHover={hoverMotion}
+                          whileTap={tapMotion}
+                          transition={SPRING_TOUCH}
+                          className={`relative w-16 py-3 rounded-2xl flex flex-col items-center justify-center gap-1 border transition-colors cursor-pointer ${
                             isSelected
-                              ? 'bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black border-[#F3E9DC] font-bold shadow-[0_4px_14px_rgba(217,201,176,0.3)]'
+                              ? 'text-black border-[#F3E9DC] font-bold'
                               : 'bg-white/5 text-white/70 border-white/10 hover:border-white/25 hover:text-white'
                           }`}
                         >
-                          <span className="text-[10px] font-mono tracking-wider">
+                          {isSelected && (
+                            <motion.span
+                              layoutId="booking-day-pill"
+                              transition={reduceMotion ? { duration: 0 } : SPRING_TOUCH}
+                              className="absolute inset-0 rounded-2xl bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] shadow-[0_4px_14px_rgba(217,201,176,0.3)]"
+                              aria-hidden="true"
+                            />
+                          )}
+                          <span className="relative text-[10px] font-mono tracking-wider">
                             {day.dayName}
                           </span>
-                          <span className="text-base font-extrabold">{day.dayNumber}</span>
-                          <span className="text-[9px] uppercase opacity-75">{day.monthName}</span>
-                        </button>
+                          <span className="relative text-base font-extrabold">{day.dayNumber}</span>
+                          <span className="relative text-[9px] uppercase opacity-75">{day.monthName}</span>
+                        </motion.button>
+                        </motion.div>
                       );
                     })}
                   </div>
@@ -459,15 +507,18 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                         <div className="space-y-1.5">
                           <span className="text-[11px] text-white/50 font-medium">Mañana</span>
                           <div className="grid grid-cols-4 gap-2">
-                            {morningSlots.map((slot) => {
+                            {morningSlots.map((slot, slotIndex) => {
                               const isSelected = selectedTime === slot.time;
                               return (
-                                <button
-                                  key={slot.time}
+                                <motion.div key={slot.time} {...stagger(slotIndex, 12, 0.02)}>
+                                <motion.button
                                   type="button"
                                   disabled={!slot.available}
                                   onClick={() => setSelectedTime(slot.time)}
-                                  className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all cursor-pointer ${
+                                  whileHover={slot.available ? hoverMotion : undefined}
+                                  whileTap={slot.available ? tapMotion : undefined}
+                                  transition={SPRING_TOUCH}
+                                  className={`w-full py-2 rounded-xl text-xs font-mono font-bold border transition-colors cursor-pointer ${
                                     !slot.available
                                       ? 'opacity-30 border-white/5 bg-white/[0.02] cursor-not-allowed line-through'
                                       : isSelected
@@ -476,7 +527,8 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                                   }`}
                                 >
                                   {slot.time}
-                                </button>
+                                </motion.button>
+                                </motion.div>
                               );
                             })}
                           </div>
@@ -488,15 +540,18 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                         <div className="space-y-1.5">
                           <span className="text-[11px] text-white/50 font-medium">Tarde</span>
                           <div className="grid grid-cols-4 gap-2">
-                            {afternoonSlots.map((slot) => {
+                            {afternoonSlots.map((slot, slotIndex) => {
                               const isSelected = selectedTime === slot.time;
                               return (
-                                <button
-                                  key={slot.time}
+                                <motion.div key={slot.time} {...stagger(slotIndex, 12, 0.02)}>
+                                <motion.button
                                   type="button"
                                   disabled={!slot.available}
                                   onClick={() => setSelectedTime(slot.time)}
-                                  className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all cursor-pointer ${
+                                  whileHover={slot.available ? hoverMotion : undefined}
+                                  whileTap={slot.available ? tapMotion : undefined}
+                                  transition={SPRING_TOUCH}
+                                  className={`w-full py-2 rounded-xl text-xs font-mono font-bold border transition-colors cursor-pointer ${
                                     !slot.available
                                       ? 'opacity-30 border-white/5 bg-white/[0.02] cursor-not-allowed line-through'
                                       : isSelected
@@ -505,7 +560,8 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                                   }`}
                                 >
                                   {slot.time}
-                                </button>
+                                </motion.button>
+                                </motion.div>
                               );
                             })}
                           </div>
@@ -517,15 +573,18 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                         <div className="space-y-1.5">
                           <span className="text-[11px] text-white/50 font-medium">Noche</span>
                           <div className="grid grid-cols-4 gap-2">
-                            {eveningSlots.map((slot) => {
+                            {eveningSlots.map((slot, slotIndex) => {
                               const isSelected = selectedTime === slot.time;
                               return (
-                                <button
-                                  key={slot.time}
+                                <motion.div key={slot.time} {...stagger(slotIndex, 12, 0.02)}>
+                                <motion.button
                                   type="button"
                                   disabled={!slot.available}
                                   onClick={() => setSelectedTime(slot.time)}
-                                  className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all cursor-pointer ${
+                                  whileHover={slot.available ? hoverMotion : undefined}
+                                  whileTap={slot.available ? tapMotion : undefined}
+                                  transition={SPRING_TOUCH}
+                                  className={`w-full py-2 rounded-xl text-xs font-mono font-bold border transition-colors cursor-pointer ${
                                     !slot.available
                                       ? 'opacity-30 border-white/5 bg-white/[0.02] cursor-not-allowed line-through'
                                       : isSelected
@@ -534,7 +593,8 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                                   }`}
                                 >
                                   {slot.time}
-                                </button>
+                                </motion.button>
+                                </motion.div>
                               );
                             })}
                           </div>
@@ -545,7 +605,7 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                 </div>
 
                 {/* Resumen */}
-                <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between text-xs">
+                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] flex items-center justify-between text-xs">
                   <div>
                     <span className="text-white/50 block">Fecha y turno</span>
                     <strong className="text-white">
@@ -555,7 +615,9 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                   </div>
                   <div className="text-right">
                     <span className="text-white/50 block">Total estimado</span>
-                    <strong className="text-[#B68F4E] font-mono text-sm">{totalBs} Bs</strong>
+                    <strong className="font-editorial text-2xl text-[#B68F4E] leading-none">
+                      <AnimatedNumber value={totalBs} suffix=" Bs" />
+                    </strong>
                   </div>
                 </div>
               </div>
@@ -563,9 +625,12 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
               {/* Sticky Submit Button */}
               <div className="p-4 bg-black/80 border-t border-white/10 backdrop-blur-xl space-y-2">
                 {(errorMsg || isNonClientSession) && (
-                  <div
+                  <motion.div
                     role="alert"
-                    className="p-3 rounded-xl bg-red-950/40 border border-red-500/30 flex items-start gap-2 text-[11px] text-red-200"
+                    initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={reduceMotion ? { duration: 0 } : SPRING_TOUCH}
+                    className="p-3 rounded-xl bg-red-950/40 border border-red-500/30 border-l-2 border-l-[#E85A44] flex items-start gap-2 text-[11px] text-red-100"
                   >
                     <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-px" />
                     <span>
@@ -573,10 +638,13 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                         ? 'Solo las cuentas de cliente pueden reservar. Cierra sesión e ingresa como cliente.'
                         : errorMsg}
                     </span>
-                  </div>
+                  </motion.div>
                 )}
-                <button
+                <motion.button
                   type="button"
+                  whileHover={hoverMotion}
+                  whileTap={tapMotion}
+                  transition={SPRING_TOUCH}
                   disabled={
                     submitting ||
                     isNonClientSession ||
@@ -586,10 +654,10 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                     Boolean(availability && (!availability.acceptsBookings || !availability.isWorkingDay))
                   }
                   onClick={handleConfirm}
-                  className={`w-full py-3.5 rounded-2xl font-extrabold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
+                  className={`w-full py-3.5 rounded-2xl font-extrabold text-xs uppercase tracking-wider transition-colors flex items-center justify-center gap-2 ${
                     barber.services.length === 0
                       ? 'bg-white/10 text-white/40 border border-white/10 cursor-not-allowed'
-                      : 'bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black shadow-[0_8px_24px_rgba(217,201,176,0.35),inset_0_1px_0_rgba(255,255,255,0.8)] hover:brightness-105 active:scale-[0.99] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed'
+                      : 'bg-gradient-to-b from-[#F3E9DC] via-[#D9C9B0] to-[#C2AE91] text-black shadow-[0_8px_24px_rgba(217,201,176,0.35),inset_0_1px_0_rgba(255,255,255,0.8)] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed'
                   }`}
                 >
                   <Sparkles className="w-4 h-4" />
@@ -604,10 +672,11 @@ export const BookingFlowModal: FC<BookingFlowModalProps> = ({
                       ? 'Elige un horario'
                       : `Confirmar reserva (${totalBs} Bs)`}
                   </span>
-                </button>
+                </motion.button>
               </div>
-            </>
+            </motion.div>
           )}
+          </AnimatePresence>
         </motion.div>
       </div>
     </AnimatePresence>
