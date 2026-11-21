@@ -19,6 +19,7 @@ import {
   Award,
 } from 'lucide-react';
 import { BrandLogo } from '../common/BrandLogo';
+import { AnimatedNumber } from '../common/AnimatedNumber';
 import {
   getStoredAdminKey,
   setStoredAdminKey,
@@ -151,6 +152,10 @@ export const AdminDashboardView: FC<AdminDashboardViewProps> = ({ onExit }) => {
   const gratisCount = barbers.filter((b) => b.plan === 'GRATIS').length;
   const totalCuts = barbers.reduce((acc, b) => acc + (b.cutsCountThisMonth || 0), 0);
 
+  // Show the placeholder (not a misleading 0) until the first load resolves.
+  const statsPending = loadingBarbers && barbers.length === 0;
+  const stat = (n: number) => (statsPending ? null : n);
+
   // Filtered in memory for instant typing
   const filteredBarbers = barbers.filter((b) => {
     if (!searchQuery.trim()) return true;
@@ -274,7 +279,7 @@ export const AdminDashboardView: FC<AdminDashboardViewProps> = ({ onExit }) => {
               <span>Barberos</span>
               <Users className="w-3.5 h-3.5" />
             </div>
-            <div className="text-2xl font-mono font-bold text-white">{totalBarbers}</div>
+            <div className="text-2xl font-mono font-bold text-white"><AnimatedNumber value={stat(totalBarbers)} /></div>
             <div className="text-[10px] text-white/40">Total registrados</div>
           </div>
 
@@ -283,9 +288,13 @@ export const AdminDashboardView: FC<AdminDashboardViewProps> = ({ onExit }) => {
               <span className="font-bold">Plan Pro</span>
               <Sparkles className="w-3.5 h-3.5 text-[#B68F4E]" />
             </div>
-            <div className="text-2xl font-mono font-bold text-[#F5EBDD]">{proCount}</div>
+            <div className="text-2xl font-mono font-bold text-[#F5EBDD]"><AnimatedNumber value={stat(proCount)} /></div>
             <div className="text-[10px] text-[#D9C9B0]/70">
-              {totalBarbers ? Math.round((proCount / totalBarbers) * 100) : 0}% de penetración
+              <AnimatedNumber
+                value={stat(totalBarbers ? Math.round((proCount / totalBarbers) * 100) : 0)}
+                suffix="%"
+              />{' '}
+              de penetración
             </div>
           </div>
 
@@ -294,7 +303,7 @@ export const AdminDashboardView: FC<AdminDashboardViewProps> = ({ onExit }) => {
               <span>Plan Gratis</span>
               <Award className="w-3.5 h-3.5" />
             </div>
-            <div className="text-2xl font-mono font-bold text-white/90">{gratisCount}</div>
+            <div className="text-2xl font-mono font-bold text-white/90"><AnimatedNumber value={stat(gratisCount)} /></div>
             <div className="text-[10px] text-white/40">Hasta 30 cortes/mes</div>
           </div>
 
@@ -303,7 +312,7 @@ export const AdminDashboardView: FC<AdminDashboardViewProps> = ({ onExit }) => {
               <span>Cortes este mes</span>
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
             </div>
-            <div className="text-2xl font-mono font-bold text-white">{totalCuts}</div>
+            <div className="text-2xl font-mono font-bold text-white"><AnimatedNumber value={stat(totalCuts)} /></div>
             <div className="text-[10px] text-white/40">Total en la plataforma</div>
           </div>
         </div>
@@ -450,7 +459,7 @@ export const AdminDashboardView: FC<AdminDashboardViewProps> = ({ onExit }) => {
                         {/* Cortes Mes */}
                         <td className="py-3.5 px-4">
                           <div className="font-mono font-bold text-white">
-                            {b.cutsCountThisMonth}{' '}
+                            <AnimatedNumber value={b.cutsCountThisMonth} />{' '}
                             <span className="text-white/40 text-[10px] font-normal">
                               / {b.maxCuts ? `${b.maxCuts} máx` : 'Ilimitados'}
                             </span>
