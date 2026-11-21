@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { BrandLogo } from '../common/BrandLogo';
 import { SPRING_TOUCH, SPRING_SLIDE } from '../../constants/springs';
+import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion';
 import type { ClientRegisterState } from '../../types/register';
 import { INITIAL_REGISTER_STATE } from '../../types/register';
 import { registerClient, loginWithGoogle, type LoginResponse } from '../../services/auth.service';
@@ -31,12 +32,45 @@ interface ClientRegisterWizardProps {
   onSwitchToBarber?: () => void;
 }
 
+const FIELD_LABEL = 'text-[11px] font-semibold uppercase tracking-[0.16em] text-[#D9C9B0]/80 block';
+const FIELD_WRAP =
+  'flex items-center rounded-2xl bg-white/[0.03] border border-white/10 px-3.5 py-1.5 transition-colors focus-within:border-[#B68F4E]/70 focus-within:ring-2 focus-within:ring-[#B68F4E]/25 focus-within:shadow-[0_0_24px_rgba(182,143,78,0.18)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]';
+const FIELD_INPUT =
+  'w-full bg-transparent py-2 text-sm text-white placeholder-white/20 focus:outline-none';
+const ERROR_BOX =
+  'p-3 rounded-xl bg-red-950/40 border border-red-500/30 border-l-2 border-l-[#E85A44] text-red-100 text-xs leading-snug';
+
 export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
   initialStep = 1,
   onCancel,
   onRegisterSuccess,
   onSwitchToBarber,
 }) => {
+  const reduceMotion = usePrefersReducedMotion();
+  const hoverMotion = reduceMotion ? undefined : { scale: 1.02 };
+  const tapMotion = reduceMotion ? undefined : { scale: 0.97 };
+  // Step transition: small slide with a spring; opacity-only when reduced.
+  const stepMotion = reduceMotion
+    ? {
+        initial: { opacity: 0 },
+        animate: { opacity: 1 },
+        exit: { opacity: 0 },
+        transition: { duration: 0 },
+      }
+    : {
+        initial: { opacity: 0, x: 20 },
+        animate: { opacity: 1, x: 0 },
+        exit: { opacity: 0, x: -20 },
+        transition: SPRING_SLIDE,
+      };
+  // Opacity-only variant for the step that embeds the Google iframe: no
+  // transform/filter/backdrop-filter may sit in the iframe's ancestor chain.
+  const fadeStepMotion = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+    exit: { opacity: 0 },
+    transition: reduceMotion ? { duration: 0 } : SPRING_SLIDE,
+  };
   const [step, setStep] = useState<number>(initialStep);
 
   useEffect(() => {
@@ -155,24 +189,21 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
   };
 
   return (
-    <div className="relative min-h-screen w-full bg-black text-[#F5EBDD] flex flex-col justify-between p-4 sm:p-8 select-none overflow-x-hidden">
-      {/* Background Glow */}
-      <div 
-        className="absolute w-[500px] h-[500px] rounded-full blur-[150px] pointer-events-none opacity-15 top-0 -left-20 bg-[#B68F4E]"
-        aria-hidden="true"
-      />
-
+    <div className="fade-ambient relative min-h-screen w-full text-[#F5EBDD] flex flex-col justify-between p-4 sm:p-8 select-none overflow-x-hidden">
       {/* Top Header con Botón Atrás y Progreso */}
       <header className="relative z-10 w-full max-w-md mx-auto flex items-center justify-between py-2">
         {step < 6 ? (
-          <button
+          <motion.button
             type="button"
             onClick={handleBack}
+            whileHover={hoverMotion}
+            whileTap={tapMotion}
+            transition={SPRING_TOUCH}
             className="p-2.5 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 text-[#D9C9B0] transition-colors cursor-pointer"
             aria-label="Atrás"
           >
             <ArrowLeft className="w-4 h-4" />
-          </button>
+          </motion.button>
         ) : (
           <div className="w-9" />
         )}
@@ -193,6 +224,24 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
         )}
       </header>
 
+      {/* Progress: spring-driven fill (scaleX) over a static track */}
+      {step < 6 && (
+        <div
+          className="relative z-10 w-full max-w-md mx-auto h-1 rounded-full bg-white/10 overflow-hidden"
+          role="progressbar"
+          aria-valuemin={1}
+          aria-valuemax={5}
+          aria-valuenow={step}
+        >
+          <motion.div
+            className="absolute inset-0 origin-left rounded-full bg-gradient-to-r from-[#B68F4E] to-[#D9C9B0]"
+            initial={false}
+            animate={{ scaleX: step / 5 }}
+            transition={reduceMotion ? { duration: 0 } : SPRING_SLIDE}
+          />
+        </div>
+      )}
+
       {/* Contenedor Central con Transición de Pasos */}
       <main className="relative z-10 w-full max-w-md mx-auto flex-1 flex flex-col justify-center py-4">
         <AnimatePresence mode="wait">
@@ -202,16 +251,13 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
           {step === 1 && (
             <motion.div
               key="step-1"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={SPRING_SLIDE}
+              {...stepMotion}
               className="space-y-6 text-left"
             >
               <div className="space-y-2 text-center sm:text-left">
                 <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight font-serif">
                   ¿Cómo quieres usar <br />
-                  <span className="text-gold-gradient font-sans font-black">FADE?</span>
+                  <span className="font-editorial text-gold-gradient font-black">FADE?</span>
                 </h1>
                 <p className="text-xs sm:text-sm text-[#D9C9B0]/70 leading-relaxed font-light">
                   Puedes cambiar el modo en cualquier momento desde tu perfil.
@@ -221,19 +267,22 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
               <div className="space-y-4">
                 {/* Opción Soy Cliente */}
                 <motion.div
-                  whileTap={{ scale: 0.98 }}
+                  whileHover={reduceMotion ? undefined : 'hover'}
+                  whileTap={tapMotion}
                   transition={SPRING_TOUCH}
                   onClick={() => {
                     setForm((prev) => ({ ...prev, role: 'cliente' }));
                     setStep(2);
                   }}
-                  className="fade-surface rounded-3xl p-5 flex items-center gap-4 cursor-pointer border border-white/10 hover:border-[#B68F4E]/60 transition-all group shadow-xl"
+                  className="fade-surface rounded-3xl p-5 flex items-center gap-4 cursor-pointer border border-white/10 hover:border-[#B68F4E]/60 transition-colors group shadow-xl"
                 >
                   <div className="relative w-20 h-24 rounded-2xl overflow-hidden border border-white/10 shrink-0">
-                    <img
+                    <motion.img
                       src="/assets/images/1.png"
                       alt="Cliente FADE"
-                      className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
+                      variants={{ hover: { scale: 1.05 } }}
+                      transition={SPRING_TOUCH}
+                      className="w-full h-full object-cover object-center"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
                     <div className="absolute bottom-1.5 left-1.5 p-1 rounded-full bg-black/60 text-[#B68F4E]">
@@ -250,12 +299,19 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
                     </p>
                   </div>
 
-                  <ChevronRight className="w-5 h-5 text-white/40 group-hover:text-[#B68F4E] group-hover:translate-x-1 transition-all shrink-0" />
+                  <motion.span
+                    variants={{ hover: { x: 4 } }}
+                    transition={SPRING_TOUCH}
+                    className="shrink-0 inline-flex"
+                  >
+                    <ChevronRight className="w-5 h-5 text-white/40 group-hover:text-[#B68F4E] transition-colors" />
+                  </motion.span>
                 </motion.div>
 
                 {/* Opción Soy Barbero */}
                 <motion.div
-                  whileTap={{ scale: 0.98 }}
+                  whileHover={reduceMotion ? undefined : 'hover'}
+                  whileTap={tapMotion}
                   transition={SPRING_TOUCH}
                   onClick={() => {
                     if (onSwitchToBarber) {
@@ -265,13 +321,15 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
                       setStep(2);
                     }
                   }}
-                  className="fade-surface rounded-3xl p-5 flex items-center gap-4 cursor-pointer border border-white/10 hover:border-[#B68F4E]/60 transition-all group shadow-xl"
+                  className="fade-surface rounded-3xl p-5 flex items-center gap-4 cursor-pointer border border-white/10 hover:border-[#B68F4E]/60 transition-colors group shadow-xl"
                 >
                   <div className="relative w-20 h-24 rounded-2xl overflow-hidden border border-white/10 shrink-0">
-                    <img
+                    <motion.img
                       src="/assets/images/4.png"
                       alt="Barbero FADE"
-                      className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
+                      variants={{ hover: { scale: 1.05 } }}
+                      transition={SPRING_TOUCH}
+                      className="w-full h-full object-cover object-center"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
                     <div className="absolute bottom-1.5 left-1.5 p-1 rounded-full bg-black/60 text-[#B68F4E]">
@@ -288,7 +346,13 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
                     </p>
                   </div>
 
-                  <ChevronRight className="w-5 h-5 text-white/40 group-hover:text-[#B68F4E] group-hover:translate-x-1 transition-all shrink-0" />
+                  <motion.span
+                    variants={{ hover: { x: 4 } }}
+                    transition={SPRING_TOUCH}
+                    className="shrink-0 inline-flex"
+                  >
+                    <ChevronRight className="w-5 h-5 text-white/40 group-hover:text-[#B68F4E] transition-colors" />
+                  </motion.span>
                 </motion.div>
               </div>
             </motion.div>
@@ -300,15 +364,18 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
           {step === 2 && (
             <motion.div
               key="step-2"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={SPRING_SLIDE}
-              className="fade-surface rounded-3xl p-6 sm:p-8 space-y-6 text-left border border-white/10 shadow-2xl"
+              {...fadeStepMotion}
+              className="relative"
             >
+              {/* Glass layer is a static sibling: it never wraps the Google iframe. */}
+              <div
+                aria-hidden="true"
+                className="fade-surface absolute inset-0 rounded-3xl shadow-2xl pointer-events-none"
+              />
+              <div className="relative p-6 sm:p-8 space-y-6 text-left">
               <div className="space-y-1 text-center">
                 <h2 className="text-2xl font-bold text-white tracking-tight">
-                  Crea tu cuenta
+                  Crea tu <span className="font-editorial text-gold-gradient">cuenta</span>
                 </h2>
                 <p className="text-xs text-[#D9C9B0]/70 font-light">
                   Ingresa tu correo y define una contraseña segura
@@ -316,21 +383,24 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
               </div>
 
               {errorMessage && (
-                <div className="p-3 rounded-xl bg-red-950/40 border border-red-500/30 text-red-200 text-xs">
+                <motion.div
+                  role="alert"
+                  initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={reduceMotion ? { duration: 0 } : SPRING_TOUCH}
+                  className={ERROR_BOX}
+                >
                   {errorMessage}
-                </div>
+                </motion.div>
               )}
 
               <form onSubmit={handleStep2Submit} className="space-y-4">
                 {/* Correo */}
                 <div className="space-y-1.5">
-                  <label
-                    htmlFor="reg-email"
-                    className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#D9C9B0]/80 block"
-                  >
+                  <label htmlFor="reg-email" className={FIELD_LABEL}>
                     Correo Electrónico
                   </label>
-                  <div className="flex items-center rounded-2xl bg-black/60 border border-white/10 px-3.5 py-1.5 focus-within:border-[#B68F4E]/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+                  <div className={FIELD_WRAP}>
                     <Mail className="w-4 h-4 text-[#B68F4E] mr-3 shrink-0" />
                     <input
                       id="reg-email"
@@ -339,20 +409,17 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
                       onChange={(e) => setForm({ ...form, email: e.target.value })}
                       placeholder="ernesto.salinas@ejemplo.com"
                       autoComplete="email"
-                      className="w-full bg-transparent py-2 text-sm text-white placeholder-white/20 focus:outline-none"
+                      className={FIELD_INPUT}
                     />
                   </div>
                 </div>
 
                 {/* Contraseña */}
                 <div className="space-y-1.5">
-                  <label
-                    htmlFor="reg-pass"
-                    className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#D9C9B0]/80 block"
-                  >
+                  <label htmlFor="reg-pass" className={FIELD_LABEL}>
                     Contraseña
                   </label>
-                  <div className="flex items-center rounded-2xl bg-black/60 border border-white/10 px-3.5 py-1.5 focus-within:border-[#B68F4E]/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+                  <div className={FIELD_WRAP}>
                     <Lock className="w-4 h-4 text-[#B68F4E] mr-3 shrink-0" />
                     <input
                       id="reg-pass"
@@ -361,12 +428,12 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
                       onChange={(e) => setForm({ ...form, password: e.target.value })}
                       placeholder="Mínimo 8 caracteres"
                       autoComplete="new-password"
-                      className="w-full bg-transparent py-2 text-sm text-white placeholder-white/20 focus:outline-none"
+                      className={FIELD_INPUT}
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="p-1.5 text-[#D9C9B0]/60 hover:text-white cursor-pointer"
+                      className="p-1.5 text-[#D9C9B0]/60 hover:text-[#F5EBDD] transition-colors cursor-pointer"
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -375,7 +442,8 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
 
                 <motion.button
                   type="submit"
-                  whileTap={{ scale: 0.98 }}
+                  whileHover={hoverMotion}
+                  whileTap={tapMotion}
                   transition={SPRING_TOUCH}
                   className="fade-btn-primary w-full py-4 rounded-2xl flex items-center justify-center gap-2 text-xs md:text-sm tracking-[0.12em] font-black cursor-pointer shadow-[0_8px_24px_-4px_rgba(217,201,176,0.35)] mt-2"
                 >
@@ -407,6 +475,7 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
               <p className="text-[10px] text-[#D9C9B0]/50 text-center leading-relaxed">
                 Al continuar, aceptas nuestros Términos y Condiciones
               </p>
+              </div>
             </motion.div>
           )}
 
@@ -416,15 +485,12 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
           {step === 3 && (
             <motion.div
               key="step-3"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={SPRING_SLIDE}
+              {...stepMotion}
               className="fade-surface rounded-3xl p-6 sm:p-8 space-y-6 text-left border border-white/10 shadow-2xl"
             >
               <div className="space-y-1 text-center">
                 <h2 className="text-2xl font-bold text-white tracking-tight">
-                  Completa tu perfil
+                  Completa tu <span className="font-editorial text-gold-gradient">perfil</span>
                 </h2>
                 <p className="text-xs text-[#D9C9B0]/70 font-light">
                   Personaliza tu ficha de cliente en FADE
@@ -440,19 +506,24 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
                   accept="image/*"
                   className="hidden"
                 />
-                <div
+                <motion.div
                   onClick={() => avatarInputRef.current?.click()}
+                  whileHover={reduceMotion ? undefined : 'hover'}
+                  whileTap={tapMotion}
+                  transition={SPRING_TOUCH}
                   className="relative w-24 h-24 rounded-full overflow-hidden border-2 border-[#B68F4E]/50 p-1 cursor-pointer group shadow-[0_0_20px_rgba(182,143,78,0.25)]"
                 >
-                  <img
+                  <motion.img
                     src={form.avatarUrl || '/assets/images/1.png'}
                     alt="Avatar de cliente"
-                    className="w-full h-full object-cover rounded-full group-hover:scale-105 transition-transform"
+                    variants={{ hover: { scale: 1.05 } }}
+                    transition={SPRING_TOUCH}
+                    className="w-full h-full object-cover rounded-full"
                   />
                   <div className="absolute bottom-0 right-0 p-2 rounded-full bg-[#D9C9B0] text-black shadow-lg">
                     <Camera className="w-3.5 h-3.5" />
                   </div>
-                </div>
+                </motion.div>
                 <span className="text-[10px] text-[#D9C9B0]/60 mt-2">
                   Toca para cambiar foto
                 </span>
@@ -461,13 +532,10 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
               <div className="space-y-4">
                 {/* Nombre */}
                 <div className="space-y-1.5">
-                  <label
-                    htmlFor="prof-name"
-                    className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#D9C9B0]/80 block"
-                  >
+                  <label htmlFor="prof-name" className={FIELD_LABEL}>
                     Nombre Completo
                   </label>
-                  <div className="flex items-center rounded-2xl bg-black/60 border border-white/10 px-3.5 py-1.5 focus-within:border-[#B68F4E]/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+                  <div className={FIELD_WRAP}>
                     <User className="w-4 h-4 text-[#B68F4E] mr-3 shrink-0" />
                     <input
                       id="prof-name"
@@ -475,40 +543,34 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
                       value={form.displayName}
                       onChange={(e) => setForm({ ...form, displayName: e.target.value })}
                       placeholder="Ernesto Salinas"
-                      className="w-full bg-transparent py-2 text-sm text-white placeholder-white/20 focus:outline-none"
+                      className={FIELD_INPUT}
                     />
                   </div>
                 </div>
 
                 {/* Fecha de Nacimiento */}
                 <div className="space-y-1.5">
-                  <label
-                    htmlFor="prof-birth"
-                    className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#D9C9B0]/80 block"
-                  >
+                  <label htmlFor="prof-birth" className={FIELD_LABEL}>
                     Fecha de Nacimiento
                   </label>
-                  <div className="flex items-center rounded-2xl bg-black/60 border border-white/10 px-3.5 py-1.5 focus-within:border-[#B68F4E]/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+                  <div className={FIELD_WRAP}>
                     <Calendar className="w-4 h-4 text-[#B68F4E] mr-3 shrink-0" />
                     <input
                       id="prof-birth"
                       type="date"
                       value={form.birthDate}
                       onChange={(e) => setForm({ ...form, birthDate: e.target.value })}
-                      className="w-full bg-transparent py-2 text-sm text-white placeholder-white/20 focus:outline-none [color-scheme:dark]"
+                      className={`${FIELD_INPUT} [color-scheme:dark]`}
                     />
                   </div>
                 </div>
 
                 {/* Ciudad */}
                 <div className="space-y-1.5">
-                  <label
-                    htmlFor="prof-city"
-                    className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#D9C9B0]/80 block"
-                  >
+                  <label htmlFor="prof-city" className={FIELD_LABEL}>
                     Ciudad
                   </label>
-                  <div className="flex items-center rounded-2xl bg-black/60 border border-white/10 px-3.5 py-1.5 focus-within:border-[#B68F4E]/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+                  <div className={FIELD_WRAP}>
                     <MapPin className="w-4 h-4 text-[#B68F4E] mr-3 shrink-0" />
                     <input
                       id="prof-city"
@@ -516,7 +578,7 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
                       value={form.city}
                       onChange={(e) => setForm({ ...form, city: e.target.value })}
                       placeholder="La Paz"
-                      className="w-full bg-transparent py-2 text-sm text-white placeholder-white/20 focus:outline-none"
+                      className={FIELD_INPUT}
                     />
                   </div>
                 </div>
@@ -525,9 +587,10 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
                   type="button"
                   onClick={() => setStep(4)}
                   disabled={!form.displayName.trim()}
-                  whileTap={{ scale: 0.98 }}
+                  whileHover={hoverMotion}
+                  whileTap={tapMotion}
                   transition={SPRING_TOUCH}
-                  className="fade-btn-primary w-full py-4 rounded-2xl flex items-center justify-center gap-2 text-xs md:text-sm tracking-[0.12em] font-black cursor-pointer shadow-[0_8px_24px_-4px_rgba(217,201,176,0.35)] mt-2"
+                  className="fade-btn-primary w-full py-4 rounded-2xl flex items-center justify-center gap-2 text-xs md:text-sm tracking-[0.12em] font-black cursor-pointer shadow-[0_8px_24px_-4px_rgba(217,201,176,0.35)] mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <span>Continuar</span>
                 </motion.button>
@@ -541,15 +604,12 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
           {step === 4 && (
             <motion.div
               key="step-4"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={SPRING_SLIDE}
+              {...stepMotion}
               className="fade-surface rounded-3xl p-6 sm:p-7 space-y-6 text-left border border-white/10 shadow-2xl"
             >
               <div className="space-y-1 text-center">
                 <h2 className="text-2xl font-bold text-white tracking-tight">
-                  Tus preferencias
+                  Tus <span className="font-editorial text-gold-gradient">preferencias</span>
                 </h2>
                 <p className="text-xs text-[#D9C9B0]/70 font-light">
                   Esto nos ayudará a recomendarte mejores barberos.
@@ -571,12 +631,16 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
                   ].map((item) => {
                     const isSelected = form.selectedCutTypes.includes(item.name);
                     return (
-                      <div
+                      <motion.div
                         key={item.name}
                         onClick={() => toggleCutType(item.name)}
-                        className={`relative aspect-[3/4] rounded-2xl overflow-hidden border cursor-pointer transition-all ${
+                        animate={{ scale: isSelected && !reduceMotion ? 1.02 : 1 }}
+                        whileHover={hoverMotion}
+                        whileTap={tapMotion}
+                        transition={SPRING_TOUCH}
+                        className={`relative aspect-[3/4] rounded-2xl overflow-hidden border cursor-pointer transition-colors ${
                           isSelected
-                            ? 'border-[#B68F4E] ring-2 ring-[#B68F4E]/40 shadow-[0_0_16px_rgba(182,143,78,0.35)] scale-102'
+                            ? 'border-[#B68F4E] ring-2 ring-[#B68F4E]/40 shadow-[0_0_16px_rgba(182,143,78,0.35)]'
                             : 'border-white/10 opacity-70 hover:opacity-100'
                         }`}
                       >
@@ -594,7 +658,7 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
                             <Check className="w-2.5 h-2.5 stroke-[3]" />
                           </div>
                         )}
-                      </div>
+                      </motion.div>
                     );
                   })}
                 </div>
@@ -604,18 +668,21 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
                   {['Corte clásico', 'Crop', 'Otro'].map((tag) => {
                     const isSelected = form.selectedCutTypes.includes(tag);
                     return (
-                      <button
+                      <motion.button
                         key={tag}
                         type="button"
                         onClick={() => toggleCutType(tag)}
-                        className={`flex-1 py-2 px-2 rounded-xl text-xs font-semibold tracking-wider transition-all cursor-pointer border ${
+                        whileHover={hoverMotion}
+                        whileTap={tapMotion}
+                        transition={SPRING_TOUCH}
+                        className={`flex-1 py-2 px-2 rounded-xl text-xs font-semibold tracking-wider transition-colors cursor-pointer border ${
                           isSelected
                             ? 'bg-[#B68F4E]/20 border-[#B68F4E] text-white shadow-[0_0_10px_rgba(182,143,78,0.25)]'
                             : 'bg-black/50 border-white/10 text-[#D9C9B0]/70 hover:text-white'
                         }`}
                       >
                         {tag}
-                      </button>
+                      </motion.button>
                     );
                   })}
                 </div>
@@ -630,18 +697,21 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
                   {['< 50 Bs', '50 - 80 Bs', '80 - 120 Bs', '> 120 Bs'].map((range) => {
                     const isSelected = form.selectedPriceRange === range;
                     return (
-                      <button
+                      <motion.button
                         key={range}
                         type="button"
                         onClick={() => setForm({ ...form, selectedPriceRange: range })}
-                        className={`py-2.5 px-1 rounded-xl text-[11px] font-mono font-semibold transition-all cursor-pointer border ${
+                        whileHover={hoverMotion}
+                        whileTap={tapMotion}
+                        transition={SPRING_TOUCH}
+                        className={`py-2.5 px-1 rounded-xl text-[11px] font-mono font-semibold transition-colors cursor-pointer border ${
                           isSelected
                             ? 'bg-[#B68F4E]/20 border-[#B68F4E] text-[#F5EBDD] shadow-[0_0_12px_rgba(182,143,78,0.3)]'
                             : 'bg-black/50 border-white/10 text-[#D9C9B0]/60 hover:text-white'
                         }`}
                       >
                         {range}
-                      </button>
+                      </motion.button>
                     );
                   })}
                 </div>
@@ -650,7 +720,8 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
               <motion.button
                 type="button"
                 onClick={() => setStep(5)}
-                whileTap={{ scale: 0.98 }}
+                whileHover={hoverMotion}
+                whileTap={tapMotion}
                 transition={SPRING_TOUCH}
                 className="fade-btn-primary w-full py-4 rounded-2xl flex items-center justify-center gap-2 text-xs md:text-sm tracking-[0.12em] font-black cursor-pointer shadow-[0_8px_24px_-4px_rgba(217,201,176,0.35)] mt-2"
               >
@@ -665,15 +736,12 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
           {step === 5 && (
             <motion.div
               key="step-5"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={SPRING_SLIDE}
+              {...stepMotion}
               className="fade-surface rounded-3xl p-6 sm:p-7 space-y-6 text-center border border-white/10 shadow-2xl"
             >
               <div className="space-y-1">
                 <h2 className="text-2xl font-bold text-white tracking-tight">
-                  Agrega una foto <span className="text-[#D9C9B0]/60 font-light text-base">(opcional)</span>
+                  Agrega una <span className="font-editorial text-gold-gradient">foto</span> <span className="text-[#D9C9B0]/60 font-light text-base">(opcional)</span>
                 </h2>
                 <p className="text-xs text-[#D9C9B0]/70 font-light">
                   Esto ayudará a los barberos a conocerte mejor.
@@ -703,23 +771,29 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
               />
 
               <div className="space-y-3 pt-2">
-                <button
+                <motion.button
                   type="button"
                   onClick={() => photoInputRef.current?.click()}
+                  whileHover={hoverMotion}
+                  whileTap={tapMotion}
+                  transition={SPRING_TOUCH}
                   className="fade-btn-secondary w-full py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2.5 text-xs font-semibold tracking-wider cursor-pointer"
                 >
                   <Camera className="w-4 h-4 text-[#B68F4E]" />
                   <span>Tomar foto</span>
-                </button>
+                </motion.button>
 
-                <button
+                <motion.button
                   type="button"
                   onClick={() => photoInputRef.current?.click()}
+                  whileHover={hoverMotion}
+                  whileTap={tapMotion}
+                  transition={SPRING_TOUCH}
                   className="fade-btn-secondary w-full py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2.5 text-xs font-semibold tracking-wider cursor-pointer"
                 >
                   <Upload className="w-4 h-4 text-[#B68F4E]" />
                   <span>Subir desde galería</span>
-                </button>
+                </motion.button>
 
                 <button
                   type="button"
@@ -738,17 +812,20 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
           {step === 6 && (
             <motion.div
               key="step-6"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={SPRING_TOUCH}
+              initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95 }}
+              animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+              transition={reduceMotion ? { duration: 0 } : SPRING_TOUCH}
               className="fade-surface rounded-3xl p-8 sm:p-10 space-y-8 text-center border border-white/10 shadow-2xl"
             >
               {/* Checkmark Dorado Grande */}
               <div className="flex justify-center">
                 <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                  initial={reduceMotion ? { opacity: 0 } : { scale: 0 }}
+                  animate={reduceMotion ? { opacity: 1 } : { scale: 1 }}
+                  transition={
+                    reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 400, damping: 20 }
+                  }
                   className="w-24 h-24 rounded-full border-2 border-[#B68F4E] flex items-center justify-center shadow-[0_0_35px_rgba(182,143,78,0.4)] bg-gradient-to-b from-[#2A2A2A] to-[#121212]"
                 >
                   <Check className="w-12 h-12 text-[#B68F4E] stroke-[2.5]" />
@@ -756,7 +833,7 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
               </div>
 
               <div className="space-y-3 max-w-xs mx-auto">
-                <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight font-serif">
+                <h1 className="font-editorial text-3xl sm:text-4xl font-bold text-gold-gradient tracking-tight">
                   ¡Listo!
                 </h1>
                 <h2 className="text-base sm:text-lg font-bold text-[#F5EBDD]">
@@ -768,7 +845,10 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
               </div>
 
               {errorMessage && (
-                <div className="p-4 rounded-2xl bg-red-950/50 border border-red-500/40 text-red-200 text-xs space-y-2 text-center max-w-sm mx-auto shadow-lg">
+                <div
+                  role="alert"
+                  className="p-4 rounded-2xl bg-red-950/50 border border-red-500/40 border-l-2 border-l-[#E85A44] text-red-100 text-xs space-y-2 text-center max-w-sm mx-auto shadow-lg"
+                >
                   <p className="leading-snug">{errorMessage}</p>
                   <button
                     type="button"
@@ -788,7 +868,8 @@ export const ClientRegisterWizard: FC<ClientRegisterWizardProps> = ({
                   type="button"
                   onClick={handleFinish}
                   disabled={loading}
-                  whileTap={{ scale: 0.98 }}
+                  whileHover={hoverMotion}
+                  whileTap={tapMotion}
                   transition={SPRING_TOUCH}
                   className="fade-btn-primary w-full py-4 rounded-2xl text-xs md:text-sm tracking-[0.14em] font-black cursor-pointer shadow-[0_10px_30px_rgba(217,201,176,0.35)] uppercase flex items-center justify-center gap-2 disabled:opacity-60"
                 >
