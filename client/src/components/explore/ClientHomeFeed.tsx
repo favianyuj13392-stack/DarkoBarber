@@ -119,6 +119,9 @@ export const ClientHomeFeed: FC<ClientHomeFeedProps> = ({
           {barber.name}
         </h3>
         <p className="text-xs text-[#D9C9B0]/80 truncate">{barber.shopName}</p>
+        <p className="text-[11px] text-white/60 truncate">
+          {barber.zone} · A {Math.round(barber.distanceKm * 1000)} m
+        </p>
         <div className="flex items-center gap-2 mt-0.5 text-[11px] text-white/50">
           <span className="flex items-center gap-0.5 text-[#B68F4E] font-semibold">
             <Star className="w-3 h-3 fill-current" />
