@@ -152,15 +152,14 @@ export const OnboardingCarousel: FC<OnboardingCarouselProps> = ({ onComplete }) 
           <div
             className="relative flex items-center"
             style={{ gap: DOT_GAP }}
-            role="tablist"
+            role="group"
             aria-label="Onboarding progress"
           >
             {ONBOARDING_SLIDES.map((_, idx) => (
               <button
                 key={idx}
                 type="button"
-                role="tab"
-                aria-selected={currentIndex === idx}
+                aria-current={currentIndex === idx ? 'true' : undefined}
                 onClick={() => setCurrentIndex(idx)}
                 aria-label={`Ir al slide ${idx + 1}`}
                 style={{ width: DOT_SIZE, height: DOT_SIZE }}
