@@ -14,6 +14,16 @@
   --color-fade-crema-light: #F5EBDD;
   --color-fade-coral: #E85A44;
   --color-fade-coral-dark: #C93F2B;
+
+  --radius-fade-sm: 12px;
+  --radius-fade-md: 16px;
+  --radius-fade-lg: 24px;
+  --radius-fade-xl: 32px;
+
+  --shadow-fade-soft: 0 8px 24px -8px rgba(0, 0, 0, 0.8);
+  --shadow-fade-lift: 0 20px 40px -12px rgba(0, 0, 0, 0.9);
+  --shadow-fade-glow-gold: 0 0 24px rgba(182, 143, 78, 0.28);
+  --shadow-fade-glow-coral: 0 0 24px rgba(232, 90, 68, 0.3);
 }
 
 @layer base {
@@ -99,6 +109,23 @@
 .fade-btn-secondary:hover {
   border-color: rgba(182, 143, 78, 0.40);
   box-shadow: 0 0 16px rgba(182, 143, 78, 0.18);
+}
+
+/* Ambient background: subtle gold/coral radial glows over an oled canvas */
+.fade-ambient {
+  background-color: #000000;
+  background-image:
+    radial-gradient(60% 40% at 15% 0%, rgba(182, 143, 78, 0.12) 0%, transparent 70%),
+    radial-gradient(50% 35% at 100% 100%, rgba(232, 90, 68, 0.07) 0%, transparent 70%),
+    radial-gradient(80% 50% at 50% 50%, rgba(18, 18, 18, 0.9) 0%, transparent 100%);
+}
+
+/* Editorial accent: Playfair italic for highlighted keywords */
+.font-editorial {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: -0.01em;
 }
 
 /* Gradientes Tipográficos */
