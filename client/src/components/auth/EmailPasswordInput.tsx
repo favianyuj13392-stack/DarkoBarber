@@ -31,7 +31,7 @@ export const EmailPasswordInput: FC<EmailPasswordInputProps> = ({
         >
           Correo Electrónico
         </label>
-        <div className="flex items-center rounded-2xl bg-black/60 border border-white/10 px-3.5 py-1.5 transition-all duration-200 focus-within:border-[#B68F4E]/60 focus-within:shadow-[0_0_20px_rgba(182,143,78,0.18)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+        <div className="flex items-center rounded-2xl bg-white/[0.03] border border-white/10 px-3.5 py-1.5 transition-all duration-200 focus-within:border-[#B68F4E]/70 focus-within:ring-2 focus-within:ring-[#B68F4E]/25 focus-within:shadow-[0_0_24px_rgba(182,143,78,0.18)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
           <div className="pr-3 text-[#B68F4E]">
             <Mail className="w-4 h-4" />
           </div>
@@ -69,7 +69,7 @@ export const EmailPasswordInput: FC<EmailPasswordInputProps> = ({
           )}
         </div>
 
-        <div className="flex items-center rounded-2xl bg-black/60 border border-white/10 px-3.5 py-1.5 transition-all duration-200 focus-within:border-[#B68F4E]/60 focus-within:shadow-[0_0_20px_rgba(182,143,78,0.18)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+        <div className="flex items-center rounded-2xl bg-white/[0.03] border border-white/10 px-3.5 py-1.5 transition-all duration-200 focus-within:border-[#B68F4E]/70 focus-within:ring-2 focus-within:ring-[#B68F4E]/25 focus-within:shadow-[0_0_24px_rgba(182,143,78,0.18)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
           <div className="pr-3 text-[#B68F4E]">
             <Lock className="w-4 h-4" />
           </div>

@@ -8,7 +8,16 @@ import { EmailPasswordInput } from './EmailPasswordInput';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { GoogleSignInButton } from './GoogleSignInButton';
 import { loginWithEmailPassword, loginWithGoogle, type LoginResponse } from '../../services/auth.service';
-import { SPRING_TOUCH } from '../../constants/springs';
+import { SPRING_TOUCH, SPRING_MODAL } from '../../constants/springs';
+
+const sectionVariants = {
+  hidden: { opacity: 0, y: 12 },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: { ...SPRING_MODAL, delay: 0.06 * i },
+  }),
+};
 
 interface LoginViewProps {
   onLoginSuccess: (data: LoginResponse) => void;
@@ -148,15 +157,26 @@ export const LoginView: FC<LoginViewProps> = ({
           <div className="absolute inset-0 bg-gradient-to-t from-black via-black/85 to-black/60" />
         </div>
 
-        {/* Tarjeta de Login (Dark Luxury Glass) */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.96, y: 15 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          transition={SPRING_TOUCH}
-          className="fade-surface relative z-10 w-full max-w-md rounded-3xl p-6 sm:p-8 space-y-6"
-        >
+        {/* Tarjeta de Login (Dark Luxury Glass).
+            The glass layer (backdrop-filter + transform) is a sibling, never an
+            ancestor of the Google iframe, so the iframe stays free of
+            transform/filter/backdrop-filter in its ancestor chain. */}
+        <div className="relative z-10 w-full max-w-md">
+          <motion.div
+            aria-hidden="true"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={SPRING_MODAL}
+            className="fade-surface absolute inset-0 rounded-3xl pointer-events-none"
+          />
+          <div className="relative p-6 sm:p-8 space-y-6">
           {/* Header de la Tarjeta */}
-          <div className="flex flex-col items-center text-center space-y-2">
+          <motion.div
+            variants={sectionVariants}
+            initial="hidden"
+            animate="visible"
+            custom={0}
+            className="flex flex-col items-center text-center space-y-2">
             <div className="lg:hidden mb-2">
               <BrandLogo variant="full" size="md" />
             </div>
@@ -166,12 +186,18 @@ export const LoginView: FC<LoginViewProps> = ({
             <p className="text-xs text-[#D9C9B0]/70 font-light tracking-wide">
               Ingresa tus credenciales para acceder a tu cuenta
             </p>
-          </div>
+          </motion.div>
 
           {/* Selector de Rol [Soy Barbero ⇄ Soy Cliente] */}
-          <div className="space-y-1.5">
+          <motion.div
+            variants={sectionVariants}
+            initial="hidden"
+            animate="visible"
+            custom={1}
+            className="space-y-1.5"
+          >
             <RoleSelector selectedRole={role} onChange={setRole} />
-          </div>
+          </motion.div>
 
           {/* Mensaje de Error */}
           <AnimatePresence>
@@ -189,7 +215,14 @@ export const LoginView: FC<LoginViewProps> = ({
           </AnimatePresence>
 
           {/* Formulario */}
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <motion.form
+            onSubmit={handleSubmit}
+            variants={sectionVariants}
+            initial="hidden"
+            animate="visible"
+            custom={2}
+            className="space-y-5"
+          >
             <EmailPasswordInput
               email={email}
               password={password}
@@ -203,6 +236,7 @@ export const LoginView: FC<LoginViewProps> = ({
             <motion.button
               type="submit"
               disabled={loading}
+              whileHover={{ y: -2 }}
               whileTap={{ scale: 0.98 }}
               transition={SPRING_TOUCH}
               className="fade-btn-primary w-full py-4 rounded-2xl flex items-center justify-center gap-2 text-xs md:text-sm tracking-[0.12em] font-black cursor-pointer shadow-[0_8px_24px_-4px_rgba(217,201,176,0.35)] disabled:opacity-50"
@@ -219,14 +253,14 @@ export const LoginView: FC<LoginViewProps> = ({
                 </>
               )}
             </motion.button>
-          </form>
+          </motion.form>
 
           {/* Separador Visual */}
           <div className="relative flex items-center justify-center">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-white/10" />
             </div>
-            <span className="relative z-10 bg-[#161616] px-3 text-[10px] tracking-[0.16em] uppercase text-[#D9C9B0]/50">
+            <span className="relative z-10 bg-[#121212] px-3 text-[10px] tracking-[0.16em] uppercase text-[#D9C9B0]/50">
               o continúa con
             </span>
           </div>
@@ -262,7 +296,8 @@ export const LoginView: FC<LoginViewProps> = ({
               <span>Ver presentación interactiva</span>
             </button>
           </div>
-        </motion.div>
+          </div>
+        </div>
       </div>
 
       <ForgotPasswordModal
